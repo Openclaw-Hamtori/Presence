@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  App Attest environment.
+	  Use "development" for debug builds (Xcode → Run).
+	  Change to "production" before App Store submission.
+
+	  IMPORTANT: Environment must match your Apple Developer provisioning profile.
+	  Mismatched environment causes DCErrorDomain Code=3 (invalidKey) at attestation time.
+	-->
+	<key>com.apple.developer.devicecheck.appattest-environment</key>
+	<string>development</string>
+</dict>
+</plist>

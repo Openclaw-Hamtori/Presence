@@ -1,0 +1,31 @@
+# PresenceTestApp — Podfile
+#
+# iOS 14+ required (App Attest is the binding constraint).
+# Frameworks added by setup.sh via add_frameworks.rb:
+#   - HealthKit.framework   (heart rate + steps)
+#   - DeviceCheck.framework (App Attest / DCAppAttestService)
+
+require_relative '../node_modules/react-native/scripts/react_native_pods'
+require_relative '../node_modules/@react-native-community/cli-platform-ios/native_modules'
+
+platform :ios, '14.0'
+prepare_react_native_project!
+
+target 'PresenceTestApp' do
+  config = use_native_modules!
+
+  use_react_native!(
+    :path => config[:reactNativePath],
+    # Hermes is enabled by default.
+    # Disable if you prefer JSC: :hermes_enabled => false
+    :app_path => "#{Pod::Config.instance.installation_root}/.."
+  )
+
+  post_install do |installer|
+    react_native_post_install(
+      installer,
+      config[:reactNativePath],
+      :mac_catalyst_enabled => false
+    )
+  end
+end

@@ -1,0 +1,14 @@
+.DS_Store
+node_modules/
+dist/
+build/
+Pods/
+*.log
+*.tmp
+*.swp
+.claude/
+presence-test-app/ios/PresenceTestApp/Images.xcassets/.DS_Store
+presence-test-app/ios/build/
+presence-test-app/ios/main.jsbundle
+presence-test-app/ios/Pods/
+presence-test-app/ios/.xcode.env.local

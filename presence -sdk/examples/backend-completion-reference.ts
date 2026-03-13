@@ -1,0 +1,124 @@
+import {
+  PresenceClient,
+  FileSystemLinkageStore,
+  fileLinkageStorePath,
+  createCompletionSessionResponse,
+  createCompletionSuccessResponse,
+  createRecoveryResponse,
+  createAuditEventsResponse,
+  createLinkedNonceResponse,
+  createLinkedAccountReadinessResponse,
+} from "../src/index.js";
+
+const presence = new PresenceClient({
+  serviceId: "discord-bot",
+  linkageStore: new FileSystemLinkageStore(fileLinkageStorePath("./var/presence")),
+});
+
+const endpointContract = {
+  createSessionPath: "/presence/link-sessions",
+  completeSessionPath: "/presence/link-sessions/:sessionId/complete",
+  sessionStatusPath: "/presence/link-sessions/:sessionId",
+  linkedNoncePath: "/presence/linked-accounts/:accountId/nonce",
+  verifyLinkedAccountPath: "/presence/linked-accounts/:accountId/verify",
+  linkedStatusPath: "/presence/linked-accounts/:accountId/status",
+  unlinkAccountPath: "/presence/linked-accounts/:accountId/unlink",
+  revokeDevicePath: "/presence/devices/:deviceIss/revoke",
+  auditEventsPath: "/presence/audit-events",
+} as const;
+
+export async function createLinkSessionHandler(req: { body: { accountId: string } }) {
+  const { session } = await presence.createLinkSession({
+    serviceId: "discord-bot",
+    accountId: req.body.accountId,
+  });
+
+  return createCompletionSessionResponse({ session, contract: endpointContract });
+}
+
+export async function completeLinkSessionHandler(req: { params: { sessionId: string }; body: unknown }) {
+  const result = await presence.completeLinkSession({
+    sessionId: req.params.sessionId,
+    body: req.body,
+  });
+
+  if (!result.verification.verified || !result.binding || !result.device) {
+    return {
+      ok: false,
+      code: result.verification.verified ? "ERR_INVALID_FORMAT" : result.verification.error,
+      message: result.verification.verified ? "missing linkage records" : result.verification.detail,
+      session: result.session,
+    };
+  }
+
+  return createCompletionSuccessResponse({
+    session: result.session,
+    binding: result.binding,
+    device: result.device,
+  });
+}
+
+export async function verifyLinkedAccountHandler(req: { params: { accountId: string }; body: unknown; nonce: string }) {
+  const result = await presence.verifyLinkedAccount(req.body, {
+    accountId: req.params.accountId,
+    nonce: req.nonce,
+  });
+
+  if (result.verified) {
+    return {
+      ok: true,
+      state: "linked",
+      binding: result.binding,
+      snapshot: result.snapshot,
+    };
+  }
+
+  if (result.error === "ERR_BINDING_RECOVERY_REQUIRED") {
+    return createRecoveryResponse(result);
+  }
+
+  return {
+    ok: false,
+    code: result.error,
+    message: result.detail,
+  };
+}
+
+export async function issueLinkedNonceHandler(req: { params: { accountId: string } }) {
+  const nonce = presence.generateNonce();
+  return createLinkedNonceResponse(nonce);
+}
+
+export async function getLinkedAccountStatusHandler(req: { params: { accountId: string } }) {
+  const readiness = await presence.getLinkedAccountReadiness({
+    accountId: req.params.accountId,
+  });
+  return createLinkedAccountReadinessResponse(readiness);
+}
+
+export async function requireReadyLinkedAccountHandler(req: { params: { accountId: string } }) {
+  const readiness = await presence.getLinkedAccountReadiness({
+    accountId: req.params.accountId,
+  });
+
+  if (!readiness.ready) {
+    return {
+      ok: false,
+      code: "ERR_PRESENCE_NOT_READY",
+      readiness,
+    };
+  }
+
+  return {
+    ok: true,
+    readiness,
+  };
+}
+
+export async function listAuditEventsHandler(req: { query: { accountId?: string } }) {
+  const events = await presence.listAuditEvents({
+    serviceId: "discord-bot",
+    accountId: req.query.accountId,
+  });
+  return createAuditEventsResponse(events);
+}

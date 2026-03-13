@@ -1,0 +1,22 @@
+{
+  "name": "presence-sdk",
+  "version": "0.1.0",
+  "description": "Presence SDK — Service Integration Layer",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "node dist/test/sdk.test.js && node dist/test/localReferenceRoundtrip.test.js",
+    "test:roundtrip": "node dist/test/localReferenceRoundtrip.test.js"
+  },
+  "dependencies": {
+    "presence-verifier": "file:../presence -verifier"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  },
+  "notes": {
+    "presence-verifier": "Currently a local workspace dependency. Update to npm package reference before publishing."
+  }
+}
