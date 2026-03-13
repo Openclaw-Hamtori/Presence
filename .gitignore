@@ -12,3 +12,6 @@ presence-test-app/ios/build/
 presence-test-app/ios/main.jsbundle
 presence-test-app/ios/Pods/
 presence-test-app/ios/.xcode.env.local
+*.xcuserstate
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
