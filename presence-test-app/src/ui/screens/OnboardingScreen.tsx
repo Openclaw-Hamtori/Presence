@@ -1,10 +1,10 @@
 /**
  * presence-mobile — Onboarding Screen
  *
- * Wizard "adoption" flow — Mobile Client Flow v0.4.
+ * Presence onboarding flow — Mobile Client Flow v0.4.
  *
  * Steps:
- *   1. Welcome  — "Every wizard needs a familiar"
+ *   1. Welcome   — explain what Presence does
  *   2. Heartbeat — explain smartwatch requirement + HealthKit permission
  *   3. Prove    — first proof generation
  *   4. Done     — state established
@@ -94,8 +94,8 @@ export function OnboardingScreen({
 function WelcomeStep({ onNext }: { onNext: () => void }) {
   return (
     <View style={styles.step}>
-      <Text style={styles.emoji}>🦉</Text>
-      <Text style={styles.title}>Every wizard needs a familiar</Text>
+      <Text style={styles.emoji}>💓</Text>
+      <Text style={styles.title}>Prove you're human with Presence</Text>
       <Text style={styles.body}>
         Presence proves you're human using your heartbeat — no account, no server,
         no data ever leaves your device.
