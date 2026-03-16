@@ -51,11 +51,11 @@
 - [ ] link_context 포함 proof 생성 가능
 
 ## 6. QR Flow
-- [ ] QR 버튼 동작
-- [ ] 카메라 권한 요청 정상
-- [ ] 카메라 화면 표시 정상
-- [ ] QR payload 스캔 후 Presence 링크로 인식 가능
-- [ ] 스캔 후 세션 열림 상태로 전환
+- [x] QR 버튼 동작
+- [x] 카메라 권한 요청 정상
+- [x] 카메라 화면 표시 정상
+- [x] QR payload 스캔 후 Presence 링크로 인식 가능
+- [x] 스캔 후 세션 열림 상태로 전환
 
 ## 7. Linked Auth / Reference Round-trip
 - [x] reference server에서 session 생성 가능
