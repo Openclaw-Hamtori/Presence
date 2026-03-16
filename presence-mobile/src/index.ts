@@ -24,6 +24,7 @@ export {
 
 export { buildPresenceLinkUrl, parsePresenceLinkUrl } from "./deeplink";
 export type { LinkCompletionEnvelope } from "./deeplink";
+export { getInitialPresenceLink, subscribeToPresenceLinks } from "./ui/connectionLinking";
 
 export {
   isHealthKitAvailable,

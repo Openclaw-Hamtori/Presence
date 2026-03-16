@@ -12,9 +12,9 @@ Why:
 
 ### Package checks
 - `presence-test-app` — `npm run type-check` ✅
-- `presence -mobile` — `npm run type-check` ✅
-- `presence -sdk` — `npm run build && npm test` ✅
-- `presence -verifier` — `npm run build && npm test` ✅
+- `presence-mobile` — `npm run type-check` ✅
+- `presence-sdk` — `npm run build && npm test` ✅
+- `presence-verifier` — `npm run build && npm test` ✅
 
 ### Architectural consistency
 Verified consistent across code/docs/tests:
@@ -34,7 +34,7 @@ Verified consistent across code/docs/tests:
 Status: fixed now ✅
 
 Issue:
-- `presence -mobile/README.md` still mentioned old `not-ready reports` retry behavior.
+- `presence-mobile/README.md` still mentioned old `not-ready reports` retry behavior.
 
 Action taken:
 - Reworded to reflect current PASS-only behavior:

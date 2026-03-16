@@ -6,7 +6,7 @@
  *   2. Attest key with challenge (server nonce digest)
  *   3. On subsequent calls: assert (assertion = sign with attested key)
  *
- * Verifier Spec v0.2 Step 10–11 (iOS path):
+ * Verifier Spec v0.4 Step 10–11 (iOS path):
  *   - Verifier validates attestation certificate chain against Apple root
  *   - Verifier checks device_attestation_digest in payload
  *

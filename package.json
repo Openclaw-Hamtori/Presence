@@ -1,0 +1,13 @@
+{
+  "name": "presence-gpt-workspace",
+  "private": true,
+  "workspaces": [
+    "presence-verifier",
+    "presence-sdk",
+    "presence-mobile",
+    "presence-test-app"
+  ],
+  "scripts": {
+    "test": "npm run test -w presence-verifier && npm run test -w presence-sdk && npm run type-check -w presence-mobile && npm run type-check -w presence-test-app"
+  }
+}

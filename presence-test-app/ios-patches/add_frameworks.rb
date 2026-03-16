@@ -16,7 +16,7 @@ require 'xcodeproj'
 
 APP_NAME        = 'PresenceTestApp'
 PROJECT_PATH    = File.expand_path("ios/#{APP_NAME}.xcodeproj", __dir__ + '/..')
-NATIVE_SRC_DIR  = File.expand_path('../../presence -mobile-native/ios/PresenceMobile', File.dirname(__FILE__))
+NATIVE_SRC_DIR  = File.expand_path('../../presence-mobile-native/ios/PresenceMobile', File.dirname(__FILE__))
 ENTITLEMENTS    = "#{APP_NAME}/#{APP_NAME}.entitlements"
 
 abort "❌  Project not found at #{PROJECT_PATH}\n    Run setup.sh first." unless File.exist?(PROJECT_PATH)

@@ -27,7 +27,7 @@ set -euo pipefail
 APP_NAME="PresenceTestApp"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$SCRIPT_DIR"               # presence-test-app/
-NATIVE_SRC="$ROOT/../presence -mobile-native/ios/PresenceMobile"
+NATIVE_SRC="$ROOT/../presence-mobile-native/ios/PresenceMobile"
 
 # Colour helpers
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; NC='\033[0m'
@@ -141,7 +141,11 @@ INFO_PLIST="$IOS_TARGET/Info.plist"
 [[ -f "$INFO_PLIST" ]] || fail "Info.plist not found: $INFO_PLIST"
 
 HK_KEY="NSHealthShareUsageDescription"
-HK_PRESENT=$(/usr/libexec/PlistBuddy -c "Print :$HK_KEY" "$INFO_PLIST" 2>/dev/null && echo yes || echo no)
+if /usr/libexec/PlistBuddy -c "Print :$HK_KEY" "$INFO_PLIST" >/dev/null 2>&1; then
+  HK_PRESENT="yes"
+else
+  HK_PRESENT="no"
+fi
 
 if [[ "$HK_PRESENT" == "yes" ]]; then
   ok "NSHealthShareUsageDescription already in Info.plist — skipping"

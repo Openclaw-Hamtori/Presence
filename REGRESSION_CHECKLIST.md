@@ -10,11 +10,11 @@
 ---
 
 ## 0. Baseline Build / Test
-- [ ] `presence -sdk` build 통과
-- [ ] `presence -sdk` test 통과
-- [ ] `presence -verifier` build 통과
-- [ ] `presence -verifier` test 통과 또는 실패 원인이 환경 문제임이 명확함
-- [ ] `presence -mobile` type-check 통과
+- [ ] `presence-sdk` build 통과
+- [ ] `presence-sdk` test 통과
+- [ ] `presence-verifier` build 통과
+- [ ] `presence-verifier` test 통과 또는 실패 원인이 환경 문제임이 명확함
+- [ ] `presence-mobile` type-check 통과
 - [ ] `presence-test-app` type-check 통과
 
 ---

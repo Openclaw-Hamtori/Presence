@@ -1,0 +1,35 @@
+{
+  "name": "presence-sdk",
+  "version": "0.1.0",
+  "description": "Presence SDK — Service Integration Layer",
+  "license": "MIT",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "examples"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "npm run build && node dist/test/sdk.test.js && node dist/test/localReferenceRoundtrip.test.js",
+    "test:roundtrip": "npm run build && node dist/test/localReferenceRoundtrip.test.js"
+  },
+  "dependencies": {
+    "presence-verifier": "^0.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  },
+  "notes": {
+    "presence-verifier": "Local workspace dependency for now. Replace with a published semver dependency before npm release."
+  }
+}

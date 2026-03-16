@@ -100,10 +100,10 @@ export function parsePresenceRequest(body: unknown): ParsedPresenceRequest {
   } else if (rawPlatform !== undefined) {
     throw new ParseError(`invalid platform value: ${String(rawPlatform)}`);
   } else {
-    // Legacy inference:
-    // - signing_public_key present  => android
-    // - signing_public_key absent   => ios
-    platform = signingPublicKey !== undefined ? "android" : "ios";
+    // Legacy fallback remains only for older payloads.
+    // Current transport should always send an explicit top-level platform.
+    // If omitted, default to iOS for backward compatibility with older examples.
+    platform = "ios";
   }
 
   return {

@@ -1,7 +1,7 @@
 /**
  * presence-mobile — Onboarding Screen
  *
- * Wizard "adoption" flow — Mobile Client Flow v0.2.
+ * Wizard "adoption" flow — Mobile Client Flow v0.4.
  *
  * Steps:
  *   1. Welcome  — "Every wizard needs a familiar"

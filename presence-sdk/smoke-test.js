@@ -120,16 +120,15 @@ test("infers iOS platform (no signing_public_key)", () => {
   const result = parsePresenceRequest({ attestation: {}, device_attestation: fakeAttestation });
   assert.strictEqual(result.platform, "ios");
 });
-test("infers Android platform (signing_public_key present)", () => {
+test("defaults legacy payload without platform to iOS even if signing_public_key is present", () => {
   const fakeAttestation = Buffer.from("fake-attestation-bytes").toString("base64url");
-  // 91 bytes for valid P-256 SPKI minimum
   const fakeKey = Buffer.alloc(91, 0x30).toString("base64url");
   const result = parsePresenceRequest({
     attestation: {},
     device_attestation: fakeAttestation,
     signing_public_key: fakeKey,
   });
-  assert.strictEqual(result.platform, "android");
+  assert.strictEqual(result.platform, "ios");
 });
 test("rejects signing_public_key < 91 bytes", () => {
   const fakeAttestation = Buffer.from("fake").toString("base64url");

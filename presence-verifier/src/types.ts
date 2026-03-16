@@ -42,7 +42,7 @@ export interface VerifierInput {
    */
   deviceAttestationRawBytes: Uint8Array;
 
-  /** Android only: DER-encoded SPKI public key, for TOFU registration */
+  /** DER-encoded SPKI public key used for signature verification / TOFU handling on current transport paths */
   signingPublicKey?: Uint8Array;
 
   /** Platform hint — if omitted, inferred from attestation structure */

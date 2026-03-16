@@ -274,8 +274,8 @@ This is enough to wire real product UX without building scanner/native camera st
 ## Build & test
 
 ```bash
-cd ../presence\ -verifier && npm install && npm run build && npm test
-cd ../presence\ -sdk && npm run build && npm test
+cd ../presence-verifier && npm install && npm run build && npm test
+cd ../presence-sdk && npm run build && npm test
 ```
 
 `npm test` now includes a local HTTP reference-server round-trip that exercises:
