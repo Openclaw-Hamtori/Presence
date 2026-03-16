@@ -20,7 +20,8 @@
   "scripts": {
     "build": "tsc",
     "test": "npm run build && node dist/test/sdk.test.js && node dist/test/localReferenceRoundtrip.test.js",
-    "test:roundtrip": "npm run build && node dist/test/localReferenceRoundtrip.test.js"
+    "test:roundtrip": "npm run build && node dist/test/localReferenceRoundtrip.test.js",
+    "serve:reference": "npm run build && node examples/local-reference-server.js"
   },
   "dependencies": {
     "presence-verifier": "^0.1.0"
