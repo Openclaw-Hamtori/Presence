@@ -12,18 +12,18 @@
 		13B07FBC1A68108700A75B9A /* AppDelegate.mm in Sources */ = {isa = PBXBuildFile; fileRef = 13B07FB01A68108700A75B9A /* AppDelegate.mm */; };
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
 		13B07FC11A68108700A75B9A /* main.m in Sources */ = {isa = PBXBuildFile; fileRef = 13B07FB71A68108700A75B9A /* main.m */; };
-		18C514779EE83D2ECEC28CBB /* PresenceTestApp/PresenceHealthKitModule.m in Sources */ = {isa = PBXBuildFile; fileRef = A2364177CF4E3DA21B511B71 /* PresenceTestApp/PresenceHealthKitModule.m */; };
-		1FEEF7EC527DC6D332CFA87A /* PresenceTestApp/PresenceHealthKitModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = D37306F8996BEDB1D0F5CDAC /* PresenceTestApp/PresenceHealthKitModule.swift */; };
+		18C514779EE83D2ECEC28CBB /* PresenceHealthKitModule.m in Sources */ = {isa = PBXBuildFile; fileRef = A2364177CF4E3DA21B511B71 /* PresenceHealthKitModule.m */; };
+		1FEEF7EC527DC6D332CFA87A /* PresenceHealthKitModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = D37306F8996BEDB1D0F5CDAC /* PresenceHealthKitModule.swift */; };
 		5FAE7C248CE37C29E6CFD18D /* HealthKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 57B84F229BC0E7F632980A0C /* HealthKit.framework */; };
-		6DA4829B1F1D8A89A7CAC29E /* PresenceTestApp/PresenceAttestModule.m in Sources */ = {isa = PBXBuildFile; fileRef = F5C1FC33D883C68367C3631D /* PresenceTestApp/PresenceAttestModule.m */; };
-		6DA4829B1F1D8A89A7CAC2AF /* PresenceTestApp/PresenceQRScannerModule.m in Sources */ = {isa = PBXBuildFile; fileRef = F5C1FC33D883C68367C3632E /* PresenceTestApp/PresenceQRScannerModule.m */; };
-		6DA4829B1F1D8A89A7CAC2B0 /* PresenceTestApp/PresenceQRScannerModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5C1FC33D883C68367C3632F /* PresenceTestApp/PresenceQRScannerModule.swift */; };
-		E341C201A1B2C3D4E5F60701 /* PresenceTestApp/PresenceBackgroundRefreshModule.m in Sources */ = {isa = PBXBuildFile; fileRef = E341C201A1B2C3D4E5F60711 /* PresenceTestApp/PresenceBackgroundRefreshModule.m */; };
-		E341C201A1B2C3D4E5F60702 /* PresenceTestApp/PresenceBackgroundRefreshModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = E341C201A1B2C3D4E5F60712 /* PresenceTestApp/PresenceBackgroundRefreshModule.swift */; };
+		6DA4829B1F1D8A89A7CAC29E /* PresenceAttestModule.m in Sources */ = {isa = PBXBuildFile; fileRef = F5C1FC33D883C68367C3631D /* PresenceAttestModule.m */; };
+		6DA4829B1F1D8A89A7CAC2AF /* PresenceQRScannerModule.m in Sources */ = {isa = PBXBuildFile; fileRef = F5C1FC33D883C68367C3632E /* PresenceQRScannerModule.m */; };
+		6DA4829B1F1D8A89A7CAC2B0 /* PresenceQRScannerModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5C1FC33D883C68367C3632F /* PresenceQRScannerModule.swift */; };
 		81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */; };
 		9C2395EF12E2C2308563EC45 /* DeviceCheck.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = EF694839464F5A4253AA797B /* DeviceCheck.framework */; };
 		9C2395EF12E2C2308563EC46 /* VisionKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = EF694839464F5A4253AA797C /* VisionKit.framework */; };
-		C50431EE446B755DF8FEC84D /* PresenceTestApp/PresenceAttestModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77CF17F4971430012F3B0A7F /* PresenceTestApp/PresenceAttestModule.swift */; };
+		C50431EE446B755DF8FEC84D /* PresenceAttestModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77CF17F4971430012F3B0A7F /* PresenceAttestModule.swift */; };
+		E341C201A1B2C3D4E5F60701 /* PresenceBackgroundRefreshModule.m in Sources */ = {isa = PBXBuildFile; fileRef = E341C201A1B2C3D4E5F60711 /* PresenceBackgroundRefreshModule.m */; };
+		E341C201A1B2C3D4E5F60702 /* PresenceBackgroundRefreshModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = E341C201A1B2C3D4E5F60712 /* PresenceBackgroundRefreshModule.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -51,18 +51,18 @@
 		5709B34CF0A7D63546082F79 /* Pods-PresenceTestApp.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-PresenceTestApp.release.xcconfig"; path = "Target Support Files/Pods-PresenceTestApp/Pods-PresenceTestApp.release.xcconfig"; sourceTree = "<group>"; };
 		57B84F229BC0E7F632980A0C /* HealthKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = HealthKit.framework; sourceTree = SDKROOT; };
 		5DCACB8F33CDC322A6C60F78 /* libPods-PresenceTestApp.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-PresenceTestApp.a"; sourceTree = BUILT_PRODUCTS_DIR; };
-		77CF17F4971430012F3B0A7F /* PresenceTestApp/PresenceAttestModule.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PresenceTestApp/PresenceAttestModule.swift; sourceTree = "<group>"; };
+		77CF17F4971430012F3B0A7F /* PresenceAttestModule.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PresenceTestApp/PresenceAttestModule.swift; sourceTree = "<group>"; };
 		81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = LaunchScreen.storyboard; path = PresenceTestApp/LaunchScreen.storyboard; sourceTree = "<group>"; };
-		A2364177CF4E3DA21B511B71 /* PresenceTestApp/PresenceHealthKitModule.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; path = PresenceTestApp/PresenceHealthKitModule.m; sourceTree = "<group>"; };
-		D37306F8996BEDB1D0F5CDAC /* PresenceTestApp/PresenceHealthKitModule.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PresenceTestApp/PresenceHealthKitModule.swift; sourceTree = "<group>"; };
-		E341C201A1B2C3D4E5F60711 /* PresenceTestApp/PresenceBackgroundRefreshModule.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; path = PresenceTestApp/PresenceBackgroundRefreshModule.m; sourceTree = "<group>"; };
-		E341C201A1B2C3D4E5F60712 /* PresenceTestApp/PresenceBackgroundRefreshModule.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PresenceTestApp/PresenceBackgroundRefreshModule.swift; sourceTree = "<group>"; };
+		A2364177CF4E3DA21B511B71 /* PresenceHealthKitModule.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; path = PresenceTestApp/PresenceHealthKitModule.m; sourceTree = "<group>"; };
+		D37306F8996BEDB1D0F5CDAC /* PresenceHealthKitModule.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PresenceTestApp/PresenceHealthKitModule.swift; sourceTree = "<group>"; };
+		E341C201A1B2C3D4E5F60711 /* PresenceBackgroundRefreshModule.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; path = PresenceTestApp/PresenceBackgroundRefreshModule.m; sourceTree = "<group>"; };
+		E341C201A1B2C3D4E5F60712 /* PresenceBackgroundRefreshModule.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PresenceTestApp/PresenceBackgroundRefreshModule.swift; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 		EF694839464F5A4253AA797B /* DeviceCheck.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = DeviceCheck.framework; sourceTree = SDKROOT; };
 		EF694839464F5A4253AA797C /* VisionKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = VisionKit.framework; sourceTree = SDKROOT; };
-		F5C1FC33D883C68367C3631D /* PresenceTestApp/PresenceAttestModule.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; path = PresenceTestApp/PresenceAttestModule.m; sourceTree = "<group>"; };
-		F5C1FC33D883C68367C3632E /* PresenceTestApp/PresenceQRScannerModule.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; path = PresenceTestApp/PresenceQRScannerModule.m; sourceTree = "<group>"; };
-		F5C1FC33D883C68367C3632F /* PresenceTestApp/PresenceQRScannerModule.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PresenceTestApp/PresenceQRScannerModule.swift; sourceTree = "<group>"; };
+		F5C1FC33D883C68367C3631D /* PresenceAttestModule.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; path = PresenceTestApp/PresenceAttestModule.m; sourceTree = "<group>"; };
+		F5C1FC33D883C68367C3632E /* PresenceQRScannerModule.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; path = PresenceTestApp/PresenceQRScannerModule.m; sourceTree = "<group>"; };
+		F5C1FC33D883C68367C3632F /* PresenceQRScannerModule.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PresenceTestApp/PresenceQRScannerModule.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -114,14 +114,14 @@
 				81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */,
 				13B07FB71A68108700A75B9A /* main.m */,
 				13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */,
-				F5C1FC33D883C68367C3631D /* PresenceTestApp/PresenceAttestModule.m */,
-				77CF17F4971430012F3B0A7F /* PresenceTestApp/PresenceAttestModule.swift */,
-				F5C1FC33D883C68367C3632E /* PresenceTestApp/PresenceQRScannerModule.m */,
-				F5C1FC33D883C68367C3632F /* PresenceTestApp/PresenceQRScannerModule.swift */,
-				A2364177CF4E3DA21B511B71 /* PresenceTestApp/PresenceHealthKitModule.m */,
-				D37306F8996BEDB1D0F5CDAC /* PresenceTestApp/PresenceHealthKitModule.swift */,
-				E341C201A1B2C3D4E5F60711 /* PresenceTestApp/PresenceBackgroundRefreshModule.m */,
-				E341C201A1B2C3D4E5F60712 /* PresenceTestApp/PresenceBackgroundRefreshModule.swift */,
+				F5C1FC33D883C68367C3631D /* PresenceAttestModule.m */,
+				77CF17F4971430012F3B0A7F /* PresenceAttestModule.swift */,
+				F5C1FC33D883C68367C3632E /* PresenceQRScannerModule.m */,
+				F5C1FC33D883C68367C3632F /* PresenceQRScannerModule.swift */,
+				A2364177CF4E3DA21B511B71 /* PresenceHealthKitModule.m */,
+				D37306F8996BEDB1D0F5CDAC /* PresenceHealthKitModule.swift */,
+				E341C201A1B2C3D4E5F60711 /* PresenceBackgroundRefreshModule.m */,
+				E341C201A1B2C3D4E5F60712 /* PresenceBackgroundRefreshModule.swift */,
 			);
 			name = PresenceTestApp;
 			sourceTree = "<group>";
@@ -301,13 +301,9 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-PresenceTestApp/Pods-PresenceTestApp-frameworks-${CONFIGURATION}-input-files.xcfilelist",
 			);
-			inputPaths = (
-			);
 			name = "[CP] Embed Pods Frameworks";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-PresenceTestApp/Pods-PresenceTestApp-frameworks-${CONFIGURATION}-output-files.xcfilelist",
-			);
-			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -344,13 +340,9 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-PresenceTestApp/Pods-PresenceTestApp-resources-${CONFIGURATION}-input-files.xcfilelist",
 			);
-			inputPaths = (
-			);
 			name = "[CP] Copy Pods Resources";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-PresenceTestApp/Pods-PresenceTestApp-resources-${CONFIGURATION}-output-files.xcfilelist",
-			);
-			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -374,14 +366,14 @@
 			files = (
 				13B07FBC1A68108700A75B9A /* AppDelegate.mm in Sources */,
 				13B07FC11A68108700A75B9A /* main.m in Sources */,
-				6DA4829B1F1D8A89A7CAC29E /* PresenceTestApp/PresenceAttestModule.m in Sources */,
-				C50431EE446B755DF8FEC84D /* PresenceTestApp/PresenceAttestModule.swift in Sources */,
-				6DA4829B1F1D8A89A7CAC2AF /* PresenceTestApp/PresenceQRScannerModule.m in Sources */,
-				6DA4829B1F1D8A89A7CAC2B0 /* PresenceTestApp/PresenceQRScannerModule.swift in Sources */,
-				18C514779EE83D2ECEC28CBB /* PresenceTestApp/PresenceHealthKitModule.m in Sources */,
-				1FEEF7EC527DC6D332CFA87A /* PresenceTestApp/PresenceHealthKitModule.swift in Sources */,
-				E341C201A1B2C3D4E5F60701 /* PresenceTestApp/PresenceBackgroundRefreshModule.m in Sources */,
-				E341C201A1B2C3D4E5F60702 /* PresenceTestApp/PresenceBackgroundRefreshModule.swift in Sources */,
+				6DA4829B1F1D8A89A7CAC29E /* PresenceAttestModule.m in Sources */,
+				C50431EE446B755DF8FEC84D /* PresenceAttestModule.swift in Sources */,
+				6DA4829B1F1D8A89A7CAC2AF /* PresenceQRScannerModule.m in Sources */,
+				6DA4829B1F1D8A89A7CAC2B0 /* PresenceQRScannerModule.swift in Sources */,
+				18C514779EE83D2ECEC28CBB /* PresenceHealthKitModule.m in Sources */,
+				1FEEF7EC527DC6D332CFA87A /* PresenceHealthKitModule.swift in Sources */,
+				E341C201A1B2C3D4E5F60701 /* PresenceBackgroundRefreshModule.m in Sources */,
+				E341C201A1B2C3D4E5F60702 /* PresenceBackgroundRefreshModule.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -590,8 +582,11 @@
 					"-DFOLLY_CFG_NO_COROUTINES=1",
 					"-DFOLLY_HAVE_CLOCK_GETTIME=1",
 				);
-				OTHER_LDFLAGS = "$(inherited)  ";
-				REACT_NATIVE_PATH = "${PODS_ROOT}/../../node_modules/react-native";
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					" ",
+				);
+				REACT_NATIVE_PATH = "${PODS_ROOT}/../../../node_modules/react-native";
 				SDKROOT = iphoneos;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				USE_HERMES = true;
@@ -665,8 +660,11 @@
 					"-DFOLLY_CFG_NO_COROUTINES=1",
 					"-DFOLLY_HAVE_CLOCK_GETTIME=1",
 				);
-				OTHER_LDFLAGS = "$(inherited)  ";
-				REACT_NATIVE_PATH = "${PODS_ROOT}/../../node_modules/react-native";
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					" ",
+				);
+				REACT_NATIVE_PATH = "${PODS_ROOT}/../../../node_modules/react-native";
 				SDKROOT = iphoneos;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;

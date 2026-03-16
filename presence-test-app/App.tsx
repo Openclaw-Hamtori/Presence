@@ -13,6 +13,8 @@ import {
   Modal,
   LogBox,
   Keyboard,
+  KeyboardAvoidingView,
+  ScrollView,
 } from "react-native";
 import { usePresenceState } from "./src/ui/usePresenceState";
 import { usePresenceRenewal } from "./src/ui/usePresenceRenewal";
@@ -431,13 +433,14 @@ export default function App() {
   const handleOpenLink = () => {
     const parsed = parsePresenceLinkUrl(rawLink);
     if (!parsed) {
-      setLocalError("유효한 Presence 링크가 아니야. presence://link 형식 링크를 넣어줘.");
+      setLocalError("유효한 Presence 링크가 아니야. presence://link 형식 세션 링크를 넣어줘.");
       addLog("❌ Invalid deeplink payload");
       return;
     }
+    Keyboard.dismiss();
     setLocalError(null);
     activateEnvelope(parsed, "link");
-    addLog(`✅ Link session ${parsed.sessionId} opened — 이제 인증을 누르면 연결 proof를 만들 수 있어`);
+    addLog(`✅ Link session ${parsed.sessionId} loaded — 이제 Approve를 눌러 연결 proof를 만들 수 있어`);
   };
 
   const handleScanQr = async () => {
@@ -631,9 +634,14 @@ export default function App() {
               setShowConnection(false);
             }}
           >
-            <View style={styles.modalBackdrop}>
+            <KeyboardAvoidingView
+              style={styles.modalBackdrop}
+              behavior={Platform.OS === "ios" ? "padding" : undefined}
+              keyboardVerticalOffset={8}
+            >
               <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-                <View style={styles.modalCard}>
+                <ScrollView contentContainerStyle={styles.connectionScrollContent} keyboardShouldPersistTaps="handled">
+                  <View style={styles.modalCard}>
                   <View style={styles.modalHeader}>
                     <Text style={styles.sectionTitle}>Connect</Text>
                     <TouchableOpacity onPress={() => setShowConnection(false)} activeOpacity={0.85}>
@@ -666,28 +674,67 @@ export default function App() {
 
                     <View style={styles.optionCard}>
                       <Text style={styles.optionIcon}>↗</Text>
-                      <Text style={styles.optionTitle}>Open link</Text>
-                      <Text style={styles.optionBody}>Open a Presence link to connect this device.</Text>
+                      <Text style={styles.optionTitle}>Load link session</Text>
+                      <Text style={styles.optionBody}>Load a Presence link into this app, then approve to generate a proof.</Text>
                     </View>
                   </View>
 
-                  <TextInput
-                    style={styles.input}
-                    value={rawLink}
-                    onChangeText={setRawLink}
-                    placeholder="presence://link?session_id=..."
-                    placeholderTextColor={C.subtext}
-                    multiline
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                  />
+                  {openedEnvelope ? (
+                    <View style={styles.loadedSessionCard}>
+                      <Text style={styles.loadedSessionLabel}>Approve service session</Text>
+                      <Text style={styles.loadedSessionBody}>
+                        Session loaded. Review the details below, then tap Approve to generate a proof for this service.
+                      </Text>
+                      <View style={styles.loadedSessionMeta}>
+                        <KeyValue label="Service" value={openedEnvelope.serviceId ?? "unknown"} />
+                        <KeyValue label="Session" value={openedEnvelope.sessionId} mono />
+                        <KeyValue label="Flow" value={openedEnvelope.flow ?? "initial_link"} />
+                        <KeyValue label="Code" value={openedEnvelope.code ?? "none"} mono />
+                      </View>
+                      <TouchableOpacity
+                        style={[styles.primaryActionButton, presence.phase === "proving" && styles.buttonDisabled]}
+                        onPress={handleApprove}
+                        disabled={presence.phase === "proving"}
+                        activeOpacity={0.85}
+                      >
+                        <Text style={styles.primaryActionButtonText}>
+                          {presence.phase === "proving" ? "Approving…" : "Approve service session"}
+                        </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.ghostButton}
+                        onPress={() => {
+                          setOpenedEnvelope(null);
+                          setLastPayload(null);
+                          setLocalError(null);
+                        }}
+                        activeOpacity={0.85}
+                      >
+                        <Text style={styles.ghostButtonText}>Load different session</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : (
+                    <>
+                      <TextInput
+                        style={styles.input}
+                        value={rawLink}
+                        onChangeText={setRawLink}
+                        placeholder="Paste a presence://link session here"
+                        placeholderTextColor={C.subtext}
+                        multiline
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                      />
 
-                  <TouchableOpacity style={styles.ghostButton} onPress={handleOpenLink} activeOpacity={0.85}>
-                    <Text style={styles.ghostButtonText}>Open link</Text>
-                  </TouchableOpacity>
+                      <TouchableOpacity style={styles.primaryActionButton} onPress={handleOpenLink} activeOpacity={0.85}>
+                        <Text style={styles.primaryActionButtonText}>Load session</Text>
+                      </TouchableOpacity>
+                    </>
+                  )}
                 </View>
+                </ScrollView>
               </TouchableWithoutFeedback>
-            </View>
+            </KeyboardAvoidingView>
           </TouchableWithoutFeedback>
         </Modal>
       </View>
@@ -1094,6 +1141,44 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "700",
   },
+  primaryActionButton: {
+    marginHorizontal: 18,
+    marginTop: 10,
+    borderRadius: 16,
+    minHeight: 52,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: C.accent,
+    paddingHorizontal: 16,
+  },
+  primaryActionButtonText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  loadedSessionCard: {
+    marginHorizontal: 18,
+    marginTop: 16,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: C.border,
+    backgroundColor: C.surfaceSoft,
+    padding: 14,
+    gap: 10,
+  },
+  loadedSessionLabel: {
+    color: C.text,
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  loadedSessionBody: {
+    color: C.subtext,
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  loadedSessionMeta: {
+    gap: 0,
+  },
   inlineHint: {
     color: C.subtext,
     fontSize: 12,
@@ -1204,6 +1289,10 @@ const styles = StyleSheet.create({
     paddingBottom: 28,
     paddingHorizontal: 18,
     gap: 12,
+  },
+  connectionScrollContent: {
+    flexGrow: 1,
+    justifyContent: "flex-end",
   },
   modalCardLarge: {
     backgroundColor: "#FFFFFF",
