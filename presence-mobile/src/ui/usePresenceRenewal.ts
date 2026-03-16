@@ -34,11 +34,28 @@ import {
 } from "../sync/linkedBindings";
 import { hasPendingLinkedBindingSyncJobs } from "../sync/queue";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
 type RenewalTask = () => Promise<boolean | void>;
 
-// ─── Hook ─────────────────────────────────────────────────────────────────────
+const BACKGROUND_TIMEOUT_MS = 25_000;
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`renewal timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      }
+    );
+  });
+}
 
 export function usePresenceRenewal(
   presence: UsePresenceStateResult,
@@ -46,6 +63,16 @@ export function usePresenceRenewal(
 ): void {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isRenewingRef = useRef(false);
+  const presenceRef = useRef(presence);
+  const runScheduledTaskRef = useRef(runScheduledTask);
+
+  useEffect(() => {
+    presenceRef.current = presence;
+  }, [presence]);
+
+  useEffect(() => {
+    runScheduledTaskRef.current = runScheduledTask;
+  }, [runScheduledTask]);
 
   const clearTimer = useCallback(() => {
     if (timerRef.current !== null) {
@@ -54,15 +81,48 @@ export function usePresenceRenewal(
     }
   }, []);
 
+  const scheduleRenewal = useCallback(async () => {
+    clearTimer();
+
+    const currentPresence = presenceRef.current;
+    if (!currentPresence.state) return;
+
+    if (shouldRenew(currentPresence.state) || currentPresence.phase === "expired") {
+      return;
+    }
+
+    const secondsUntil = secondsUntilNextMeasurement(currentPresence.state);
+    if (secondsUntil <= 0) {
+      return;
+    }
+
+    await scheduleBackgroundRefresh(Math.floor(Date.now() / 1000) + secondsUntil);
+
+    const delayMs = Math.min(secondsUntil * 1000, 24 * 60 * 60 * 1000);
+    timerRef.current = setTimeout(() => {
+      void tryRenewRef.current("timer");
+    }, delayMs);
+  }, [clearTimer]);
+
   const tryRenew = useCallback(async (source: "timer" | "foreground" | "background") => {
     if (isRenewingRef.current) return;
-    if (presence.phase === "proving" || presence.phase === "measuring") return;
-    const needsMeasurementSync = !!presence.state && (shouldRenew(presence.state) || presence.phase === "expired");
+
+    const currentPresence = presenceRef.current;
+    if (currentPresence.phase === "proving" || currentPresence.phase === "measuring") {
+      if (source === "background") {
+        await finishBackgroundRefresh(false);
+      }
+      return;
+    }
+
+    const needsMeasurementSync = !!currentPresence.state
+      && (shouldRenew(currentPresence.state) || currentPresence.phase === "expired");
     const hasPendingSyncs = await hasPendingLinkedBindingSyncJobs();
 
     if (!needsMeasurementSync && !hasPendingSyncs) {
       if (source === "background") {
         await finishBackgroundRefresh(true);
+        await scheduleRenewal();
       }
       return;
     }
@@ -71,80 +131,64 @@ export function usePresenceRenewal(
     let success = true;
     try {
       if (needsMeasurementSync) {
-        const result = await runScheduledTask();
+        const result = await withTimeout(runScheduledTaskRef.current(), BACKGROUND_TIMEOUT_MS);
         success = result !== false;
-      } else {
-        const result = await flushQueuedLinkedBindingSyncs();
-        success = result.errors.length === 0;
+      }
+
+      if (hasPendingSyncs) {
+        const result = await withTimeout(flushQueuedLinkedBindingSyncs(), BACKGROUND_TIMEOUT_MS);
+        success = success && result.errors.length === 0;
       }
     } catch {
       success = false;
     } finally {
       if (source === "background") {
         await finishBackgroundRefresh(success);
+        await scheduleRenewal();
       }
       isRenewingRef.current = false;
     }
-  }, [presence, runScheduledTask]);
+  }, [scheduleRenewal]);
 
-  const scheduleRenewal = useCallback(() => {
-    clearTimer();
-    if (!presence.state) return;
-
-    if (shouldRenew(presence.state) || presence.phase === "expired") {
-      void tryRenew("foreground");
-      return;
-    }
-
-    const secondsUntil = secondsUntilNextMeasurement(presence.state);
-    if (secondsUntil <= 0) {
-      void tryRenew("foreground");
-      return;
-    }
-
-    void scheduleBackgroundRefresh(Math.floor(Date.now() / 1000) + secondsUntil);
-
-    const delayMs = Math.min(secondsUntil * 1000, 24 * 60 * 60 * 1000);
-    timerRef.current = setTimeout(() => {
-      void tryRenew("timer");
-    }, delayMs);
-  }, [presence.state, presence.phase, tryRenew, clearTimer]);
+  const tryRenewRef = useRef(tryRenew);
+  useEffect(() => {
+    tryRenewRef.current = tryRenew;
+  }, [tryRenew]);
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       const pending = await consumePendingBackgroundRefresh();
       if (pending && !cancelled) {
-        void tryRenew("background");
+        void tryRenewRef.current("background");
       }
     })();
 
     const unsubscribe = addBackgroundRefreshListener(() => {
-      void tryRenew("background");
+      void tryRenewRef.current("background");
     });
 
     return () => {
       cancelled = true;
       unsubscribe();
     };
-  }, [tryRenew]);
+  }, []);
 
-  // ── AppState foreground listener ──────────────────────────────────────────
   useEffect(() => {
     const subscription = AppState.addEventListener(
       "change",
       (nextState: AppStateStatus) => {
         if (nextState === "active") {
-          void tryRenew("foreground");
-          scheduleRenewal();
+          void tryRenewRef.current("foreground");
+          void scheduleRenewal();
         } else {
           clearTimer();
         }
       }
     );
 
-    void tryRenew("foreground");
-    scheduleRenewal();
+    void tryRenewRef.current("foreground");
+    void scheduleRenewal();
 
     return () => {
       subscription.remove();
@@ -152,11 +196,10 @@ export function usePresenceRenewal(
     };
   }, [scheduleRenewal, clearTimer]);
 
-  // ── Re-schedule when state changes ───────────────────────────────────────
   useEffect(() => {
     if (presence.state) {
-      scheduleRenewal();
+      void scheduleRenewal();
     }
     return clearTimer;
-  }, [presence.state?.stateValidUntil, presence.state?.nextMeasurementAt, scheduleRenewal, clearTimer]);
+  }, [presence.state?.stateValidUntil, presence.state?.nextMeasurementAt, scheduleRenewal, clearTimer, presence.state]);
 }
