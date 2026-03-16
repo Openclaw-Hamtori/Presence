@@ -15,6 +15,7 @@ import {
   Keyboard,
   KeyboardAvoidingView,
   ScrollView,
+  Linking,
 } from "react-native";
 import { usePresenceState } from "./src/ui/usePresenceState";
 import { usePresenceRenewal } from "./src/ui/usePresenceRenewal";
@@ -88,6 +89,18 @@ function formatFinish(diagnostics: BackgroundRefreshDiagnostics | null): string 
 
 function randomId(prefix: string): string {
   return `${prefix}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function isHealthAccessRecoveryNeeded(code?: string, message?: string | null): boolean {
+  if (code === "ERR_HEALTHKIT_PERMISSION_DENIED") return true;
+  const text = `${code ?? ""} ${message ?? ""}`.toLowerCase();
+  return (
+    text.includes("authorization not determined")
+    || text.includes("not authorized")
+    || text.includes("permission denied")
+    || text.includes("health access")
+    || text.includes("err_no_bpm_data")
+  );
 }
 
 function createDemoEnvelope(flow: LinkFlow = "initial_link"): LinkCompletionEnvelope {
@@ -183,28 +196,28 @@ function getBindingSummary(bindings: ServiceBinding[]) {
   if (bindings.some((binding) => binding.status === "recovery_pending" || binding.status === "reauth_required")) {
     return {
       tone: C.warn,
-      title: "복구 필요",
-      detail: "기존 연결과 다른 기기이거나 다시 인증이 필요해.",
+      title: "Recovery needed",
+      detail: "This account is linked to a different device or needs re-approval.",
     };
   }
   if (bindings.some((binding) => binding.status === "linked")) {
     return {
       tone: C.success,
-      title: "연결됨",
-      detail: "이 기기에 연결된 서비스 계정이 있어.",
+      title: "Linked",
+      detail: "A service account is linked to this device.",
     };
   }
   if (bindings.some((binding) => binding.status === "revoked" || binding.status === "unlinked")) {
     return {
       tone: C.warn,
-      title: "연결 해제됨",
-      detail: "서비스에서 다시 연결 세션을 열어야 해.",
+      title: "Unlinked",
+      detail: "Open a new link session from the service to reconnect.",
     };
   }
   return {
     tone: C.subtext,
-    title: "연결 없음",
-    detail: "아직 서비스 계정과 묶이지 않았어.",
+    title: "Not linked",
+    detail: "No service account is linked yet.",
   };
 }
 
@@ -220,45 +233,45 @@ function getConnectionStatus(params: {
 
   if (activeBinding?.status === "recovery_pending" || activeBinding?.status === "reauth_required") {
     return {
-      label: "복구 필요",
+      label: "Recovery needed",
       tone: C.warn,
       background: "#2a2418",
-      detail: "이 계정은 복구 또는 재연결 승인이 필요해.",
+      detail: "This account needs recovery or re-link approval.",
     };
   }
 
   if (activeBinding?.status === "linked" && !openedEnvelope) {
     return {
-      label: "연결 완료",
+      label: "Linked",
       tone: C.success,
       background: "#103028",
-      detail: "바인딩이 저장된 상태야. 이제 linked account 검증 단계로 갈 수 있어.",
+      detail: "The binding is saved. You can now move to linked account verification.",
     };
   }
 
   if (lastPayload?.link_context?.link_session_id && openedEnvelope?.sessionId === lastPayload.link_context.link_session_id) {
     return {
-      label: "승인 완료",
+      label: "Approved",
       tone: C.success,
       background: "#103028",
-      detail: "이 세션으로 proof가 만들어졌어. 서버 completion 단계만 남았어.",
+      detail: "A proof was created for this session. Only the server completion step remains.",
     };
   }
 
   if (openedEnvelope) {
     return {
-      label: "승인 대기",
+      label: "Ready to approve",
       tone: C.accent,
       background: C.accentSoft,
-      detail: "세션을 열었어. 아래 인증 버튼을 누르면 현재 기기 proof를 만들 수 있어.",
+      detail: "The session is loaded. Tap approve below to create a proof from this device.",
     };
   }
 
   return {
-    label: "세션 없음",
+    label: "No session",
     tone: C.subtext,
     background: C.surfaceSoft,
-    detail: "QR을 스캔하거나 링크를 열면 연결 상태가 여기 표시돼.",
+    detail: "Scan a QR code or open a link to see connection status here.",
   };
 }
 
@@ -275,30 +288,30 @@ function buildJourneySteps(params: {
   const steps = [
     {
       key: "opened",
-      title: "1. 세션 열림",
-      detail: openedEnvelope ? `session ${openedEnvelope.sessionId}` : "QR 또는 링크를 기다리는 중",
+      title: "1. Session loaded",
+      detail: openedEnvelope ? `session ${openedEnvelope.sessionId}` : "Waiting for a QR code or link",
       state: openedEnvelope ? "done" : "current",
     },
     {
       key: "approve",
-      title: "2. 승인 준비",
-      detail: openedEnvelope ? "이 기기에서 인증 버튼을 누르면 돼" : "세션이 열리면 바로 승인 가능",
+      title: "2. Ready to approve",
+      detail: openedEnvelope ? "Tap approve on this device" : "Approval becomes available after the session loads",
       state: openedEnvelope ? (lastPayload ? "done" : "current") : "todo",
     },
     {
       key: "proof",
-      title: "3. proof 생성",
-      detail: lastPayload?.link_context?.link_session_id ? "link_context 포함 payload 생성됨" : "아직 서버로 보낼 proof 없음",
+      title: "3. Proof created",
+      detail: lastPayload?.link_context?.link_session_id ? "Payload created with link_context" : "No proof has been created for the server yet",
       state: lastPayload?.link_context?.link_session_id ? "done" : "todo",
     },
     {
       key: "binding",
-      title: "4. 연결 상태",
+      title: "4. Binding status",
       detail: activeBinding?.status === "linked"
-        ? "binding saved"
+        ? "Binding saved"
         : activeBinding?.status === "recovery_pending" || activeBinding?.status === "reauth_required"
-          ? "recovery needed"
-          : "server completion 이후 linked 로 전환",
+          ? "Recovery needed"
+          : "Moves to linked after server completion",
       state: activeBinding?.status === "linked" ? "done" : activeBinding ? "current" : "todo",
     },
   ] as const;
@@ -395,13 +408,16 @@ export default function App() {
   const productState = getProductState(presence.phase, presence.state?.pass, hasRecovery);
   const activeSession = openedEnvelope;
   const stateMeta = [
-    presence.timeRemaining ? `유효 ${presence.timeRemaining}` : null,
-    presence.state?.lastSignals?.length ? `신호 ${presence.state.lastSignals.join(", ")}` : null,
-    presence.state?.serviceBindings?.length ? `연결 ${presence.state.serviceBindings.length}` : null,
-    presence.state?.nextMeasurementAt ? `다음 측정 ${new Date(presence.state.nextMeasurementAt * 1000).toLocaleTimeString()}` : null,
-    pendingSyncJobs > 0 ? `재시도 ${pendingSyncJobs}` : null,
+    presence.timeRemaining ? `Valid for ${presence.timeRemaining}` : null,
+    presence.state?.lastSignals?.length ? `Signals ${presence.state.lastSignals.join(", ")}` : null,
+    presence.state?.serviceBindings?.length ? `Bindings ${presence.state.serviceBindings.length}` : null,
+    presence.state?.nextMeasurementAt ? `Next check ${new Date(presence.state.nextMeasurementAt * 1000).toLocaleTimeString()}` : null,
+    pendingSyncJobs > 0 ? `Retries ${pendingSyncJobs}` : null,
   ].filter(Boolean) as string[];
   const bindingSummary = getBindingSummary(presence.state?.serviceBindings ?? []);
+  const displayedErrorCode = presence.error?.code ?? "PRESENCE";
+  const displayedErrorMessage = localError ?? presence.error?.message ?? null;
+  const showHealthAccessRecovery = isHealthAccessRecoveryNeeded(displayedErrorCode, displayedErrorMessage);
   const connectionStatus = getConnectionStatus({
     openedEnvelope,
     lastPayload,
@@ -427,20 +443,20 @@ export default function App() {
     setLastPayload(null);
     setLocalError(null);
     addLog(`🧾 Service created ${demoFlow} session ${envelope.sessionId}`);
-    addLog("↗ 링크를 열면 이 세션을 현재 기기에 연결할 수 있어");
+    addLog("↗ Open the link to connect this session on the current device");
   };
 
   const handleOpenLink = () => {
     const parsed = parsePresenceLinkUrl(rawLink);
     if (!parsed) {
-      setLocalError("유효한 Presence 링크가 아니야. presence://link 형식 세션 링크를 넣어줘.");
+      setLocalError("This is not a valid Presence link. Enter a session link in the presence://link format.");
       addLog("❌ Invalid deeplink payload");
       return;
     }
     Keyboard.dismiss();
     setLocalError(null);
     activateEnvelope(parsed, "link");
-    addLog(`✅ Link session ${parsed.sessionId} loaded — 이제 Approve를 눌러 연결 proof를 만들 수 있어`);
+    addLog(`✅ Link session ${parsed.sessionId} loaded — tap Approve to create a linked proof`);
   };
 
   const handleScanQr = async () => {
@@ -451,7 +467,7 @@ export default function App() {
       setRawLink(payload);
       const parsed = parsePresenceLinkUrl(payload);
       if (!parsed) {
-        setLocalError("QR은 읽었지만 Presence 연결 링크 형식이 아니야.");
+        setLocalError("The QR code was read, but it is not a valid Presence link.");
         addLog("❌ Scanned QR payload was not a Presence link");
         return;
       }
@@ -469,7 +485,7 @@ export default function App() {
 
   const handleApprove = async () => {
     if (!proveOptions) {
-      setLocalError("먼저 연결 링크를 열어줘.");
+      setLocalError("Open a link session first.");
       return;
     }
 
@@ -482,9 +498,9 @@ export default function App() {
       addLog("✅ Proof generated with link_context");
       addLog(`   link_session_id: ${payload.link_context?.link_session_id ?? "n/a"}`);
       addLog(`   binding_id: ${payload.link_context?.binding_id ?? "server-created"}`);
-      addLog("↗ 이제 서버가 session completion API로 이 payload를 받아 binding을 저장하면 돼");
+      addLog("↗ The server can now send this payload to the session completion API to save the binding");
     } else {
-      setLocalError(presence.error?.message ?? "인증을 생성하지 못했어.");
+      setLocalError(presence.error?.message ?? "Could not create the proof.");
       addLog(`❌ ${presence.error?.code ?? "unknown"} — ${presence.error?.message ?? ""}`);
     }
     await refreshDiagnostics();
@@ -494,7 +510,7 @@ export default function App() {
     addLog("→ measure() — rolling 72h window");
     const measurement = await presence.measure();
     if (!measurement) {
-      setLocalError(presence.error?.message ?? "측정을 완료하지 못했어.");
+      setLocalError(presence.error?.message ?? "Could not complete the measurement.");
       addLog(`❌ ${presence.error?.code ?? "unknown"} — ${presence.error?.message ?? ""}`);
       return;
     }
@@ -583,8 +599,25 @@ export default function App() {
 
         {(localError || presence.error) && (
           <View style={styles.errorBox}>
-            <Text style={styles.errorCode}>{presence.error?.code ?? "PRESENCE"}</Text>
-            <Text style={styles.errorMsg}>{localError ?? presence.error?.message}</Text>
+            <Text style={styles.errorCode}>{displayedErrorCode}</Text>
+            <Text style={styles.errorMsg}>{displayedErrorMessage}</Text>
+            {showHealthAccessRecovery ? (
+              <>
+                <Text style={styles.errorHint}>
+                  Health access is required to create proof. If you previously chose “Don’t Allow”, open Settings and enable Health access for Presence.
+                </Text>
+                <TouchableOpacity
+                  style={styles.errorActionButton}
+                  onPress={() => {
+                    void Linking.openSettings();
+                    addLog("↗ Opened Settings for Health access recovery");
+                  }}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.errorActionButtonText}>Open Settings</Text>
+                </TouchableOpacity>
+              </>
+            ) : null}
           </View>
         )}
 
@@ -938,6 +971,27 @@ const styles = StyleSheet.create({
     color: "#ffc5c5",
     fontSize: 13,
     lineHeight: 19,
+  },
+  errorHint: {
+    marginTop: 10,
+    color: "#f3d9d9",
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  errorActionButton: {
+    marginTop: 12,
+    alignSelf: "flex-start",
+    minHeight: 40,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#fff4f4",
+  },
+  errorActionButtonText: {
+    color: C.error,
+    fontSize: 13,
+    fontWeight: "700",
   },
   sectionCard: {
     backgroundColor: "#FFFFFF",
