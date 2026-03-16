@@ -604,7 +604,7 @@ export default function App() {
             {showHealthAccessRecovery ? (
               <>
                 <Text style={styles.errorHint}>
-                  Health access is required to create proof. Open App Settings for app permissions. If Health access is still off, open the Health app → Profile → Apps → Presence, then allow read access.
+                  Health access is required to create proof. Open App Settings for app permissions. If Health access is still off, open the Health app → Data Access & Devices → Presence, then allow read access for Heart Rate and Steps.
                 </Text>
                 <TouchableOpacity
                   style={styles.errorActionButton}
