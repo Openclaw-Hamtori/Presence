@@ -128,7 +128,11 @@ class PresenceAttestModule: NSObject {
     // After onboarding, the same attestation object is re-sent with each request.
     // Per-request freshness is guaranteed by the outer PresenceAttestation nonce + Secure Enclave sig.
     if let cached = UserDefaults.standard.string(forKey: attestationDefaultsKey) {
-      resolve(cached)
+      let normalized = cached.normalizedBase64url()
+      if normalized != cached {
+        UserDefaults.standard.set(normalized, forKey: attestationDefaultsKey)
+      }
+      resolve(normalized)
       return
     }
 
@@ -193,6 +197,17 @@ private extension Data {
   /// Encode Data → base64url string (no padding, - and _ alphabet).
   func base64urlEncoded() -> String {
     base64EncodedString()
+      .replacingOccurrences(of: "+", with: "-")
+      .replacingOccurrences(of: "/", with: "_")
+      .replacingOccurrences(of: "=", with: "")
+  }
+}
+
+private extension String {
+  func normalizedBase64url() -> String {
+    trimmingCharacters(in: .whitespacesAndNewlines)
+      .replacingOccurrences(of: "\n", with: "")
+      .replacingOccurrences(of: "\r", with: "")
       .replacingOccurrences(of: "+", with: "-")
       .replacingOccurrences(of: "/", with: "_")
       .replacingOccurrences(of: "=", with: "")

@@ -263,13 +263,14 @@ export function uint8ArrayToBase64url(bytes: Uint8Array): string {
 }
 
 export function base64urlToUint8Array(input: string): Uint8Array {
-  if (!/^[A-Za-z0-9\-_]*$/.test(input)) {
+  const normalized = input.replace(/\s/g, "").replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
+  if (!/^[A-Za-z0-9\-_]*$/.test(normalized)) {
     throw new Error("invalid base64url string: contains illegal characters");
   }
-  const base64 = input
+  const base64 = normalized
     .replace(/-/g, "+")
     .replace(/_/g, "/")
-    .padEnd(input.length + ((4 - (input.length % 4)) % 4), "=");
+    .padEnd(normalized.length + ((4 - (normalized.length % 4)) % 4), "=");
   const binary = atob(base64);
   return new Uint8Array([...binary].map((c) => c.charCodeAt(0)));
 }
