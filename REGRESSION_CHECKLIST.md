@@ -36,7 +36,7 @@
   - [ ] 서로 다른 10분 버킷 3개 이상
   - [ ] BPM 값 완전 고정 아님
   - [ ] steps 100 이상
-- [ ] 앱에서 PASS / NOT READY 표시가 기대대로 보임
+- [x] 앱에서 PASS / NOT READY 표시가 기대대로 보임
 
 ## 4. Proof Generation
 - [ ] direct prove 동작
