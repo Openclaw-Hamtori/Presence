@@ -2,7 +2,7 @@
  * presence-mobile — Presence Service
  */
 
-import { readBiometricWindow } from "./health/healthkit";
+import { readBiometricWindow, requestHealthKitPermissions, isHealthKitAvailable } from "./health/healthkit";
 import { evaluatePass } from "./health/pass";
 import { ensureDeviceKey, deriveIss, signAttestation } from "./crypto/index";
 import { performAppAttest } from "./attestation/appAttest";
@@ -80,6 +80,13 @@ export interface ProveResult {
 
 export async function measure(options: MeasureOptions = {}): Promise<Result<MeasureResult>> {
   const { forceRefresh = false } = options;
+
+  if (isHealthKitAvailable()) {
+    const permissionResult = await requestHealthKitPermissions();
+    if (!permissionResult.ok) {
+      return permissionResult;
+    }
+  }
 
   const keyResult = await ensureDeviceKey();
   if (!keyResult.ok) return keyResult;
