@@ -58,12 +58,12 @@
 - [ ] 스캔 후 세션 열림 상태로 전환
 
 ## 7. Linked Auth / Reference Round-trip
-- [ ] reference server에서 session 생성 가능
-- [ ] complete 호출 가능
-- [ ] binding 저장 확인 가능
-- [ ] linked account verify 가능
+- [x] reference server에서 session 생성 가능
+- [x] complete 호출 가능
+- [x] binding 저장 확인 가능
+- [x] linked account verify 가능
 - [ ] FAIL 시 explicit not_ready 전송 없이 마지막 PASS 만료/유예 해석으로 readiness가 내려가는 구조 유지
-- [ ] mismatch 시 recovery 흐름 확인 가능
+- [x] mismatch 시 recovery 흐름 확인 가능
 
 ## 8. Attestation
 - [ ] iOS App Attest verifier 경로 기본 검증 유지
