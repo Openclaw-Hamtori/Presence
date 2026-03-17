@@ -173,6 +173,15 @@ export async function proveMeasured(measurement: MeasureResult, options: ProveOp
   if (!measurement.pass || !measurement.state) {
     return err("ERR_PASS_FALSE", measurement.reason);
   }
+  if (
+    flow === "relink" &&
+    !(
+      (bindingHint?.sync?.nonceUrl && bindingHint?.sync?.verifyUrl) ||
+      (linkSessionHint?.completion?.sync?.nonceUrl && linkSessionHint?.completion?.sync?.verifyUrl)
+    )
+  ) {
+    return err("ERR_NONCE_MISSING", "relink requires sync endpoints");
+  }
 
   let state: PresenceState = measurement.state;
   const persistedState = await loadPresenceState();

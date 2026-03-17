@@ -353,7 +353,23 @@ export function recordFailedMeasurement(
 }
 
 function withComputedStatus(state: PresenceState): PresenceState {
-  return { ...state, status: computeStateStatus(state) };
+  const normalized = normalizeState(state);
+  return { ...normalized, status: computeStateStatus(normalized) };
+}
+
+function normalizeState(state: PresenceState): PresenceState {
+  const now = Math.floor(Date.now() / 1000);
+  if (!state.activeLinkSession || state.activeLinkSession.expiresAt > now) {
+    return state;
+  }
+
+  return {
+    ...state,
+    activeLinkSession: {
+      ...state.activeLinkSession,
+      status: "expired",
+    },
+  };
 }
 
 function isActiveBinding(binding: ServiceBinding): boolean {
