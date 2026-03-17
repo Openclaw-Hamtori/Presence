@@ -3,6 +3,7 @@ import type { MeasureResult } from "../service";
 import type { ServiceBinding } from "../types/index";
 
 const STORAGE_KEY = "@presence:linked-sync-queue:v1";
+const MAX_LINKED_BINDING_SYNC_ATTEMPTS = 5;
 
 export type LinkedBindingSyncJobKind = "verify";
 
@@ -82,17 +83,23 @@ export async function removeLinkedBindingSyncJob(bindingId: string): Promise<voi
 export async function recordLinkedBindingSyncFailure(bindingId: string, message: string): Promise<void> {
   const jobs = await loadLinkedBindingSyncJobs();
   const now = Math.floor(Date.now() / 1000);
-  const next = jobs.map((job) =>
-    job.binding.bindingId === bindingId
-      ? {
-          ...job,
-          lastAttemptAt: now,
-          attempts: job.attempts + 1,
-          lastError: message,
-        }
-      : job
-  );
+  const next = jobs.flatMap((job) => {
+    if (job.binding.bindingId !== bindingId) return [job];
+
+    const failedJob = {
+      ...job,
+      lastAttemptAt: now,
+      attempts: job.attempts + 1,
+      lastError: message,
+    };
+
+    return failedJob.attempts >= MAX_LINKED_BINDING_SYNC_ATTEMPTS ? [] : [failedJob];
+  });
   await saveLinkedBindingSyncJobs(next);
+}
+
+export function hasRemainingLinkedBindingSyncAttempts(job: LinkedBindingSyncJob): boolean {
+  return job.attempts < MAX_LINKED_BINDING_SYNC_ATTEMPTS;
 }
 
 async function saveLinkedBindingSyncJobs(jobs: LinkedBindingSyncJob[]): Promise<void> {

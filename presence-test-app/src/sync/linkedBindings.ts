@@ -7,6 +7,7 @@ import {
   upsertLinkedBindingSyncJob,
   removeLinkedBindingSyncJob,
   recordLinkedBindingSyncFailure,
+  hasRemainingLinkedBindingSyncAttempts,
 } from "./queue";
 
 export interface LinkedBindingSyncError {
@@ -75,7 +76,7 @@ export async function flushQueuedLinkedBindingSyncs(params: {
 
     result.attempted += 1;
     const binding = resolveBinding(bindings.get(job.binding.bindingId), job.binding);
-    if (!isRetryableBinding(binding, job.measurement.pass)) {
+    if (!hasRemainingLinkedBindingSyncAttempts(job) || !isRetryableBinding(binding, job.measurement.pass)) {
       await removeLinkedBindingSyncJob(job.binding.bindingId);
       result.skipped += 1;
       continue;
@@ -154,10 +155,14 @@ async function executeBindingSync(
       bindingWithSync.bindingId,
       verifyResponse.recovery?.reason ?? verifyResponse.message ?? "binding_mismatch"
     );
-  } else {
-    await markBindingVerified(bindingWithSync.bindingId);
+    return "verified";
   }
 
+  if (!verifyResponse || verifyResponse.ok !== true) {
+    throw new Error("verify endpoint returned no explicit success");
+  }
+
+  await markBindingVerified(bindingWithSync.bindingId);
   return "verified";
 }
 

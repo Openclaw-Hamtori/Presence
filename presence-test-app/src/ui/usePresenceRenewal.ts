@@ -121,9 +121,9 @@ export function usePresenceRenewal(
 
     const needsMeasurementSync = !!currentPresence.state
       && (shouldRenew(currentPresence.state) || currentPresence.phase === "expired");
-    const hasPendingSyncs = await hasPendingLinkedBindingSyncJobs();
+    const initialPendingSyncs = await hasPendingLinkedBindingSyncJobs();
 
-    if (!needsMeasurementSync && !hasPendingSyncs) {
+    if (!needsMeasurementSync && !initialPendingSyncs) {
       if (source === "background") {
         await finishBackgroundRefresh(true);
         await scheduleRenewal();
@@ -139,7 +139,11 @@ export function usePresenceRenewal(
         success = result !== false;
       }
 
-      if (hasPendingSyncs) {
+      const shouldFlushQueuedSyncs = needsMeasurementSync
+        ? false
+        : initialPendingSyncs;
+
+      if (shouldFlushQueuedSyncs) {
         const result = await withTimeout(flushQueuedLinkedBindingSyncs(), BACKGROUND_TIMEOUT_MS);
         success = success && result.errors.length === 0;
       }
