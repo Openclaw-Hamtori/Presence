@@ -47,6 +47,12 @@ export interface BiometricWindow {
 }
 
 export interface PresenceBindingSync {
+  /**
+   * Domain that owns the Presence well-known metadata for these service URLs.
+   * When sync URLs are present, the app validates them against
+   * `https://{serviceDomain}/.well-known/presence.json` before use.
+   */
+  serviceDomain?: string;
   nonceUrl?: string;
   verifyUrl?: string;
   statusUrl?: string;
@@ -172,7 +178,8 @@ export type PresenceMobileErrorCode =
   | "ERR_SIGNING_FAILED"
   | "ERR_STATE_EXPIRED"
   | "ERR_NONCE_MISSING"
-  | "ERR_PASS_FALSE";
+  | "ERR_PASS_FALSE"
+  | "ERR_SERVICE_TRUST_INVALID";
 
 export class PresenceMobileError extends Error {
   constructor(

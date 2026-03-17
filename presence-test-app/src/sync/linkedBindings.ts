@@ -1,4 +1,5 @@
 import { loadPresenceState } from "../state/presenceState";
+import { validateBindingSyncConfiguration } from "../linkTrust";
 import { markBindingMismatchForRecovery, markBindingSyncExhausted, markBindingVerified, measure, proveMeasured } from "../service";
 import type { MeasureResult } from "../service";
 import type { PresenceState, ServiceBinding } from "../types/index";
@@ -122,6 +123,14 @@ async function executeBindingSync(
 
   if (!bindingWithSync.sync?.nonceUrl || !bindingWithSync.sync?.verifyUrl) {
     return "skipped";
+  }
+
+  const trustValidation = await validateBindingSyncConfiguration({
+    serviceId: bindingWithSync.serviceId,
+    sync: bindingWithSync.sync,
+  });
+  if (!trustValidation.ok) {
+    throw trustValidation.error;
   }
 
   const nonceResponse = await requestJson(bindingWithSync.sync.nonceUrl, {

@@ -20,6 +20,7 @@ The app now demonstrates a realistic connection UX:
 - The app also registers the `presence://` URL scheme so a service deeplink can jump straight into the current session preview.
 - The home screen now exposes product-facing state changes more clearly: session opened, ready to approve, proof created, binding saved, and recovery needed.
 - Simulator builds can compile, but live QR scanning itself still requires a real iPhone camera.
+- Session links can now carry `service_domain`; if they also include `nonce_url` / `verify_url`, the app validates those URLs against `https://{service_domain}/.well-known/presence.json` before approval or later sync.
 
 ## Checks
 

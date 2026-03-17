@@ -3,6 +3,7 @@ import type { LinkCompletionMethod, LinkFlow } from "./types/index";
 export interface LinkCompletionEnvelope {
   sessionId: string;
   serviceId?: string;
+  serviceDomain?: string;
   accountId?: string;
   bindingId?: string;
   flow?: LinkFlow;
@@ -35,6 +36,7 @@ function splitBaseUrl(baseUrl: string): { prefix: string; path: string } {
 export function buildPresenceLinkUrl(envelope: LinkCompletionEnvelope, baseUrl = "presence://link"): string {
   const params: Array<[string, string]> = [["session_id", envelope.sessionId]];
   if (envelope.serviceId) params.push(["service_id", envelope.serviceId]);
+  if (envelope.serviceDomain) params.push(["service_domain", envelope.serviceDomain]);
   if (envelope.accountId) params.push(["account_id", envelope.accountId]);
   if (envelope.bindingId) params.push(["binding_id", envelope.bindingId]);
   if (envelope.flow) params.push(["flow", envelope.flow]);
@@ -76,6 +78,7 @@ export function parsePresenceLinkUrl(rawUrl: string): LinkCompletionEnvelope | n
     return {
       sessionId,
       serviceId: search.get("service_id") ?? undefined,
+      serviceDomain: search.get("service_domain") ?? undefined,
       accountId: search.get("account_id") ?? undefined,
       bindingId: search.get("binding_id") ?? undefined,
       flow: (search.get("flow") as LinkFlow | undefined) ?? undefined,

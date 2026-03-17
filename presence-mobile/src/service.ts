@@ -6,6 +6,7 @@ import { readBiometricWindow, requestHealthKitPermissions, isHealthKitAvailable 
 import { evaluatePass } from "./health/pass";
 import { ensureDeviceKey, deriveIss, signAttestation } from "./crypto/index";
 import { performAppAttest } from "./attestation/appAttest";
+import { validateBindingSyncConfiguration } from "./linkTrust";
 import {
   loadPresenceState,
   savePresenceState,
@@ -181,6 +182,26 @@ export async function proveMeasured(measurement: MeasureResult, options: ProveOp
     )
   ) {
     return err("ERR_NONCE_MISSING", "relink requires sync endpoints");
+  }
+
+  const linkSessionSyncValidation = linkSessionHint
+    ? await validateBindingSyncConfiguration({
+        serviceId: linkSessionHint.serviceId,
+        sync: linkSessionHint.completion?.sync,
+      })
+    : ok(undefined);
+  if (!linkSessionSyncValidation.ok) {
+    return linkSessionSyncValidation;
+  }
+
+  const bindingSyncValidation = bindingHint
+    ? await validateBindingSyncConfiguration({
+        serviceId: bindingHint.serviceId,
+        sync: bindingHint.sync ?? linkSessionHint?.completion?.sync,
+      })
+    : ok(undefined);
+  if (!bindingSyncValidation.ok) {
+    return bindingSyncValidation;
   }
 
   let state: PresenceState = measurement.state;

@@ -13,11 +13,13 @@ import type { ProveOptions } from "../../service";
 import type { LinkFlow, PresenceTransportPayload } from "../../types/index";
 import { buildPresenceLinkUrl, parsePresenceLinkUrl } from "../../deeplink";
 import type { LinkCompletionEnvelope } from "../../deeplink";
+import { validateLinkCompletionEnvelope } from "../../linkTrust";
 import type { UsePresenceStateResult } from "../usePresenceState";
 
 interface MockLinkServiceSession {
   sessionId: string;
   serviceId: string;
+  serviceDomain: string;
   accountId?: string;
   bindingId?: string;
   flow: LinkFlow;
@@ -31,6 +33,8 @@ interface ConnectionFlowScreenProps {
   createMockSession?: () => Promise<MockLinkServiceSession>;
   onProofGenerated?: (payload: PresenceTransportPayload) => void;
 }
+
+const DEMO_SERVICE_DOMAIN = "demo.presence.local";
 
 function randomId(prefix: string): string {
   return `${prefix}_${Math.random().toString(36).slice(2, 10)}`;
@@ -49,6 +53,7 @@ async function defaultCreateMockSession(): Promise<MockLinkServiceSession> {
   return {
     sessionId,
     serviceId,
+    serviceDomain: DEMO_SERVICE_DOMAIN,
     accountId: "demo-user",
     bindingId: undefined,
     flow: "initial_link",
@@ -73,6 +78,7 @@ function envelopeToProveOptions(envelope: LinkCompletionEnvelope): ProveOptions 
         returnUrl: envelope.returnUrl,
         fallbackCode: envelope.code,
         sync: {
+          serviceDomain: envelope.serviceDomain,
           nonceUrl: envelope.nonceUrl,
           verifyUrl: envelope.verifyUrl,
           statusUrl: envelope.statusUrl,
@@ -80,11 +86,12 @@ function envelopeToProveOptions(envelope: LinkCompletionEnvelope): ProveOptions 
       },
     },
     bindingHint: envelope.bindingId
-      ? {
+        ? {
           bindingId: envelope.bindingId,
           serviceId: envelope.serviceId ?? "presence-demo",
           accountId: envelope.accountId,
           sync: {
+            serviceDomain: envelope.serviceDomain,
             nonceUrl: envelope.nonceUrl,
             verifyUrl: envelope.verifyUrl,
             statusUrl: envelope.statusUrl,
@@ -110,6 +117,7 @@ export function ConnectionFlowScreen({
     const nextEnvelope: LinkCompletionEnvelope = {
       sessionId: session.sessionId,
       serviceId: session.serviceId,
+      serviceDomain: session.serviceDomain,
       accountId: session.accountId,
       bindingId: session.bindingId,
       flow: session.flow,
@@ -118,25 +126,32 @@ export function ConnectionFlowScreen({
       returnUrl: session.returnUrl,
       code: session.recoveryCode,
     };
-    setEnvelope(nextEnvelope);
+    setEnvelope(null);
     setRawLink(buildPresenceLinkUrl(nextEnvelope));
   }, [session]);
 
   const parsedEnvelope = useMemo(() => parsePresenceLinkUrl(rawLink), [rawLink]);
-  const proveOptions = useMemo(() => (parsedEnvelope ? envelopeToProveOptions(parsedEnvelope) : null), [parsedEnvelope]);
+  const proveOptions = useMemo(() => (envelope ? envelopeToProveOptions(envelope) : null), [envelope]);
 
   const handleCreateSession = async () => {
     setLocalError(null);
     setProof(null);
+    setEnvelope(null);
     const next = await createMockSession();
     setSession(next);
   };
 
-  const handleOpenLink = () => {
+  const handleOpenLink = async () => {
     setLocalError(null);
     const parsed = parsePresenceLinkUrl(rawLink);
     if (!parsed) {
       setLocalError("Invalid Presence link. Expected presence://link?... payload.");
+      return;
+    }
+    const trustValidation = await validateLinkCompletionEnvelope(parsed);
+    if (!trustValidation.ok) {
+      setEnvelope(null);
+      setLocalError(trustValidation.error.message);
       return;
     }
     setEnvelope(parsed);
@@ -180,6 +195,7 @@ export function ConnectionFlowScreen({
             <View style={styles.metaList}>
               <Meta label="Session" value={session.sessionId} mono />
               <Meta label="Service" value={session.serviceId} />
+              <Meta label="Service domain" value={session.serviceDomain} mono />
               <Meta label="Flow" value={session.flow} />
               <Meta label="Binding" value={session.bindingId ?? "created after first approval"} mono />
             </View>
@@ -191,7 +207,10 @@ export function ConnectionFlowScreen({
           <TextInput
             style={styles.input}
             value={rawLink}
-            onChangeText={setRawLink}
+            onChangeText={(value) => {
+              setRawLink(value);
+              setEnvelope(null);
+            }}
             placeholder="presence://link?session_id=..."
             placeholderTextColor="#777"
             autoCapitalize="none"
@@ -207,6 +226,7 @@ export function ConnectionFlowScreen({
           {parsedEnvelope ? (
             <View style={styles.metaList}>
               <Meta label="Session" value={parsedEnvelope.sessionId} mono />
+              <Meta label="Service domain" value={parsedEnvelope.serviceDomain ?? "not supplied"} mono />
               <Meta label="Flow" value={parsedEnvelope.flow ?? "initial_link"} />
               <Meta label="Method" value={parsedEnvelope.method ?? "deeplink"} />
               <Meta label="Return URL" value={parsedEnvelope.returnUrl ?? "not supplied"} mono />

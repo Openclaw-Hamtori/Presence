@@ -26,6 +26,7 @@ import { buildPresenceLinkUrl, parsePresenceLinkUrl } from "./src/deeplink";
 import type { LinkCompletionEnvelope } from "./src/deeplink";
 import { getBackgroundRefreshDiagnostics } from "./src/backgroundRefresh";
 import type { BackgroundRefreshDiagnostics } from "./src/backgroundRefresh";
+import { validateLinkCompletionEnvelope } from "./src/linkTrust";
 import type { LinkFlow, PresenceTransportPayload, ServiceBinding } from "./src/types/index";
 import type { ProveOptions } from "./src/service";
 import { isQrScannerSupported, scanQrCode } from "./src/qrScanner";
@@ -51,6 +52,7 @@ const C = {
 } as const;
 
 const ORB_IMAGE = require("./src/ui/assets/presence-orb.png");
+const DEMO_SERVICE_DOMAIN = "demo.presence.local";
 
 const MONO_FONT = Platform.OS === "ios" ? "Menlo" : "monospace";
 
@@ -109,6 +111,7 @@ function createDemoEnvelope(flow: LinkFlow = "initial_link"): LinkCompletionEnve
   return {
     sessionId: randomId("plink"),
     serviceId,
+    serviceDomain: DEMO_SERVICE_DOMAIN,
     accountId: "demo-user",
     bindingId,
     flow,
@@ -135,6 +138,7 @@ function envelopeToProveOptions(envelope: LinkCompletionEnvelope): ProveOptions 
         returnUrl: envelope.returnUrl,
         fallbackCode: envelope.code,
         sync: {
+          serviceDomain: envelope.serviceDomain,
           nonceUrl: envelope.nonceUrl,
           verifyUrl: envelope.verifyUrl,
           statusUrl: envelope.statusUrl,
@@ -142,11 +146,12 @@ function envelopeToProveOptions(envelope: LinkCompletionEnvelope): ProveOptions 
       },
     },
     bindingHint: envelope.bindingId
-      ? {
+        ? {
           bindingId: envelope.bindingId,
           serviceId: envelope.serviceId ?? "presence-demo",
           accountId: envelope.accountId,
           sync: {
+            serviceDomain: envelope.serviceDomain,
             nonceUrl: envelope.nonceUrl,
             verifyUrl: envelope.verifyUrl,
             statusUrl: envelope.statusUrl,
@@ -376,12 +381,25 @@ export default function App() {
 
   usePresenceRenewal(presence, runAutomaticRefresh);
 
-  const activateEnvelope = useCallback((parsed: LinkCompletionEnvelope, source: "link" | "qr" | "system") => {
-    setOpenedEnvelope(parsed);
-    setRawLink(buildPresenceLinkUrl(parsed));
+  const activateEnvelope = useCallback(async (
+    parsed: LinkCompletionEnvelope,
+    source: "link" | "qr" | "system",
+    rawUrl?: string
+  ): Promise<boolean> => {
+    setRawLink(rawUrl ?? buildPresenceLinkUrl(parsed));
     setShowConnection(true);
+    const trustValidation = await validateLinkCompletionEnvelope(parsed);
+    if (!trustValidation.ok) {
+      setOpenedEnvelope(null);
+      setLocalError(trustValidation.error.message);
+      addLog(`❌ ${trustValidation.error.code} — ${trustValidation.error.message}`);
+      return false;
+    }
+
+    setOpenedEnvelope(parsed);
     setLocalError(null);
     addLog(`${source === "qr" ? "📷" : source === "system" ? "🔗" : "📲"} Opened ${source} session ${parsed.sessionId}`);
+    return true;
   }, [addLog]);
 
   useEffect(() => {
@@ -390,11 +408,13 @@ export default function App() {
     void refreshDiagnostics();
 
     getInitialPresenceLink().then((initialEnvelope) => {
-      if (initialEnvelope) activateEnvelope(initialEnvelope, "system");
+      if (initialEnvelope) {
+        void activateEnvelope(initialEnvelope, "system");
+      }
     }).catch(() => undefined);
 
     return subscribeToPresenceLinks((envelope) => {
-      activateEnvelope(envelope, "system");
+      void activateEnvelope(envelope, "system");
     });
   }, [activateEnvelope, refreshDiagnostics]);
 
@@ -446,7 +466,7 @@ export default function App() {
     addLog("↗ Open the link to connect this session on the current device");
   };
 
-  const handleOpenLink = () => {
+  const handleOpenLink = async () => {
     const parsed = parsePresenceLinkUrl(rawLink);
     if (!parsed) {
       setLocalError("This is not a valid Presence link. Enter a session link in the presence://link format.");
@@ -454,8 +474,10 @@ export default function App() {
       return;
     }
     Keyboard.dismiss();
-    setLocalError(null);
-    activateEnvelope(parsed, "link");
+    const loaded = await activateEnvelope(parsed, "link", rawLink);
+    if (!loaded) {
+      return;
+    }
     addLog(`✅ Link session ${parsed.sessionId} loaded — tap Approve to create a linked proof`);
   };
 
@@ -471,7 +493,7 @@ export default function App() {
         addLog("❌ Scanned QR payload was not a Presence link");
         return;
       }
-      activateEnvelope(parsed, "qr");
+      await activateEnvelope(parsed, "qr", payload);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (!message.includes("cancelled")) {
@@ -720,6 +742,7 @@ export default function App() {
                       </Text>
                       <View style={styles.loadedSessionMeta}>
                         <KeyValue label="Service" value={openedEnvelope.serviceId ?? "unknown"} />
+                        <KeyValue label="Service domain" value={openedEnvelope.serviceDomain ?? "not supplied"} />
                         <KeyValue label="Session" value={openedEnvelope.sessionId} mono />
                         <KeyValue label="Flow" value={openedEnvelope.flow ?? "initial_link"} />
                         <KeyValue label="Code" value={openedEnvelope.code ?? "none"} mono />

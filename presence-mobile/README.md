@@ -134,6 +134,7 @@ import {
 const url = buildPresenceLinkUrl({
   sessionId: "plink_ab12cd34",
   serviceId: "discord-bot",
+  serviceDomain: "presence.example.com",
   accountId: "user_123",
   bindingId: "pbind_xy98mn76",
   flow: "relink",
@@ -141,6 +142,8 @@ const url = buildPresenceLinkUrl({
   nonce: "base64url_nonce",
   returnUrl: "myapp://presence/complete",
   code: "AB12CD",
+  nonceUrl: "https://presence.example.com/presence/nonce",
+  verifyUrl: "https://presence.example.com/presence/verify",
 });
 
 const parsed = parsePresenceLinkUrl(url);
@@ -154,6 +157,10 @@ Recommended architecture:
 - mobile app opens the deeplink and resolves session context
 - mobile calls `prove()` with flow + session + binding hint
 - service completes the session server-side
+
+If a deeplink/session includes `nonce_url` or `verify_url`, the app now requires
+`service_domain` and validates those URLs against `https://{service_domain}/.well-known/presence.json`
+before approval or later binding sync. Mismatches fail closed.
 
 This gives product teams a path to UX completion without implementing native scanner/camera behavior in this phase.
 
