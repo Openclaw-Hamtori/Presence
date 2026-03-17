@@ -206,6 +206,8 @@ export async function proveMeasured(measurement: MeasureResult, options: ProveOp
       lastVerifiedAt: Math.floor(Date.now() / 1000),
       status: flow === "recovery" || flow === "relink" ? "recovery_pending" : "linked",
       sync: bindingHint.sync ?? linkSessionHint?.completion?.sync,
+    }, {
+      allowLinkedRecoveryExit: flow === "reauth",
     });
   } else if (linkSessionHint?.accountId) {
     state = addOrUpdateServiceBinding(state, {

@@ -201,14 +201,18 @@ export function updatePresenceSnapshot(
   });
 }
 
-export function addOrUpdateServiceBinding(state: PresenceState, binding: ServiceBinding): PresenceState {
+export function addOrUpdateServiceBinding(
+  state: PresenceState,
+  binding: ServiceBinding,
+  options?: { allowLinkedRecoveryExit?: boolean }
+): PresenceState {
   const existingById = state.serviceBindings.find((item) => item.bindingId === binding.bindingId);
   const existingByLogicalKey = state.serviceBindings.find(
     (item) => item.serviceId === binding.serviceId && item.accountId === binding.accountId && isActiveBinding(item)
   );
   const existing = existingById ?? existingByLogicalKey;
 
-  const nextStatus = resolveBindingStatus(existing, binding.status);
+  const nextStatus = resolveBindingStatus(existing, binding.status, options);
   const bindings = state.serviceBindings.filter((item) => {
     if (item.bindingId === binding.bindingId) return false;
     if (
@@ -341,12 +345,14 @@ function isActiveBinding(binding: ServiceBinding): boolean {
 
 function resolveBindingStatus(
   existing: ServiceBinding | undefined,
-  incomingStatus: ServiceBinding["status"]
+  incomingStatus: ServiceBinding["status"],
+  options?: { allowLinkedRecoveryExit?: boolean }
 ): ServiceBinding["status"] {
   if (!existing) return incomingStatus;
   if (
     (existing.status === "recovery_pending" || existing.status === "reauth_required") &&
-    incomingStatus === "linked"
+    incomingStatus === "linked" &&
+    !options?.allowLinkedRecoveryExit
   ) {
     return existing.status;
   }
