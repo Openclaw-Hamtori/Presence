@@ -262,6 +262,11 @@ export function base64urlToUint8Array(input: string): Uint8Array {
   if (!/^[A-Za-z0-9\-_]*$/.test(normalized)) {
     throw new Error("invalid base64url string: contains illegal characters");
   }
+  if (normalized.length % 4 === 1) {
+    throw new Error(
+      `invalid base64url string: length ${normalized.length} (mod 4 = 1) can never be valid base64url; input may be a plain string instead of base64url`
+    );
+  }
   const base64 = normalized
     .replace(/-/g, "+")
     .replace(/_/g, "/")
