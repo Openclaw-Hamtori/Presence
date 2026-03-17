@@ -24,6 +24,7 @@ interface CachedPresenceWellKnown {
 }
 
 const WELL_KNOWN_CACHE_TTL_MS = 15 * 60 * 1000;
+const WELL_KNOWN_FETCH_TIMEOUT_MS = 10_000;
 const wellKnownCache = new Map<string, CachedPresenceWellKnown>();
 
 const DEMO_SERVICE_DOMAIN = "demo.presence.local";
@@ -110,7 +111,7 @@ async function validateServiceSyncTargets(params: {
       );
     }
 
-    if (!allowedPrefixes.some((prefix) => absoluteUrl.startsWith(prefix))) {
+    if (!allowedPrefixes.some((prefix) => matchesAllowedPrefix(absoluteUrl, prefix))) {
       return err(
         "ERR_SERVICE_TRUST_INVALID",
         `${label} is outside the allowed Presence URL scope for ${serviceId} on ${serviceDomain}.`
@@ -142,19 +143,27 @@ async function loadPresenceWellKnown(params: {
   }
 
   const wellKnownUrl = `https://${params.serviceDomain}/.well-known/presence.json`;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), WELL_KNOWN_FETCH_TIMEOUT_MS);
   let response: Response;
 
   try {
     response = await fetch(wellKnownUrl, {
       method: "GET",
       headers: { accept: "application/json" },
+      signal: controller.signal,
     });
   } catch (cause) {
+    const message = cause instanceof Error && cause.name === "AbortError"
+      ? `Presence metadata fetch timed out after ${WELL_KNOWN_FETCH_TIMEOUT_MS}ms for ${params.serviceDomain}.`
+      : `Couldn't fetch Presence metadata from ${wellKnownUrl}. Try again or request a new link from ${params.serviceId}.`;
     return err(
       "ERR_SERVICE_TRUST_INVALID",
-      `Couldn't fetch Presence metadata from ${wellKnownUrl}. Try again or request a new link from ${params.serviceId}.`,
+      message,
       cause
     );
+  } finally {
+    clearTimeout(timeout);
   }
 
   const rawBody = await response.text();
@@ -255,6 +264,14 @@ function normalizeAllowedPrefixes(prefixes: string[]): string[] {
   return prefixes
     .map((prefix) => normalizeAbsoluteUrl(prefix))
     .filter((prefix): prefix is string => !!prefix);
+}
+
+function matchesAllowedPrefix(url: string, prefix: string): boolean {
+  if (!url.startsWith(prefix)) return false;
+  if (url.length === prefix.length) return true;
+
+  const boundary = url.charAt(prefix.length);
+  return boundary === "/" || boundary === "?" || boundary === "#";
 }
 
 function normalizeAbsoluteUrl(value?: string): string | null {

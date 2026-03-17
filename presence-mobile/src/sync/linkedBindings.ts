@@ -48,6 +48,11 @@ export async function syncLinkedBindings(params: {
       await removeLinkedBindingSyncJob(binding.bindingId);
     } catch (error) {
       const message = toErrorMessage(error);
+      if (isTrustFailure(error)) {
+        await markBindingSyncExhausted(binding.bindingId);
+        result.errors.push({ bindingId: binding.bindingId, message });
+        continue;
+      }
       const job = await upsertLinkedBindingSyncJob({ binding, measurement: measured });
       const exhausted = await recordLinkedBindingSyncFailure(binding.bindingId, message);
       if (job && exhausted) {
@@ -92,6 +97,12 @@ export async function flushQueuedLinkedBindingSyncs(params: {
       await removeLinkedBindingSyncJob(binding.bindingId);
     } catch (error) {
       const message = toErrorMessage(error);
+      if (isTrustFailure(error)) {
+        await removeLinkedBindingSyncJob(binding.bindingId);
+        await markBindingSyncExhausted(binding.bindingId);
+        result.errors.push({ bindingId: binding.bindingId, message });
+        continue;
+      }
       const exhausted = await recordLinkedBindingSyncFailure(binding.bindingId, message);
       if (exhausted) {
         await markBindingSyncExhausted(binding.bindingId);
@@ -281,8 +292,16 @@ function safeJsonParse(raw: string): any {
   }
 }
 
+function isTrustFailure(error: unknown): boolean {
+  return !!error && typeof error === "object" && "code" in error && (error as { code?: unknown }).code === "ERR_SERVICE_TRUST_INVALID";
+}
+
 function toErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === "object" && "message" in error && typeof (error as { message?: unknown }).message === "string") {
+    return (error as { message: string }).message;
+  }
+  return String(error);
 }
 
 function emptyResult(): LinkedBindingSyncResult {
