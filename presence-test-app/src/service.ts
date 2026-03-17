@@ -15,6 +15,7 @@ import {
   attachLinkSession,
   addOrUpdateServiceBinding,
   markBindingForRecovery,
+  markBindingLinked,
   unlinkServiceBinding,
   computeStateStatus,
 } from "./state/presenceState";
@@ -305,6 +306,14 @@ export async function markBindingMismatchForRecovery(bindingId: string, recovery
   const state = await loadPresenceState();
   if (!state) return null;
   const next = markBindingForRecovery(state, { bindingId, recoveryReason, status: "recovery_pending" });
+  await savePresenceState(next);
+  return next;
+}
+
+export async function markBindingVerified(bindingId: string): Promise<PresenceState | null> {
+  const state = await loadPresenceState();
+  if (!state) return null;
+  const next = markBindingLinked(state, bindingId);
   await savePresenceState(next);
   return next;
 }

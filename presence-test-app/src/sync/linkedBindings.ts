@@ -1,5 +1,5 @@
 import { loadPresenceState } from "../state/presenceState";
-import { markBindingMismatchForRecovery, measure, proveMeasured } from "../service";
+import { markBindingMismatchForRecovery, markBindingVerified, measure, proveMeasured } from "../service";
 import type { MeasureResult } from "../service";
 import type { PresenceState, ServiceBinding } from "../types/index";
 import {
@@ -154,6 +154,8 @@ async function executeBindingSync(
       bindingWithSync.bindingId,
       verifyResponse.recovery?.reason ?? verifyResponse.message ?? "binding_mismatch"
     );
+  } else {
+    await markBindingVerified(bindingWithSync.bindingId);
   }
 
   return "verified";

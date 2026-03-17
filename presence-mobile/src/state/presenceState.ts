@@ -273,6 +273,23 @@ export function unlinkServiceBinding(state: PresenceState, bindingId: string): P
   });
 }
 
+export function markBindingLinked(state: PresenceState, bindingId: string): PresenceState {
+  return withComputedStatus({
+    ...state,
+    serviceBindings: state.serviceBindings.map((binding) =>
+      binding.bindingId === bindingId
+        ? {
+            ...binding,
+            status: "linked",
+            recoveryStartedAt: undefined,
+            recoveryReason: undefined,
+            lastVerifiedAt: Math.floor(Date.now() / 1000),
+          }
+        : binding
+    ),
+  });
+}
+
 export function attachLinkSession(state: PresenceState, session: LinkSession): PresenceState {
   return withComputedStatus({ ...state, activeLinkSession: session });
 }

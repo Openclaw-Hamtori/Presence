@@ -15,6 +15,7 @@
  * This module defines the JS interface and expected native bridge contract.
  */
 
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { NativeModules, Platform } from "react-native";
 import { computeAttestationDigest, sha256Hex, base64urlToUint8Array } from "../crypto/index";
 import type { Result } from "../types/index";
@@ -64,6 +65,16 @@ export interface AppAttestResult {
   attestationDigest: string;
 }
 
+const APP_ATTEST_KEY_ID_STORAGE_KEY = "presence.appAttest.keyId";
+
+async function loadOrCreateAttestKeyId(native: PresenceAttestNativeModule): Promise<string> {
+  const cached = await AsyncStorage.getItem(APP_ATTEST_KEY_ID_STORAGE_KEY);
+  if (cached) return cached;
+  const keyId = await native.generateAttestKey();
+  await AsyncStorage.setItem(APP_ATTEST_KEY_ID_STORAGE_KEY, keyId);
+  return keyId;
+}
+
 /**
  * Perform App Attest key generation + attestation.
  *
@@ -82,8 +93,8 @@ export async function performAppAttest(
   }
 
   try {
-    // Step 1: Generate attestation key
-    const keyId = await native.generateAttestKey();
+    // Step 1: Load existing attestation key or generate once
+    const keyId = await loadOrCreateAttestKeyId(native);
 
     // Step 2: clientData = SHA-256(nonce bytes)
     const nonceBytes = base64urlToUint8Array(nonce);
