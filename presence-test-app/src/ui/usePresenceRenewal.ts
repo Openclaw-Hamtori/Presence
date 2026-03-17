@@ -150,11 +150,15 @@ export function usePresenceRenewal(
     } catch {
       success = false;
     } finally {
-      if (source === "background") {
-        await finishBackgroundRefresh(success);
-        await scheduleRenewal();
-      }
       isRenewingRef.current = false;
+      if (source === "background") {
+        try {
+          await finishBackgroundRefresh(success);
+        } catch {}
+        try {
+          await scheduleRenewal();
+        } catch {}
+      }
     }
   }, [scheduleRenewal]);
 
