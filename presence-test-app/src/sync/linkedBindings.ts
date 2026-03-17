@@ -200,6 +200,8 @@ function isSyncableBinding(binding: ServiceBinding, pass: boolean): boolean {
   return !!binding.sync.nonceUrl && !!binding.sync.verifyUrl;
 }
 
+const REQUEST_TIMEOUT_MS = 10_000;
+
 async function requestJson(
   url: string,
   init: {
@@ -208,26 +210,39 @@ async function requestJson(
     body?: string;
   }
 ): Promise<any> {
-  const response = await fetch(url, {
-    method: init.method,
-    headers: {
-      "content-type": "application/json",
-      ...(init.headers ?? {}),
-    },
-    body: init.body,
-  });
-  const raw = await response.text();
-  const parsed = raw ? safeJsonParse(raw) : undefined;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
-  if (!response.ok) {
-    if (parsed?.code === "ERR_BINDING_RECOVERY_REQUIRED") {
-      return parsed;
+  try {
+    const response = await fetch(url, {
+      method: init.method,
+      headers: {
+        "content-type": "application/json",
+        ...(init.headers ?? {}),
+      },
+      body: init.body,
+      signal: controller.signal,
+    });
+    const raw = await response.text();
+    const parsed = raw ? safeJsonParse(raw) : undefined;
+
+    if (!response.ok) {
+      if (parsed?.code === "ERR_BINDING_RECOVERY_REQUIRED") {
+        return parsed;
+      }
+      const message = parsed?.message ?? parsed?.detail ?? `HTTP ${response.status}`;
+      throw new Error(message);
     }
-    const message = parsed?.message ?? parsed?.detail ?? `HTTP ${response.status}`;
-    throw new Error(message);
-  }
 
-  return parsed;
+    return parsed;
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error(`Request timed out after ${REQUEST_TIMEOUT_MS}ms`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function extractNonce(payload: any): string | null {

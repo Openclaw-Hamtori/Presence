@@ -62,7 +62,9 @@ export async function upsertLinkedBindingSyncJob(params: {
     },
     kind,
     enqueuedAt: existing?.enqueuedAt ?? Math.floor(Date.now() / 1000),
-    attempts: 0,
+    lastAttemptAt: existing?.lastAttemptAt,
+    attempts: existing?.attempts ?? 0,
+    lastError: existing?.lastError,
   };
 
   const filtered = jobs.filter((job) => job.binding.bindingId !== params.binding.bindingId);
