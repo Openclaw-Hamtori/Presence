@@ -1,5 +1,5 @@
 import { loadPresenceState } from "../state/presenceState";
-import { markBindingMismatchForRecovery, markBindingVerified, measure, proveMeasured } from "../service";
+import { markBindingMismatchForRecovery, markBindingSyncExhausted, markBindingVerified, measure, proveMeasured } from "../service";
 import type { MeasureResult } from "../service";
 import type { PresenceState, ServiceBinding } from "../types/index";
 import {
@@ -47,8 +47,11 @@ export async function syncLinkedBindings(params: {
       await removeLinkedBindingSyncJob(binding.bindingId);
     } catch (error) {
       const message = toErrorMessage(error);
-      await upsertLinkedBindingSyncJob({ binding, measurement: measured });
-      await recordLinkedBindingSyncFailure(binding.bindingId, message);
+      const job = await upsertLinkedBindingSyncJob({ binding, measurement: measured });
+      const exhausted = await recordLinkedBindingSyncFailure(binding.bindingId, message);
+      if (job && exhausted) {
+        await markBindingSyncExhausted(binding.bindingId);
+      }
       result.errors.push({ bindingId: binding.bindingId, message });
     }
   }
@@ -88,7 +91,10 @@ export async function flushQueuedLinkedBindingSyncs(params: {
       await removeLinkedBindingSyncJob(binding.bindingId);
     } catch (error) {
       const message = toErrorMessage(error);
-      await recordLinkedBindingSyncFailure(binding.bindingId, message);
+      const exhausted = await recordLinkedBindingSyncFailure(binding.bindingId, message);
+      if (exhausted) {
+        await markBindingSyncExhausted(binding.bindingId);
+      }
       result.errors.push({ bindingId: binding.bindingId, message });
     }
   }

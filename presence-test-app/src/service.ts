@@ -327,6 +327,18 @@ export async function markBindingVerified(bindingId: string): Promise<PresenceSt
   return next;
 }
 
+export async function markBindingSyncExhausted(bindingId: string): Promise<PresenceState | null> {
+  const state = await loadPresenceState();
+  if (!state) return null;
+  const next = markBindingForRecovery(state, {
+    bindingId,
+    recoveryReason: "sync_retry_exhausted",
+    status: "reauth_required",
+  });
+  await savePresenceState(next);
+  return next;
+}
+
 export async function locallyUnlinkBinding(bindingId: string): Promise<PresenceState | null> {
   const state = await loadPresenceState();
   if (!state) return null;

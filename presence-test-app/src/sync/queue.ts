@@ -80,9 +80,10 @@ export async function removeLinkedBindingSyncJob(bindingId: string): Promise<voi
   await saveLinkedBindingSyncJobs(filtered);
 }
 
-export async function recordLinkedBindingSyncFailure(bindingId: string, message: string): Promise<void> {
+export async function recordLinkedBindingSyncFailure(bindingId: string, message: string): Promise<boolean> {
   const jobs = await loadLinkedBindingSyncJobs();
   const now = Math.floor(Date.now() / 1000);
+  let exhausted = false;
   const next = jobs.flatMap((job) => {
     if (job.binding.bindingId !== bindingId) return [job];
 
@@ -93,9 +94,11 @@ export async function recordLinkedBindingSyncFailure(bindingId: string, message:
       lastError: message,
     };
 
-    return failedJob.attempts >= MAX_LINKED_BINDING_SYNC_ATTEMPTS ? [] : [failedJob];
+    exhausted = failedJob.attempts >= MAX_LINKED_BINDING_SYNC_ATTEMPTS;
+    return exhausted ? [] : [failedJob];
   });
   await saveLinkedBindingSyncJobs(next);
+  return exhausted;
 }
 
 export function hasRemainingLinkedBindingSyncAttempts(job: LinkedBindingSyncJob): boolean {
