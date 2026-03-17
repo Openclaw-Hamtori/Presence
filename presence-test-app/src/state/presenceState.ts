@@ -202,12 +202,37 @@ export function updatePresenceSnapshot(
 }
 
 export function addOrUpdateServiceBinding(state: PresenceState, binding: ServiceBinding): PresenceState {
-  const existing = state.serviceBindings.find((item) => item.bindingId === binding.bindingId);
-  const bindings = state.serviceBindings.filter((item) => item.bindingId !== binding.bindingId);
+  const existingById = state.serviceBindings.find((item) => item.bindingId === binding.bindingId);
+  const existingByLogicalKey = state.serviceBindings.find(
+    (item) => item.serviceId === binding.serviceId && item.accountId === binding.accountId && isActiveBinding(item)
+  );
+  const existing = existingById ?? existingByLogicalKey;
+
+  const nextStatus = resolveBindingStatus(existing, binding.status);
+  const bindings = state.serviceBindings.filter((item) => {
+    if (item.bindingId === binding.bindingId) return false;
+    if (
+      isActiveBinding(item) &&
+      item.serviceId === binding.serviceId &&
+      item.accountId === binding.accountId
+    ) {
+      return false;
+    }
+    return true;
+  });
+
   bindings.push({
     ...existing,
     ...binding,
+    bindingId: binding.bindingId,
+    status: nextStatus,
     sync: binding.sync ?? existing?.sync,
+    recoveryStartedAt: nextStatus === "recovery_pending" || nextStatus === "reauth_required"
+      ? binding.recoveryStartedAt ?? existing?.recoveryStartedAt
+      : undefined,
+    recoveryReason: nextStatus === "recovery_pending" || nextStatus === "reauth_required"
+      ? binding.recoveryReason ?? existing?.recoveryReason
+      : undefined,
   });
   return withComputedStatus({ ...state, serviceBindings: bindings });
 }
@@ -308,6 +333,24 @@ export function recordFailedMeasurement(
 
 function withComputedStatus(state: PresenceState): PresenceState {
   return { ...state, status: computeStateStatus(state) };
+}
+
+function isActiveBinding(binding: ServiceBinding): boolean {
+  return binding.status !== "unlinked" && binding.status !== "revoked";
+}
+
+function resolveBindingStatus(
+  existing: ServiceBinding | undefined,
+  incomingStatus: ServiceBinding["status"]
+): ServiceBinding["status"] {
+  if (!existing) return incomingStatus;
+  if (
+    (existing.status === "recovery_pending" || existing.status === "reauth_required") &&
+    incomingStatus === "linked"
+  ) {
+    return existing.status;
+  }
+  return incomingStatus;
 }
 
 function computeNextMeasurementAt(params: {
