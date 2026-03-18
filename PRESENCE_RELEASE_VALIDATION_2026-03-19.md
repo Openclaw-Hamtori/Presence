@@ -39,8 +39,10 @@ Presence is now **code/test/integration-doc ready**, but still **runtime/device 
 
 ## What is still open
 ### 1. Real iPhone installation / launch re-check for the latest state
-Need to re-install the current app build on `iphone L` and confirm:
-- install succeeds
+Current state:
+- latest `presence-test-app` build re-installed to `iphone L` successfully ✅
+
+Still need to confirm on-device:
 - launch succeeds
 - main screen renders
 
