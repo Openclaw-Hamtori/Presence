@@ -35,8 +35,8 @@ GET  /presence/audit-events
     "expiresAt": 1741592600,
     "completion": {
       "method": "deeplink",
-      "qrUrl": "presence://link?...",
-      "deeplinkUrl": "https://presence.local/link?...",
+      "qrUrl": "presence://link?...&service_domain=presence.example.com",
+      "deeplinkUrl": "https://presence.example.com/link?...&service_domain=presence.example.com",
       "fallbackCode": "12CD34"
     },
     "endpoints": {
@@ -49,15 +49,18 @@ GET  /presence/audit-events
 
 The important part is that product teams can render QR/deeplink UX **without guessing where completion happens**.
 
+When a service asks the mobile app to use session-provided sync endpoints (`nonce_url`, `verify_url`), it should also provide `service_domain`. That domain must publish `https://{service_domain}/.well-known/presence.json` with the matching `service_id` and `allowed_url_prefixes` that cover those URLs. The mobile app should fail closed when this trust metadata is missing or mismatched.
+
 ## 3. Mobile-linked completion
 
 Recommended web/desktop flow:
 1. Backend creates a link session.
 2. Backend returns `completion.completion.qrUrl` and/or `completion.completion.deeplinkUrl`.
 3. Web/desktop renders QR.
-4. Mobile app opens deeplink and extracts `session_id`, `service_id`, optional `binding_id`, `flow`, and `code`.
-5. Mobile posts the Presence proof to the backend completion endpoint.
-6. Backend verifies and returns a standard linked state payload.
+4. Mobile app opens deeplink and extracts `session_id`, `service_id`, optional `service_domain`, optional `binding_id`, `flow`, and `code`.
+5. If the deeplink/session includes `nonce_url` or `verify_url`, mobile validates them against `https://{service_domain}/.well-known/presence.json` before approval or later binding sync.
+6. Mobile posts the Presence proof to the backend completion endpoint.
+7. Backend verifies and returns a standard linked state payload.
 
 ## 4. Completion success response
 
@@ -104,7 +107,7 @@ When an already-linked account proves from the wrong device, the backend should 
       "sessionId": "plink_recover_01",
       "completion": {
         "method": "deeplink",
-        "deeplinkUrl": "https://presence.local/link?..."
+        "deeplinkUrl": "https://presence.example.com/link?...&service_domain=presence.example.com"
       },
       "endpoints": {
         "complete": {

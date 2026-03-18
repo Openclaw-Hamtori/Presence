@@ -37,7 +37,7 @@ function absolutize(baseUrl, value) {
   return `${baseUrl}${value}`;
 }
 
-function rewritePresenceQrUrl(rawUrl, baseUrl) {
+function rewritePresenceQrUrl(rawUrl, baseUrl, serviceDomain) {
   if (!rawUrl) return rawUrl;
   const [root, query = ""] = rawUrl.split("?");
   if (!query) return rawUrl;
@@ -49,17 +49,20 @@ function rewritePresenceQrUrl(rawUrl, baseUrl) {
       params.set(key, absolutize(baseUrl, value));
     }
   }
+  if (serviceDomain && !params.get("service_domain")) {
+    params.set("service_domain", serviceDomain);
+  }
   return `${root}?${params.toString()}`;
 }
 
-function rewriteSessionForPublicBase(session, baseUrl) {
+function rewriteSessionForPublicBase(session, baseUrl, serviceDomain) {
   if (!session?.completion) return session;
   return {
     ...session,
     completion: {
       ...session.completion,
-      qrUrl: rewritePresenceQrUrl(session.completion.qrUrl, baseUrl),
-      deeplinkUrl: rewritePresenceQrUrl(session.completion.deeplinkUrl, baseUrl),
+      qrUrl: rewritePresenceQrUrl(session.completion.qrUrl, baseUrl, serviceDomain),
+      deeplinkUrl: rewritePresenceQrUrl(session.completion.deeplinkUrl, baseUrl, serviceDomain),
       sessionStatusUrl: absolutize(baseUrl, session.completion.sessionStatusUrl),
       completionApiUrl: absolutize(baseUrl, session.completion.completionApiUrl),
       linkedNonceApiUrl: absolutize(baseUrl, session.completion.linkedNonceApiUrl),
@@ -73,6 +76,7 @@ async function main() {
   const host = process.env.HOST || "127.0.0.1";
   const serviceId = process.env.PRESENCE_SERVICE_ID || "demo-service";
   const publicBaseUrl = (process.env.PUBLIC_BASE_URL || `http://${host}:${port}`).replace(/\/$/, "");
+  const serviceDomain = process.env.PRESENCE_SERVICE_DOMAIN || "";
   const root = mkdtempSync(join(tmpdir(), "presence-local-reference-server-"));
   const storePath = fileLinkageStorePath(root);
 
@@ -106,7 +110,20 @@ async function main() {
       const method = req.method || "GET";
 
       if (method === "GET" && url.pathname === "/health") {
-        send(200, { ok: true, serviceId, storePath });
+        send(200, { ok: true, serviceId, serviceDomain: serviceDomain || undefined, storePath });
+        return;
+      }
+
+      if (method === "GET" && url.pathname === "/.well-known/presence.json") {
+        if (!serviceDomain) {
+          send(404, { ok: false, code: "ERR_SERVICE_DOMAIN_NOT_CONFIGURED" });
+          return;
+        }
+        send(200, {
+          version: "1",
+          service_id: serviceId,
+          allowed_url_prefixes: [`${publicBaseUrl}/presence/`],
+        });
         return;
       }
 
@@ -118,7 +135,7 @@ async function main() {
           metadata: body.metadata || { source: "local-reference-server" },
           relinkOfBindingId: body.relinkOfBindingId,
         });
-        const publicSession = rewriteSessionForPublicBase(session, publicBaseUrl);
+        const publicSession = rewriteSessionForPublicBase(session, publicBaseUrl, serviceDomain);
         const response = createCompletionSessionResponse({ session: publicSession, contract: endpointContract });
         if (response.completion?.endpoints?.complete?.path) {
           response.completion.endpoints.complete.path = absolutize(publicBaseUrl, response.completion.endpoints.complete.path);
@@ -163,7 +180,7 @@ async function main() {
           send(404, { ok: false, code: "ERR_SESSION_NOT_FOUND" });
           return;
         }
-        send(200, { ok: true, session: rewriteSessionForPublicBase(session, publicBaseUrl) });
+        send(200, { ok: true, session: rewriteSessionForPublicBase(session, publicBaseUrl, serviceDomain) });
         return;
       }
 
@@ -240,9 +257,11 @@ async function main() {
       host,
       port,
       serviceId,
+      serviceDomain: serviceDomain || undefined,
       storePath,
       endpoints: {
         health: `${publicBaseUrl}/health`,
+        wellKnown: serviceDomain ? `${publicBaseUrl}/.well-known/presence.json` : undefined,
         createSession: `${publicBaseUrl}/presence/link-sessions`,
         publicBaseUrl,
       },
