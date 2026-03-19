@@ -243,18 +243,60 @@ Minimal reference model in this phase:
 4. Mobile app opens the deeplink and extracts:
    - `session_id`
    - `service_id`
+   - optional `service_domain`
    - optional `binding_id`
    - optional `flow`
    - optional fallback `code`
    - optional `nonce_url`, `verify_url`
-5. Mobile produces proof and posts to `session.completion.completionApiUrl` or the standardized completion endpoint.
-6. After the first link, mobile can refresh in background by calling:
+5. If the deeplink/session includes sync URLs like `nonce_url` or `verify_url`, mobile should validate them against `https://{service_domain}/.well-known/presence.json` before approval.
+6. Mobile produces proof and posts to `session.completion.completionApiUrl` or the standardized completion endpoint.
+7. After the first link, mobile can refresh in background by calling:
    - `linkedNonceApiUrl` to mint a fresh nonce
    - `verifyLinkedAccountApiUrl` to submit a fresh PASS proof
 7. Mobile persists failed PASS verify attempts locally and retries them on foreground/background wake.
 8. Service calls `completeLinkSession()`, `verifyLinkedAccount()`, or `getLinkedAccountReadiness()` and returns a normalized linked/recovery/readiness payload.
 
 This is enough to wire real product UX without building scanner/native camera stack yet.
+
+---
+
+## Production checklist
+
+- [ ] Replace in-memory nonce handling with a persistent managed store
+- [ ] Replace `InMemoryTofuStore` with a persistent DB-backed implementation
+- [ ] Replace `FileSystemLinkageStore` with your real DB adapter
+- [ ] Always send explicit top-level `platform`
+- [ ] Set `iosAppId` and/or `androidPackageName`
+- [ ] Complete platform attestation integration in `presence-verifier`
+- [ ] Enforce `getLinkedAccountReadiness()` or equivalent freshness gating before granting access
+- [ ] Add user-facing notification UX around revoke / relink
+
+---
+
+## Build & test
+
+```bash
+cd ../presence-verifier && npm install && npm run build && npm test
+cd ../presence-sdk && npm run build && npm test
+```
+
+`npm test` now includes a local HTTP reference-server round-trip that exercises:
+- `POST /presence/link-sessions`
+- `POST /presence/link-sessions/:sessionId/complete`
+- `POST /presence/linked-accounts/:accountId/verify`
+
+So you can verify the end-to-end linkage flow locally: create session -> app proof -> complete -> binding saved -> verify linked account.
+
+---
+
+## License
+
+MIT
+ost-only
+- [ ] `https://{service_domain}/.well-known/presence.json` is publicly reachable over HTTPS
+- [ ] `service_id` in the well-known JSON matches the link session `service_id`
+- [ ] `allowed_url_prefixes` actually covers emitted `nonce_url` and `verify_url`
+- [ ] well-known responses use cache headers that won't pin stale metadata during rollout/debugging
 
 ---
 

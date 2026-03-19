@@ -51,6 +51,37 @@ The important part is that product teams can render QR/deeplink UX **without gue
 
 When a service asks the mobile app to use session-provided sync endpoints (`nonce_url`, `verify_url`), it should also provide `service_domain`. That domain must publish `https://{service_domain}/.well-known/presence.json` with the matching `service_id` and `allowed_url_prefixes` that cover those URLs. The mobile app should fail closed when this trust metadata is missing or mismatched.
 
+### Trust metadata rules that integrators must get right
+
+#### `service_domain`
+- must be **host only**
+- do **not** include scheme (`https://`), path, query, hash, or userinfo
+- examples:
+  - `noctu.link` ✅
+  - `https://noctu.link` ❌
+  - `noctu.link/presence` ❌
+
+#### `allowed_url_prefixes`
+- treat each entry as an **absolute URL prefix string**, not a generic homepage URL
+- `nonce_url`, `verify_url`, and any other session-provided sync URL must fall under one of these prefixes
+- prefix semantics matter: a trailing slash can change boundary matching behavior
+- for paths like `https://example.com/presence/linked-accounts/...`, prefer a prefix like `https://example.com/presence`
+
+Recommended minimal metadata:
+
+```json
+{
+  "version": "1",
+  "service_id": "your-service-id",
+  "allowed_url_prefixes": [
+    "https://example.com/presence"
+  ]
+}
+```
+
+Operational recommendation:
+- serve `/.well-known/presence.json` with `Cache-Control: no-store` (especially during rollout/debugging)
+
 ## 3. Mobile-linked completion
 
 Recommended web/desktop flow:

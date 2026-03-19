@@ -119,11 +119,20 @@ async function main() {
           send(404, { ok: false, code: "ERR_SERVICE_DOMAIN_NOT_CONFIGURED" });
           return;
         }
-        send(200, {
+        // `allowed_url_prefixes` is matched as a prefix string by the mobile client.
+        // Keep the service path prefix stable and avoid adding an unnecessary trailing slash
+        // when your sync URLs look like `/presence/linked-accounts/...` or `/presence/link-sessions/...`.
+        // During rollout/debugging, returning no-store helps avoid stale trust metadata.
+        res.writeHead(200, {
+          "content-type": "application/json",
+          "Cache-Control": "no-store, no-cache, max-age=0",
+          Pragma: "no-cache",
+        });
+        res.end(JSON.stringify({
           version: "1",
           service_id: serviceId,
-          allowed_url_prefixes: [`${publicBaseUrl}/presence/`],
-        });
+          allowed_url_prefixes: [`${publicBaseUrl}/presence`],
+        }, null, 2));
         return;
       }
 
