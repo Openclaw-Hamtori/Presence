@@ -399,6 +399,7 @@ export default function App() {
       setOpenedEnvelope(null);
       setConnectionError(trustValidation.error.message);
       addLog(`❌ ${trustValidation.error.code} — ${trustValidation.error.message}`);
+      console.log(`[PresenceTestApp] ❌ ${trustValidation.error.code} — ${trustValidation.error.message}`);
       return false;
     }
 
