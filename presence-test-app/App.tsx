@@ -493,7 +493,7 @@ export default function App() {
       const parsed = parsePresenceLinkUrl(payload);
       if (!parsed) {
         setConnectionError("The QR code was read, but it is not a valid Presence link.");
-        addLog("❌ Scanned QR payload was not a Presence link");
+        addLog(`❌ Scanned QR payload was not a Presence link — raw=${payload.slice(0, 180)}`);
         return;
       }
       await activateEnvelope(parsed, "qr", payload);
