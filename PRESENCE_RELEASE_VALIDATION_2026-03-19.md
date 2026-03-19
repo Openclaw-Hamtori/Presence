@@ -47,9 +47,14 @@ Still need to confirm on-device:
 - main screen renders
 
 ### 2. Trust validation UX on real device
-Need to check one real/manual flow for:
+Current state:
+- invalid trust metadata path was exercised on-device
+- fail-closed behavior worked: the bad session did not proceed
+- follow-up fix landed: connection trust errors are now surfaced inside the connect modal and should clear on input change / modal dismiss / different-session reload
+
+Still need to check on-device:
 - valid `service_domain` + well-known path passes
-- invalid/missing trust metadata fails clearly for the user
+- invalid/missing trust metadata now fails clearly *and* clears cleanly without app restart
 
 ### 3. Final runtime release evidence
 Still needed before full release signoff:
@@ -59,11 +64,28 @@ Still needed before full release signoff:
 - known limitations note after device/runtime observation
 
 ## Suggested immediate sequence
-1. Reinstall latest `presence-test-app` on `iphone L`
+1. Reinstall latest `presence-test-app` on `iphone L` when the phone is back on the Mac
 2. Confirm launch + visible UI sanity
-3. Run one trust-model happy-path / failure-path manual check
-4. Then collect background refresh + real-backend evidence
+3. Re-run the trust failure path and confirm the message clears cleanly inside the connect modal
+4. Run one trust-model happy-path manual check with a proper HTTPS domain + valid well-known metadata
+5. Then collect background refresh + real-backend evidence
+
+## Tonight device plan
+When the phone is connected again tonight, use this order:
+1. install latest build
+2. open app and confirm launch/main screen
+3. open Connect modal
+4. paste a deliberately bad session and confirm:
+   - error shows inside the connect modal
+   - editing the link clears the error
+   - closing/reopening the modal clears stale trust error UI
+5. run one valid session against a proper HTTPS trust setup
+6. if that passes, move to renewal / backend evidence collection
 
 ## Notes
 - This file is the current handoff point for release validation.
 - `REGRESSION_CHECKLIST.md` is the checkbox ledger; this file is the judgment/evidence summary.
+- Relevant latest fixes in this phase:
+  - `a326193` — trust metadata integration guidance
+  - `323e2c5` / `bf1a72c` — release validation + device reinstall progress notes
+  - `5992801` — connect trust errors surfaced + cleared more predictably

@@ -49,6 +49,8 @@
 - [ ] 세션 열림 상태가 UI에서 눈에 띄게 보임
 - [ ] 승인 가능 상태 확인 가능
 - [ ] link_context 포함 proof 생성 가능
+- [ ] trust failure가 connect modal 안에서 명확히 보임
+- [ ] trust failure 메시지가 입력 수정 / modal 닫기 / 다른 세션 로드 때 clear됨
 
 ## 6. QR Flow
 - [x] QR 버튼 동작
