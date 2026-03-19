@@ -296,7 +296,10 @@ export async function proveMeasured(measurement: MeasureResult, options: ProveOp
   });
   await savePresenceState(state);
 
-  console.log("[PresenceService] signing_public_key_bytes", base64urlToUint8Array(measurement.publicKeyBase64).length);
+  const signingPublicKeyBytes = base64urlToUint8Array(measurement.publicKeyBase64);
+  console.log("[PresenceService] signing_public_key_bytes", signingPublicKeyBytes.length);
+  console.log("[PresenceService] signing_public_key_prefix_hex", Array.from(signingPublicKeyBytes.slice(0, 24)).map((b) => b.toString(16).padStart(2, "0")).join(""));
+  console.log("[PresenceService] signing_public_key_prefix_b64url", measurement.publicKeyBase64.slice(0, 48));
   console.log("[PresenceService] device_attestation_bytes", base64urlToUint8Array(attestationBase64url).length);
   console.log("[PresenceService] attestation_signature_bytes", base64urlToUint8Array(signResult.value).length);
 
