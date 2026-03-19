@@ -81,13 +81,14 @@ async function validateServiceSyncTargets(params: {
     );
   }
 
-  const serviceDomain = normalizeServiceDomain(params.serviceDomain);
-  if (!serviceDomain) {
+  const serviceDomainDebug = explainServiceDomain(params.serviceDomain);
+  if (!serviceDomainDebug.normalized) {
     return err(
       "ERR_SERVICE_TRUST_INVALID",
-      `This link includes service sync URLs for ${serviceId} but is missing a valid service_domain. Open a newer Presence link from the service.`
+      `This link includes service sync URLs for ${serviceId} but service_domain is invalid (${serviceDomainDebug.reason}; raw=${JSON.stringify(serviceDomainDebug.raw)}).`
     );
   }
+  const serviceDomain = serviceDomainDebug.normalized;
 
   const wellKnown = await loadPresenceWellKnown({ serviceDomain, serviceId });
   if (!wellKnown.ok) {
@@ -244,20 +245,27 @@ function getBuiltInWellKnown(serviceDomain: string): PresenceWellKnownDocument |
   return serviceDomain === DEMO_SERVICE_DOMAIN ? DEMO_WELL_KNOWN : null;
 }
 
-function normalizeServiceDomain(value?: string): string | null {
-  if (!value) return null;
-  const trimmed = value.trim();
-  if (!trimmed || /^https?:\/\//i.test(trimmed)) return null;
+function explainServiceDomain(value?: string): { raw: string | null; normalized: string | null; reason: string } {
+  if (value == null) return { raw: null, normalized: null, reason: "missing" };
+  const raw = String(value);
+  const trimmed = raw.trim();
+  if (!trimmed) return { raw, normalized: null, reason: "empty" };
+  if (/^https?:\/\//i.test(trimmed)) return { raw, normalized: null, reason: "must_not_include_scheme" };
 
   try {
     const parsed = new URL(`https://${trimmed}`);
-    if (parsed.pathname !== "/" || parsed.search || parsed.hash || parsed.username || parsed.password) {
-      return null;
-    }
-    return parsed.host.toLowerCase();
+    if (parsed.pathname !== "/") return { raw, normalized: null, reason: `must_not_include_path:${parsed.pathname}` };
+    if (parsed.search) return { raw, normalized: null, reason: "must_not_include_query" };
+    if (parsed.hash) return { raw, normalized: null, reason: "must_not_include_hash" };
+    if (parsed.username || parsed.password) return { raw, normalized: null, reason: "must_not_include_userinfo" };
+    return { raw, normalized: parsed.host.toLowerCase(), reason: "ok" };
   } catch {
-    return null;
+    return { raw, normalized: null, reason: "invalid_host" };
   }
+}
+
+function normalizeServiceDomain(value?: string): string | null {
+  return explainServiceDomain(value).normalized;
 }
 
 function normalizeAllowedPrefixes(prefixes: string[]): string[] {
