@@ -331,6 +331,7 @@ export default function App() {
   const [openedEnvelope, setOpenedEnvelope] = useState<LinkCompletionEnvelope | null>(null);
   const demoFlow: LinkFlow = "initial_link";
   const [localError, setLocalError] = useState<string | null>(null);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
   const [showConnection, setShowConnection] = useState(false);
   const [showService, setShowService] = useState(false);
   const [showDevTools, setShowDevTools] = useState(false);
@@ -467,6 +468,7 @@ export default function App() {
   };
 
   const handleOpenLink = async () => {
+    setConnectionError(null);
     const parsed = parsePresenceLinkUrl(rawLink);
     if (!parsed) {
       setLocalError("This is not a valid Presence link. Enter a session link in the presence://link format.");
@@ -687,6 +689,7 @@ export default function App() {
           <TouchableWithoutFeedback
             onPress={() => {
               Keyboard.dismiss();
+              setConnectionError(null);
               setShowConnection(false);
             }}
           >
@@ -776,7 +779,11 @@ export default function App() {
                       <TextInput
                         style={styles.input}
                         value={rawLink}
-                        onChangeText={setRawLink}
+                        onChangeText={(value) => {
+                          setRawLink(value);
+                          setConnectionError(null);
+                          setOpenedEnvelope(null);
+                        }}
                         placeholder="Paste a presence://link session here"
                         placeholderTextColor={C.subtext}
                         multiline
