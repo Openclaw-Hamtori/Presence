@@ -76,11 +76,11 @@ Still needed before full release signoff:
 - known limitations note after device/runtime observation
 
 ## Suggested immediate sequence
-1. Reinstall latest `presence-test-app` on `iphone L` when the phone is back on the Mac
-2. Confirm launch + visible UI sanity
-3. Re-run the trust failure path and confirm the message clears cleanly inside the connect modal
-4. Run one trust-model happy-path manual check with a proper HTTPS domain + valid well-known metadata
-5. Then collect background refresh + real-backend evidence
+1. Keep the current real-device happy-path result as the new baseline
+2. Collect background refresh / renewal-window evidence
+3. Collect `ready -> stale -> not_ready` propagation evidence
+4. Add a short known-behavior note for deeplink replay / nonce expiry
+5. Then close the remaining release signoff notes
 
 ## Latest resolved issue
 - `d954bf4` — `fix: isolate connect flow errors from main banner`
@@ -114,3 +114,12 @@ nt handoff point for release validation.
   - `323e2c5` / `bf1a72c` — release validation + device reinstall progress notes
   - `5992801` — connect trust errors surfaced + cleared more predictably
 — connect trust errors surfaced + cleared more predictably
+ed more predictably
+nt handoff point for release validation.
+- `REGRESSION_CHECKLIST.md` is the checkbox ledger; this file is the judgment/evidence summary.
+- Relevant latest fixes in this phase:
+  - `a326193` — trust metadata integration guidance
+  - `323e2c5` / `bf1a72c` — release validation + device reinstall progress notes
+  - `5992801` — connect trust errors surfaced + cleared more predictably
+— connect trust errors surfaced + cleared more predictably
+rrors surfaced + cleared more predictably
