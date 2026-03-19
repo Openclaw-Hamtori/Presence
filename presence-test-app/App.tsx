@@ -442,6 +442,15 @@ export default function App() {
   const hasRecovery = presence.state?.serviceBindings?.some((binding) => binding.status === "recovery_pending" || binding.status === "reauth_required") ?? false;
   const productState = getProductState(presence.phase, presence.state?.pass, hasRecovery);
   const activeSession = openedEnvelope;
+  const openedSessionAlreadyLinked = !!(
+    openedEnvelope?.serviceId
+    && openedEnvelope?.accountId
+    && (presence.state?.serviceBindings ?? []).some((binding) => (
+      binding.serviceId === openedEnvelope.serviceId
+      && binding.accountId === openedEnvelope.accountId
+      && binding.status === "linked"
+    ))
+  );
   const stateMeta = [
     presence.timeRemaining ? `Valid for ${presence.timeRemaining}` : null,
     presence.state?.lastSignals?.length ? `Signals ${presence.state.lastSignals.join(", ")}` : null,
@@ -804,7 +813,9 @@ export default function App() {
                     <View style={styles.loadedSessionCard}>
                       <Text style={styles.loadedSessionLabel}>Approve service session</Text>
                       <Text style={styles.loadedSessionBody}>
-                        Session loaded. Review the details below, then tap Approve to generate a proof for this service.
+                        {openedSessionAlreadyLinked
+                          ? "This service/account is already linked in the current app state. Load a fresh link if you want to re-approve."
+                          : "Session loaded. Review the details below, then tap Approve to generate a proof for this service."}
                       </Text>
                       <View style={styles.loadedSessionMeta}>
                         <KeyValue label="Service" value={openedEnvelope.serviceId ?? "unknown"} />
