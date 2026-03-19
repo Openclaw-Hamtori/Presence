@@ -4,7 +4,7 @@
 
 import { readBiometricWindow, requestHealthKitPermissions, isHealthKitAvailable } from "./health/healthkit";
 import { evaluatePass } from "./health/pass";
-import { ensureDeviceKey, deriveIss, signAttestation } from "./crypto/index";
+import { ensureDeviceKey, deriveIss, signAttestation, base64urlToUint8Array } from "./crypto/index";
 import { performAppAttest } from "./attestation/appAttest";
 import { validateBindingSyncConfiguration } from "./linkTrust";
 import {
@@ -295,6 +295,10 @@ export async function proveMeasured(measurement: MeasureResult, options: ProveOp
     stateValidUntil: state.stateValidUntil,
   });
   await savePresenceState(state);
+
+  console.log("[PresenceService] signing_public_key_bytes", base64urlToUint8Array(measurement.publicKeyBase64).length);
+  console.log("[PresenceService] device_attestation_bytes", base64urlToUint8Array(attestationBase64url).length);
+  console.log("[PresenceService] attestation_signature_bytes", base64urlToUint8Array(signResult.value).length);
 
   return ok({
     payload: {
