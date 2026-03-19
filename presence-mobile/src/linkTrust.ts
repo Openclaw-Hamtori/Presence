@@ -251,17 +251,19 @@ function explainServiceDomain(value?: string): { raw: string | null; normalized:
   const trimmed = raw.trim();
   if (!trimmed) return { raw, normalized: null, reason: "empty" };
   if (/^https?:\/\//i.test(trimmed)) return { raw, normalized: null, reason: "must_not_include_scheme" };
-
-  try {
-    const parsed = new URL(`https://${trimmed}`);
-    if (parsed.pathname !== "/") return { raw, normalized: null, reason: `must_not_include_path:${parsed.pathname}` };
-    if (parsed.search) return { raw, normalized: null, reason: "must_not_include_query" };
-    if (parsed.hash) return { raw, normalized: null, reason: "must_not_include_hash" };
-    if (parsed.username || parsed.password) return { raw, normalized: null, reason: "must_not_include_userinfo" };
-    return { raw, normalized: parsed.host.toLowerCase(), reason: "ok" };
-  } catch {
+  if (/[\s]/.test(trimmed)) return { raw, normalized: null, reason: "must_not_include_whitespace" };
+  if (/[/?#@]/.test(trimmed)) {
+    const pathStart = trimmed.search(/[/?#@]/);
+    const suffix = pathStart >= 0 ? trimmed.slice(pathStart) : "";
+    return { raw, normalized: null, reason: suffix.startsWith("/") ? `must_not_include_path:${suffix}` : "must_not_include_query_or_userinfo" };
+  }
+  if (trimmed.startsWith(".") || trimmed.endsWith(".")) return { raw, normalized: null, reason: "invalid_host" };
+  if (!/^[A-Za-z0-9.-]+$/.test(trimmed)) return { raw, normalized: null, reason: "invalid_host" };
+  if (!trimmed.includes(".")) return { raw, normalized: null, reason: "invalid_host" };
+  if (trimmed.split(".").some((label) => !label || label.length > 63 || !/^[A-Za-z0-9-]+$/.test(label) || label.startsWith("-") || label.endsWith("-"))) {
     return { raw, normalized: null, reason: "invalid_host" };
   }
+  return { raw, normalized: trimmed.toLowerCase(), reason: "ok" };
 }
 
 function normalizeServiceDomain(value?: string): string | null {
