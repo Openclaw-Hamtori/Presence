@@ -100,13 +100,19 @@ export async function signAttestation(
   try {
     const canonical = jcsSerialize(payload);
     const canonicalBytes = new TextEncoder().encode(canonical);
-    const canonicalBase64url = uint8ArrayToBase64url(canonicalBytes);
+    void canonicalBytes;
 
-    const signatureBase64url = await DeviceCrypto.sign(
+    const signatureBase64 = await DeviceCrypto.sign(
       KEY_ALIAS,
-      canonicalBase64url,
+      canonical,
       { biometryTitle: "", biometrySubTitle: "", biometryDescription: "" }
     );
+
+    const signatureBase64url = signatureBase64
+      .replace(/\s/g, "")
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=/g, "");
 
     return ok(signatureBase64url);
   } catch (e) {

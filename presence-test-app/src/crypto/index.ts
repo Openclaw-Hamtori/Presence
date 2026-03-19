@@ -104,18 +104,22 @@ export async function signAttestation(
   try {
     const canonical = jcsSerialize(payload);
     const canonicalBytes = new TextEncoder().encode(canonical);
-    const canonicalBase64url = uint8ArrayToBase64url(canonicalBytes);
 
     console.log("[PresenceCrypto] signAttestation canonical", canonical);
     console.log("[PresenceCrypto] signAttestation canonicalBytes", canonicalBytes.length);
-    console.log("[PresenceCrypto] signAttestation canonicalBase64urlLength", canonicalBase64url.length);
 
-    const signatureBase64url = await DeviceCrypto.sign(
+    const signatureBase64 = await DeviceCrypto.sign(
       KEY_ALIAS,
-      canonicalBase64url,
+      canonical,
       { biometryTitle: "", biometrySubTitle: "", biometryDescription: "" }
     );
+    const signatureBase64url = signatureBase64
+      .replace(/\s/g, "")
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=/g, "");
 
+    console.log("[PresenceCrypto] signAttestation signatureBase64Length", signatureBase64.length);
     console.log("[PresenceCrypto] signAttestation signatureBase64urlLength", signatureBase64url.length);
     console.log("[PresenceCrypto] signAttestation signatureBytes", base64urlToUint8Array(signatureBase64url).length);
 
