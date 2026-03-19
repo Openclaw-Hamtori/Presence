@@ -41,8 +41,10 @@ export async function ensureDeviceKey(): Promise<Result<string>> {
     });
     // Normalise: standard base64 → base64url (idempotent if already base64url)
     // Also strip all whitespace (react-native-device-crypto may include \n line breaks)
-    const publicKeyBase64url = publicKey
-      .replace(/\s/g, "")  // strip newlines, spaces, etc.
+    const pemStripped = publicKey
+      .replace(/-----[^-\r\n]+-----/g, "")
+      .replace(/\s/g, "");
+    const publicKeyBase64url = pemStripped
       .replace(/\+/g, "-")
       .replace(/\//g, "_")
       .replace(/=/g, "");

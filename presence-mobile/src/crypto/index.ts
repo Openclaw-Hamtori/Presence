@@ -36,8 +36,11 @@ export async function ensureDeviceKey(): Promise<Result<string>> {
       accessLevel: AccessLevel.ALWAYS,
       invalidateOnNewBiometry: false,
     });
-    // Normalise: standard base64 → base64url (idempotent if already base64url)
-    const publicKeyBase64url = publicKey
+    // Strip PEM envelope if present, then normalise: standard base64 → base64url
+    const pemStripped = publicKey
+      .replace(/-----[^-\r\n]+-----/g, "")
+      .replace(/\s/g, "");
+    const publicKeyBase64url = pemStripped
       .replace(/\+/g, "-")
       .replace(/\//g, "_")
       .replace(/=/g, "");
