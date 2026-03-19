@@ -108,7 +108,7 @@ async function validateServiceSyncTargets(params: {
   if (!serviceDomainDebug.normalized) {
     return err(
       "ERR_SERVICE_TRUST_INVALID",
-      `This link includes service sync URLs for ${serviceId} but service_domain is invalid (${serviceDomainDebug.reason}; raw=${JSON.stringify(serviceDomainDebug.raw)}).`
+      `[CANARY 2026-03-19-2135] This link includes service sync URLs for ${serviceId} but service_domain is invalid (${serviceDomainDebug.reason}; raw=${JSON.stringify(serviceDomainDebug.raw)}).`
     );
   }
   const serviceDomain = serviceDomainDebug.normalized;
