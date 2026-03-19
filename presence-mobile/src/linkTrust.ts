@@ -112,10 +112,17 @@ async function validateServiceSyncTargets(params: {
       );
     }
 
-    if (!allowedPrefixes.some((prefix) => matchesAllowedPrefix(absoluteUrl, prefix))) {
+    const prefixDebug = allowedPrefixes.map((prefix) => ({
+      prefix,
+      startsWith: absoluteUrl.startsWith(prefix),
+      boundary: absoluteUrl.length > prefix.length ? absoluteUrl.charAt(prefix.length) : "",
+      match: matchesAllowedPrefix(absoluteUrl, prefix),
+    }));
+
+    if (!prefixDebug.some((entry) => entry.match)) {
       return err(
         "ERR_SERVICE_TRUST_INVALID",
-        `${label} is outside the allowed Presence URL scope for ${serviceId} on ${serviceDomain}.`
+        `${label} is outside the allowed Presence URL scope for ${serviceId} on ${serviceDomain}. raw_prefixes=${JSON.stringify(wellKnown.value.allowed_url_prefixes)} normalized_prefixes=${JSON.stringify(allowedPrefixes)} absolute_url=${JSON.stringify(absoluteUrl)} checks=${JSON.stringify(prefixDebug)}.`
       );
     }
   }
