@@ -46,6 +46,10 @@ export async function validateLinkCompletionEnvelope(envelope: LinkCompletionEnv
   });
 }
 
+export function debugNormalizeServiceDomain(value?: string): string | null {
+  return normalizeServiceDomain(value);
+}
+
 export async function validateBindingSyncConfiguration(params: {
   serviceId: string;
   sync?: PresenceBindingSync | null;

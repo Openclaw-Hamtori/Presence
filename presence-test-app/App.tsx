@@ -26,7 +26,7 @@ import { buildPresenceLinkUrl, parsePresenceLinkUrl } from "./src/deeplink";
 import type { LinkCompletionEnvelope } from "./src/deeplink";
 import { getBackgroundRefreshDiagnostics } from "./src/backgroundRefresh";
 import type { BackgroundRefreshDiagnostics } from "./src/backgroundRefresh";
-import { validateLinkCompletionEnvelope } from "./src/linkTrust";
+import { debugNormalizeServiceDomain, validateLinkCompletionEnvelope } from "./src/linkTrust";
 import type { LinkFlow, PresenceTransportPayload, ServiceBinding } from "./src/types/index";
 import type { ProveOptions } from "./src/service";
 import { isQrScannerSupported, scanQrCode } from "./src/qrScanner";
@@ -389,6 +389,11 @@ export default function App() {
   ): Promise<boolean> => {
     setRawLink(rawUrl ?? buildPresenceLinkUrl(parsed));
     setShowConnection(true);
+    const normalizedServiceDomain = debugNormalizeServiceDomain(parsed.serviceDomain);
+    addLog(`🔎 ${source} parse session=${parsed.sessionId} service=${parsed.serviceId ?? "-"}`);
+    addLog(`🔎 service_domain raw=${JSON.stringify(parsed.serviceDomain ?? null)} normalized=${JSON.stringify(normalizedServiceDomain)}`);
+    addLog(`🔎 nonce_url=${parsed.nonceUrl ?? "-"}`);
+    addLog(`🔎 verify_url=${parsed.verifyUrl ?? "-"}`);
     const trustValidation = await validateLinkCompletionEnvelope(parsed);
     if (!trustValidation.ok) {
       setOpenedEnvelope(null);
@@ -399,6 +404,7 @@ export default function App() {
 
     setConnectionError(null);
     setOpenedEnvelope(parsed);
+    addLog(`✅ trust validation passed for ${parsed.serviceId ?? "unknown-service"} on ${normalizedServiceDomain ?? "unknown-domain"}`);
     addLog(`${source === "qr" ? "📷" : source === "system" ? "🔗" : "📲"} Opened ${source} session ${parsed.sessionId}`);
     return true;
   }, [addLog]);
