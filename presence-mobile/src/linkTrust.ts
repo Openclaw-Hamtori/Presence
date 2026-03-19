@@ -308,12 +308,19 @@ function normalizeAbsoluteUrlPrefix(value?: string): string | null {
   if (!value) return null;
   const trimmed = value.trim();
   if (!trimmed) return null;
+  if (/\s/.test(trimmed)) return null;
+  if (!/^https?:\/\//i.test(trimmed)) return null;
+  if (/[#]/.test(trimmed)) return null;
 
-  try {
-    const parsed = new URL(trimmed);
-    if (!/^https?:$/.test(parsed.protocol)) return null;
-    return trimmed;
-  } catch {
-    return null;
-  }
+  const withoutScheme = trimmed.replace(/^https?:\/\//i, "");
+  const slashIndex = withoutScheme.indexOf("/");
+  const hostPort = slashIndex >= 0 ? withoutScheme.slice(0, slashIndex) : withoutScheme;
+  if (!hostPort) return null;
+  if (hostPort.includes("@")) return null;
+
+  const host = hostPort.includes(":") ? hostPort.slice(0, hostPort.indexOf(":")) : hostPort;
+  if (!host || host.startsWith(".") || host.endsWith(".")) return null;
+  if (!/^[A-Za-z0-9.-]+$/.test(host)) return null;
+
+  return trimmed;
 }
