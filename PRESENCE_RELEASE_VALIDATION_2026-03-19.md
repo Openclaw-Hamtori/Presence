@@ -1,7 +1,7 @@
 # Presence Release Validation — 2026-03-19
 
 ## Current verdict
-Presence is now **code/test/integration-doc ready**, and the previously blocking **proper HTTPS trust happy-path has been validated on a real iPhone**. Full ship signoff is now mainly waiting on the remaining runtime/device evidence outside this trust gate.
+Presence is now **code/test/integration-doc ready**, and the previously blocking **real iPhone HTTPS trust + completion + verifier happy-path** has been validated end-to-end. Full ship signoff is now mainly waiting on the remaining runtime/device evidence outside this core linking gate.
 
 ## Freshly re-verified today
 ### Baseline automated checks
@@ -107,3 +107,10 @@ When the phone is connected again tonight, use this order:
   - `a326193` — trust metadata integration guidance
   - `323e2c5` / `bf1a72c` — release validation + device reinstall progress notes
   - `5992801` — connect trust errors surfaced + cleared more predictably
+nt handoff point for release validation.
+- `REGRESSION_CHECKLIST.md` is the checkbox ledger; this file is the judgment/evidence summary.
+- Relevant latest fixes in this phase:
+  - `a326193` — trust metadata integration guidance
+  - `323e2c5` / `bf1a72c` — release validation + device reinstall progress notes
+  - `5992801` — connect trust errors surfaced + cleared more predictably
+— connect trust errors surfaced + cleared more predictably
