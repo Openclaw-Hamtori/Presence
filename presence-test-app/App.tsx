@@ -727,7 +727,7 @@ export default function App() {
                   </View>
 
                   {(presence.state?.serviceBindings ?? []).length > 0 ? (
-                    <View style={styles.bindingList}>
+                    <ScrollView style={styles.bindingListScroll} contentContainerStyle={styles.bindingList}>
                       {presence.state?.serviceBindings.map((binding) => (
                         <View key={binding.bindingId} style={styles.bindingCard}>
                           <KeyValue label="service" value={binding.serviceId} />
@@ -735,7 +735,7 @@ export default function App() {
                           {binding.accountId ? <KeyValue label="account" value={binding.accountId} /> : null}
                         </View>
                       ))}
-                    </View>
+                    </ScrollView>
                   ) : (
                     <View style={styles.bindingBanner}>
                       <Text style={[styles.bindingTitle, { color: bindingSummary.tone }]}>-</Text>
@@ -1206,6 +1206,9 @@ const styles = StyleSheet.create({
     color: C.subtext,
     fontSize: 13,
     lineHeight: 19,
+  },
+  bindingListScroll: {
+    maxHeight: 360,
   },
   bindingList: {
     paddingHorizontal: 18,
