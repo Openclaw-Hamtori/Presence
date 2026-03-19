@@ -45,12 +45,13 @@
 
 ## 5. Link Flow
 - [ ] demo link 생성 동작
-- [ ] `링크 열기` 동작
-- [ ] 세션 열림 상태가 UI에서 눈에 띄게 보임
-- [ ] 승인 가능 상태 확인 가능
+- [x] `링크 열기` 동작
+- [x] 세션 열림 상태가 UI에서 눈에 띄게 보임
+- [x] 승인 가능 상태 확인 가능
 - [ ] link_context 포함 proof 생성 가능
 - [x] trust failure가 connect modal 안에서 명확히 보임
 - [x] trust failure 메시지가 입력 수정 / modal 닫기 / 다른 세션 로드 때 clear됨
+- [x] proper HTTPS + `/.well-known/presence.json` trust happy-path가 real iPhone에서 통과함
 
 ## 6. QR Flow
 - [x] QR 버튼 동작

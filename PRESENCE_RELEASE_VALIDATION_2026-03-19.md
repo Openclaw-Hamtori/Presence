@@ -1,7 +1,7 @@
 # Presence Release Validation — 2026-03-19
 
 ## Current verdict
-Presence is now **code/test/integration-doc ready**, but still **runtime/device evidence pending** before full ship signoff.
+Presence is now **code/test/integration-doc ready**, and the previously blocking **proper HTTPS trust happy-path has been validated on a real iPhone**. Full ship signoff is now mainly waiting on the remaining runtime/device evidence outside this trust gate.
 
 ## Freshly re-verified today
 ### Baseline automated checks
@@ -41,19 +41,31 @@ Presence is now **code/test/integration-doc ready**, but still **runtime/device 
 ### 1. Real iPhone installation / launch re-check for the latest state
 Current state:
 - latest `presence-test-app` build re-installed to `iphone L` successfully ✅
+- latest build launched and trust happy-path manual flow reached approval UI on-device ✅
 
 Still need to confirm on-device:
-- launch succeeds
-- main screen renders
+- main screen / broader non-link UI sanity after latest release-critical changes
 
 ### 2. Trust validation UX on real device
 Current state:
 - invalid trust metadata path was exercised on-device
 - fail-closed behavior worked: the bad session did not proceed
 - follow-up fix landed: connection trust errors are now surfaced inside the connect modal and should clear on input change / modal dismiss / different-session reload
+- valid public HTTPS trust metadata path now also passed on a real iPhone:
+  - `service_domain=noctu.link`
+  - `https://noctu.link/.well-known/presence.json`
+  - sync URLs under `https://noctu.link/presence-demo/presence/...`
+  - session opened and approval UI became reachable
+
+Resolved blocker chain for this happy-path:
+- stale generic `service_domain` branch still present in `presence-test-app/src/linkTrust.ts`
+- `service_domain` host validation was too dependent on runtime URL parsing quirks on iPhone
+- well-known `allowed_url_prefixes` initially used a trailing slash that failed the app boundary rule
+- well-known trust metadata needed no-store cache headers to avoid stale fetch behavior during debugging
+- allowed URL prefixes were being normalized through `new URL(...).href`, which changed prefix semantics by reintroducing a trailing slash
+- final fix: validate/keep allowed URL prefixes as absolute prefix strings rather than normalizing them through URL parser output
 
 Still need to check on-device:
-- valid `service_domain` + well-known path passes
 - invalid/missing trust metadata now fails clearly *and* clears cleanly without app restart
 
 ### 3. Final runtime release evidence
