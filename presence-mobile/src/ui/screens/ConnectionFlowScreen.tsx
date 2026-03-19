@@ -210,6 +210,7 @@ export function ConnectionFlowScreen({
             onChangeText={(value) => {
               setRawLink(value);
               setEnvelope(null);
+              setLocalError(null);
             }}
             placeholder="presence://link?session_id=..."
             placeholderTextColor="#777"

@@ -483,6 +483,7 @@ export default function App() {
 
   const handleScanQr = async () => {
     setLocalError(null);
+    setOpenedEnvelope(null);
     setScannerBusy(true);
     try {
       const payload = await scanQrCode();
@@ -763,6 +764,7 @@ export default function App() {
                           setOpenedEnvelope(null);
                           setLastPayload(null);
                           setLocalError(null);
+                          setRawLink("");
                         }}
                         activeOpacity={0.85}
                       >
@@ -1274,6 +1276,27 @@ const styles = StyleSheet.create({
     color: C.text,
     padding: 14,
     textAlignVertical: "top",
+  },
+  connectionErrorBox: {
+    marginHorizontal: 18,
+    marginTop: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#F0C9C9",
+    backgroundColor: "#FFF6F6",
+    padding: 12,
+    gap: 6,
+  },
+  connectionErrorCode: {
+    color: C.error,
+    fontSize: 12,
+    fontWeight: "800",
+    letterSpacing: 0.3,
+  },
+  connectionErrorText: {
+    color: C.error,
+    fontSize: 13,
+    lineHeight: 19,
   },
   sessionCard: {
     marginHorizontal: 18,
