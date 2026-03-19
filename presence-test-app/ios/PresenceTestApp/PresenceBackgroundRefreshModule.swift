@@ -160,6 +160,21 @@ class PresenceBackgroundRefreshModule: RCTEventEmitter {
     }
   }
 
+  @objc static func recordExternalTrigger(_ source: NSString) {
+    let now = Date().timeIntervalSince1970
+    UserDefaults.standard.set(true, forKey: Self.pendingTriggerDefaultsKey)
+    UserDefaults.standard.set(now, forKey: Self.lastTriggeredAtDefaultsKey)
+
+    DispatchQueue.main.async {
+      guard let instance = Self.sharedInstance, instance.hasListeners else { return }
+      UserDefaults.standard.removeObject(forKey: Self.pendingTriggerDefaultsKey)
+      instance.sendEvent(withName: Self.eventName, body: [
+        "source": source,
+        "triggeredAt": now,
+      ])
+    }
+  }
+
   @available(iOS 13.0, *)
   private static func scheduleTask(earliestEpochSeconds: Double) throws {
     BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: Self.taskIdentifier)

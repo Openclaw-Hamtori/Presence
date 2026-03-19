@@ -20,12 +20,36 @@ import HealthKit
 @objc(PresenceHealthKit)
 class PresenceHealthKitModule: NSObject {
 
+  private static let observedTypeIdentifiers: [HKQuantityTypeIdentifier] = [.heartRate, .stepCount]
+  private static var observersRegistered = false
+
   private let store = HKHealthStore()
 
   // MARK: - RN Module Name
 
   @objc static func moduleName() -> String { "PresenceHealthKit" }
   @objc static func requiresMainQueueSetup() -> Bool { false }
+
+  @objc static func registerObservers() {
+    guard HKHealthStore.isHealthDataAvailable(), !Self.observersRegistered else { return }
+
+    let store = HKHealthStore()
+    for identifier in Self.observedTypeIdentifiers {
+      guard let type = HKObjectType.quantityType(forIdentifier: identifier) else { continue }
+
+      let query = HKObserverQuery(sampleType: type, predicate: nil) { _, completionHandler, error in
+        if error == nil {
+          PresenceBackgroundRefreshModule.recordExternalTrigger("healthkit")
+        }
+        completionHandler()
+      }
+      store.execute(query)
+
+      store.enableBackgroundDelivery(for: type, frequency: .immediate) { _, _ in }
+    }
+
+    Self.observersRegistered = true
+  }
 
   // MARK: - Availability
 
@@ -69,6 +93,9 @@ class PresenceHealthKitModule: NSObject {
       }
       // iOS does not tell us if the user denied — success is always true
       // unless there's a system error. Actual data access will fail silently.
+      if success {
+        Self.registerObservers()
+      }
       resolve(success)
     }
   }
