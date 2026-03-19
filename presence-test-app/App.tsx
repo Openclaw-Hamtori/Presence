@@ -89,6 +89,13 @@ function formatFinish(diagnostics: BackgroundRefreshDiagnostics | null): string 
   return `${new Date(diagnostics.lastFinishedAt * 1000).toLocaleString()}${suffix}`;
 }
 
+function buildCompletionUrl(envelope: LinkCompletionEnvelope | null): string | null {
+  if (!envelope?.statusUrl) return null;
+  return envelope.statusUrl.endsWith("/complete")
+    ? envelope.statusUrl
+    : `${envelope.statusUrl.replace(/\/$/, "")}/complete`;
+}
+
 function randomId(prefix: string): string {
   return `${prefix}_${Math.random().toString(36).slice(2, 10)}`;
 }
@@ -523,18 +530,66 @@ export default function App() {
 
     addLog(`→ approve ${proveOptions.flow ?? "initial_link"} session`);
     const payload = await presence.prove(proveOptions);
-    if (payload) {
-      setLastPayload(payload);
-      setLocalError(null);
-      setShowConnection(false);
-      addLog("✅ Proof generated with link_context");
-      addLog(`   link_session_id: ${payload.link_context?.link_session_id ?? "n/a"}`);
-      addLog(`   binding_id: ${payload.link_context?.binding_id ?? "server-created"}`);
-      addLog("↗ The server can now send this payload to the session completion API to save the binding");
-    } else {
+    if (!payload) {
       setLocalError(presence.error?.message ?? "Could not create the proof.");
       addLog(`❌ ${presence.error?.code ?? "unknown"} — ${presence.error?.message ?? ""}`);
+      await refreshDiagnostics();
+      return;
     }
+
+    setLastPayload(payload);
+    setLocalError(null);
+    addLog("✅ Proof generated with link_context");
+    addLog(`   link_session_id: ${payload.link_context?.link_session_id ?? "n/a"}`);
+    addLog(`   binding_id: ${payload.link_context?.binding_id ?? "server-created"}`);
+
+    const completionUrl = buildCompletionUrl(openedEnvelope);
+    if (!completionUrl) {
+      setShowConnection(false);
+      addLog("↗ No completion URL available; proof is ready but server completion was skipped");
+      await refreshDiagnostics();
+      return;
+    }
+
+    try {
+      addLog(`↗ POST complete ${completionUrl}`);
+      const response = await fetch(completionUrl, {
+        method: "POST",
+        headers: {
+          accept: "application/json",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+      const raw = await response.text();
+      let parsed: unknown = null;
+      try {
+        parsed = raw ? JSON.parse(raw) : null;
+      } catch {
+        parsed = raw;
+      }
+
+      if (!response.ok) {
+        const message = typeof parsed === "object" && parsed && "message" in parsed
+          ? String((parsed as { message?: unknown }).message ?? "")
+          : raw || `HTTP ${response.status}`;
+        setLocalError(`Server completion failed: ${message}`);
+        addLog(`❌ completion ${response.status} — ${truncateJson(parsed || raw, 600)}`);
+        await refreshDiagnostics();
+        return;
+      }
+
+      setShowConnection(false);
+      addLog(`✅ completion ${response.status} — binding saved on server`);
+      addLog(`   response: ${truncateJson(parsed, 500)}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setLocalError(`Could not reach the completion endpoint: ${message}`);
+      addLog(`❌ completion network error — ${message}`);
+      await refreshDiagnostics();
+      return;
+    }
+
     await refreshDiagnostics();
   };
 
