@@ -176,7 +176,11 @@ async function loadPresenceWellKnown(params: {
   try {
     response = await fetch(wellKnownUrl, {
       method: "GET",
-      headers: { accept: "application/json" },
+      headers: {
+        accept: "application/json",
+        "cache-control": "no-cache, no-store, max-age=0",
+        pragma: "no-cache",
+      },
       signal: controller.signal,
     });
   } catch (cause) {
