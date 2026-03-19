@@ -70,6 +70,12 @@ Still needed before full release signoff:
 4. Run one trust-model happy-path manual check with a proper HTTPS domain + valid well-known metadata
 5. Then collect background refresh + real-backend evidence
 
+## Latest resolved issue
+- `d954bf4` — `fix: isolate connect flow errors from main banner`
+  - real-device repro matched the bug
+  - source audit identified `activateEnvelope()` / connect-path errors leaking into `localError`
+  - on-device re-test confirmed the bad trust link now shows inside Connect and dismisses cleanly
+
 ## Tonight device plan
 When the phone is connected again tonight, use this order:
 1. install latest build
