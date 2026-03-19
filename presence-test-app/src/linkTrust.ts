@@ -104,13 +104,14 @@ async function validateServiceSyncTargets(params: {
     );
   }
 
-  const serviceDomain = normalizeServiceDomain(params.serviceDomain);
-  if (!serviceDomain) {
+  const serviceDomainDebug = explainServiceDomain(params.serviceDomain);
+  if (!serviceDomainDebug.normalized) {
     return err(
       "ERR_SERVICE_TRUST_INVALID",
-      `This link includes service sync URLs for ${serviceId} but is missing a valid service_domain. Open a newer Presence link from the service.`
+      `This link includes service sync URLs for ${serviceId} but service_domain is invalid (${serviceDomainDebug.reason}; raw=${JSON.stringify(serviceDomainDebug.raw)}).`
     );
   }
+  const serviceDomain = serviceDomainDebug.normalized;
 
   const wellKnown = await loadPresenceWellKnown({ serviceDomain, serviceId });
   if (!wellKnown.ok) {
