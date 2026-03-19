@@ -283,7 +283,7 @@ function normalizeServiceDomain(value?: string): string | null {
 
 function normalizeAllowedPrefixes(prefixes: string[]): string[] {
   return prefixes
-    .map((prefix) => normalizeAbsoluteUrl(prefix))
+    .map((prefix) => normalizeAbsoluteUrlPrefix(prefix))
     .filter((prefix): prefix is string => !!prefix);
 }
 
@@ -299,6 +299,20 @@ function normalizeAbsoluteUrl(value?: string): string | null {
   if (!value) return null;
   try {
     return new URL(value).href;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeAbsoluteUrlPrefix(value?: string): string | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  try {
+    const parsed = new URL(trimmed);
+    if (!/^https?:$/.test(parsed.protocol)) return null;
+    return trimmed;
   } catch {
     return null;
   }
