@@ -392,13 +392,13 @@ export default function App() {
     const trustValidation = await validateLinkCompletionEnvelope(parsed);
     if (!trustValidation.ok) {
       setOpenedEnvelope(null);
-      setLocalError(trustValidation.error.message);
+      setConnectionError(trustValidation.error.message);
       addLog(`❌ ${trustValidation.error.code} — ${trustValidation.error.message}`);
       return false;
     }
 
+    setConnectionError(null);
     setOpenedEnvelope(parsed);
-    setLocalError(null);
     addLog(`${source === "qr" ? "📷" : source === "system" ? "🔗" : "📲"} Opened ${source} session ${parsed.sessionId}`);
     return true;
   }, [addLog]);
@@ -471,7 +471,7 @@ export default function App() {
     setConnectionError(null);
     const parsed = parsePresenceLinkUrl(rawLink);
     if (!parsed) {
-      setLocalError("This is not a valid Presence link. Enter a session link in the presence://link format.");
+      setConnectionError("This is not a valid Presence link. Enter a session link in the presence://link format.");
       addLog("❌ Invalid deeplink payload");
       return;
     }
@@ -484,7 +484,7 @@ export default function App() {
   };
 
   const handleScanQr = async () => {
-    setLocalError(null);
+    setConnectionError(null);
     setOpenedEnvelope(null);
     setScannerBusy(true);
     try {
@@ -492,7 +492,7 @@ export default function App() {
       setRawLink(payload);
       const parsed = parsePresenceLinkUrl(payload);
       if (!parsed) {
-        setLocalError("The QR code was read, but it is not a valid Presence link.");
+        setConnectionError("The QR code was read, but it is not a valid Presence link.");
         addLog("❌ Scanned QR payload was not a Presence link");
         return;
       }
