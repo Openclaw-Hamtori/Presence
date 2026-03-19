@@ -500,7 +500,7 @@ export default function App() {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (!message.includes("cancelled")) {
-        setLocalError(message);
+        setConnectionError(message);
         addLog(`❌ QR scan failed — ${message}`);
       }
     } finally {
@@ -794,6 +794,13 @@ export default function App() {
                       <TouchableOpacity style={styles.primaryActionButton} onPress={handleOpenLink} activeOpacity={0.85}>
                         <Text style={styles.primaryActionButtonText}>Load session</Text>
                       </TouchableOpacity>
+
+                      {connectionError ? (
+                        <View style={styles.connectionErrorBox}>
+                          <Text style={styles.connectionErrorCode}>CONNECT</Text>
+                          <Text style={styles.connectionErrorText}>{connectionError}</Text>
+                        </View>
+                      ) : null}
                     </>
                   )}
                 </View>
