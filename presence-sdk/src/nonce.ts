@@ -128,4 +128,4 @@ export function base64urlDecode(input: string): Buffer {
 }
 
 /** @deprecated Use InMemoryManagedNonceStore */
-export { InMemoryManagedNonceStore as ManagedNonceStore } from "./nonce.js";
+export { InMemoryManagedNonceStore as ManagedNonceStore };

@@ -35,7 +35,6 @@ class PresenceHealthKitModule: NSObject {
   @objc static func registerObservers() {
     guard HKHealthStore.isHealthDataAvailable(), !Self.observersRegistered else { return }
 
-    let store = HKHealthStore()
     for identifier in Self.observedTypeIdentifiers {
       guard let type = HKObjectType.quantityType(forIdentifier: identifier) else { continue }
 
@@ -45,9 +44,10 @@ class PresenceHealthKitModule: NSObject {
         }
         completionHandler()
       }
-      store.execute(query)
+      Self.observerStore.execute(query)
+      Self.observerQueries.append(query)
 
-      store.enableBackgroundDelivery(for: type, frequency: .immediate) { _, _ in }
+      Self.observerStore.enableBackgroundDelivery(for: type, frequency: .immediate) { _, _ in }
     }
 
     Self.observersRegistered = true
