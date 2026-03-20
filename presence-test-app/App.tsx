@@ -537,6 +537,12 @@ export default function App() {
       return;
     }
 
+    if (openedSessionAlreadyLinked) {
+      setLocalError("Already linked — load a fresh link.");
+      addLog("↩ Approve blocked — service/account is already linked in the current app state");
+      return;
+    }
+
     addLog(`→ approve ${proveOptions.flow ?? "initial_link"} session`);
     const payload = await presence.prove(proveOptions);
     if (!payload) {
