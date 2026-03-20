@@ -97,6 +97,7 @@ async function main() {
     unlinkAccountPath: "/presence/linked-accounts/:accountId/unlink",
     revokeDevicePath: "/presence/devices/:deviceIss/revoke",
     auditEventsPath: "/presence/audit-events",
+    deviceBindingsPath: "/presence/devices/:deviceIss/bindings",
   };
 
   const server = createServer(async (req, res) => {
@@ -255,6 +256,34 @@ async function main() {
       send(500, {
         ok: false,
         code: "ERR_INTERNAL",
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
+
+  server.listen(port, host, () => {
+    console.log(JSON.stringify({
+      ok: true,
+      host,
+      port,
+      serviceId,
+      serviceDomain: serviceDomain || undefined,
+      storePath,
+      endpoints: {
+        health: `${publicBaseUrl}/health`,
+        wellKnown: serviceDomain ? `${publicBaseUrl}/.well-known/presence.json` : undefined,
+        createSession: `${publicBaseUrl}/presence/link-sessions`,
+        publicBaseUrl,
+      },
+    }, null, 2));
+  });
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});
+RR_INTERNAL",
         message: error instanceof Error ? error.message : String(error),
       });
     }

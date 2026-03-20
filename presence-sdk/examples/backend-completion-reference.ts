@@ -143,3 +143,19 @@ export async function listAuditEventsHandler(req: { query: { accountId?: string 
   });
   return createAuditEventsResponse(events);
 }
+
+export async function listDeviceBindingsHandler(req: { params: { deviceIss: string } }) {
+  const deviceIss = req.params.deviceIss;
+  const [device, bindings] = await Promise.all([
+    presence.linkageStore.getLinkedDevice(deviceIss),
+    presence.linkageStore.listBindingsForDevice(deviceIss),
+  ]);
+
+  return {
+    ok: true,
+    device,
+    bindings: bindings
+      .filter((binding) => binding.serviceId === "discord-bot")
+      .sort((a, b) => (b.lastVerifiedAt ?? b.lastLinkedAt ?? 0) - (a.lastVerifiedAt ?? a.lastLinkedAt ?? 0)),
+  };
+}

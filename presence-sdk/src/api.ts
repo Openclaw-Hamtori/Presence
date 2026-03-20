@@ -20,6 +20,7 @@ export interface PresenceCompletionEndpointContract {
   unlinkAccountPath?: string;
   revokeDevicePath?: string;
   auditEventsPath?: string;
+  deviceBindingsPath?: string;
 }
 
 export interface CompletionEndpointDescriptor {
