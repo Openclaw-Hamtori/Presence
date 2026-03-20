@@ -89,6 +89,26 @@ export function usePresenceState(): UsePresenceStateResult {
     return () => { cancelled = true; };
   }, [phaseFromState]);
 
+  useEffect(() => {
+    if (!state) return;
+    if (phase === "loading" || phase === "measuring" || phase === "proving" || phase === "error") {
+      return;
+    }
+
+    const syncPhase = () => {
+      setPhase((current) => {
+        if (current === "loading" || current === "measuring" || current === "proving" || current === "error") {
+          return current;
+        }
+        return phaseFromState(state, current);
+      });
+    };
+
+    syncPhase();
+    const interval = setInterval(syncPhase, 1000);
+    return () => clearInterval(interval);
+  }, [state, phase, phaseFromState]);
+
   // ── Request HealthKit permissions ─────────────────────────────────────────
   const requestPermissions = useCallback(async (): Promise<boolean> => {
     if (!isHealthKitAvailable()) {

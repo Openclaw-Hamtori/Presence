@@ -33,8 +33,22 @@ export function PresenceStatusCard({ presence, fetchNonce }: PresenceStatusCardP
     } catch {}
   };
 
-  const statusLabel = phase === "needs_renewal" ? "RENEW" : state?.pass ? "PASS" : phase === "not_ready" ? "FAIL" : "PRESENCE";
-  const topRightText = state?.pass ? timeRemaining ?? "" : phase === "not_ready" ? "Measure again" : "";
+  const statusLabel = phase === "expired"
+    ? "EXPIRED"
+    : phase === "needs_renewal"
+      ? "RENEW"
+      : phase === "not_ready"
+        ? "FAIL"
+        : state?.pass
+          ? "PASS"
+          : "PRESENCE";
+  const topRightText = phase === "expired"
+    ? ""
+    : state?.pass
+      ? timeRemaining ?? ""
+      : phase === "not_ready"
+        ? "Measure again"
+        : "";
 
   return (
     <View style={styles.card}>

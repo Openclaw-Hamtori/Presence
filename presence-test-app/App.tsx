@@ -187,10 +187,19 @@ function getProductState(phase: string, pass: boolean | undefined, hasRecovery: 
     };
   }
 
-  if ((phase === "ready" || phase === "needs_renewal" || phase === "expired") && pass) {
+  if (phase === "expired") {
+    return {
+      label: "EXPIRED",
+      tone: C.error,
+      detail: "Proof expired. Renew only if this device still qualifies.",
+      accentBg: "#FFFFFF",
+    };
+  }
+
+  if ((phase === "ready" || phase === "needs_renewal") && pass) {
     return {
       label: phase === "needs_renewal" ? "RENEW SOON" : "PASS",
-      tone: C.success,
+      tone: phase === "needs_renewal" ? C.warn : C.success,
       detail: phase === "needs_renewal" ? "Refresh will be needed soon." : "This device is currently eligible.",
       accentBg: "#FFFFFF",
     };
