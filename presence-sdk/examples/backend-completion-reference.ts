@@ -96,6 +96,27 @@ export async function getLinkedAccountStatusHandler(req: { params: { accountId: 
   return createLinkedAccountReadinessResponse(readiness);
 }
 
+export async function unlinkLinkedAccountHandler(req: { params: { accountId: string }; body?: { reason?: string } }) {
+  const result = await presence.unlinkAccount({
+    accountId: req.params.accountId,
+    reason: req.body?.reason ?? "user_requested",
+  });
+
+  if (!result) {
+    return {
+      ok: false,
+      code: "ERR_BINDING_NOT_FOUND",
+      message: "linked account not found",
+    };
+  }
+
+  return {
+    ok: true,
+    binding: result.binding,
+    auditEvent: result.auditEvent,
+  };
+}
+
 export async function requireReadyLinkedAccountHandler(req: { params: { accountId: string } }) {
   const readiness = await presence.getLinkedAccountReadiness({
     accountId: req.params.accountId,

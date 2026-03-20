@@ -146,6 +146,8 @@ export async function measure(options: MeasureOptions = {}): Promise<Result<Meas
       iss,
       pass: true,
       signals: passResult.signals,
+      serviceBindings: existingState?.serviceBindings,
+      linkedDevice: existingState?.linkedDevice,
       capturedAt,
       reason: passResult.reason,
     });

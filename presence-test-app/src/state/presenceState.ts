@@ -109,6 +109,8 @@ export function createPresenceState(params: {
   signals: PresenceSignal[];
   linkSession?: LinkSession;
   binding?: ServiceBinding;
+  serviceBindings?: ServiceBinding[];
+  linkedDevice?: PresenceState["linkedDevice"];
   capturedAt?: number;
   reason?: string;
 }): PresenceState {
