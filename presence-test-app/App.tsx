@@ -764,32 +764,30 @@ export default function App() {
         <Modal visible={showService} transparent animationType="fade" onRequestClose={() => setShowService(false)}>
           <TouchableWithoutFeedback onPress={() => setShowService(false)}>
             <View style={styles.modalBackdrop}>
-              <TouchableWithoutFeedback>
-                <View style={styles.modalCard}>
-                  <View style={styles.modalHeader}>
-                    <Text style={styles.sectionTitle}>Service</Text>
-                    <TouchableOpacity onPress={() => setShowService(false)} activeOpacity={0.85}>
-                      <Text style={styles.modalClose}>Close</Text>
-                    </TouchableOpacity>
-                  </View>
-
-                  {sortedServiceBindings.length > 0 ? (
-                    <ScrollView style={styles.bindingListScroll} contentContainerStyle={styles.bindingList} showsVerticalScrollIndicator>
-                      {sortedServiceBindings.map((binding) => (
-                        <View key={binding.bindingId} style={styles.bindingCard}>
-                          <KeyValue label="service" value={binding.serviceId} />
-                          <KeyValue label="account" value={binding.accountId ?? "-"} />
-                          <KeyValue label="status" value={binding.status} />
-                        </View>
-                      ))}
-                    </ScrollView>
-                  ) : (
-                    <View style={styles.bindingBanner}>
-                      <Text style={[styles.bindingTitle, { color: bindingSummary.tone }]}>-</Text>
-                    </View>
-                  )}
+              <View style={styles.modalCard} onStartShouldSetResponder={() => true}>
+                <View style={styles.modalHeader}>
+                  <Text style={styles.sectionTitle}>Service</Text>
+                  <TouchableOpacity onPress={() => setShowService(false)} activeOpacity={0.85}>
+                    <Text style={styles.modalClose}>Close</Text>
+                  </TouchableOpacity>
                 </View>
-              </TouchableWithoutFeedback>
+
+                {sortedServiceBindings.length > 0 ? (
+                  <ScrollView style={styles.bindingListScroll} contentContainerStyle={styles.bindingList} showsVerticalScrollIndicator>
+                    {sortedServiceBindings.map((binding) => (
+                      <View key={binding.bindingId} style={styles.bindingCard}>
+                        <KeyValue label="service" value={binding.serviceId} />
+                        <KeyValue label="account" value={binding.accountId ?? "-"} />
+                        <KeyValue label="status" value={binding.status} />
+                      </View>
+                    ))}
+                  </ScrollView>
+                ) : (
+                  <View style={styles.bindingBanner}>
+                    <Text style={[styles.bindingTitle, { color: bindingSummary.tone }]}>-</Text>
+                  </View>
+                )}
+              </View>
             </View>
           </TouchableWithoutFeedback>
         </Modal>
