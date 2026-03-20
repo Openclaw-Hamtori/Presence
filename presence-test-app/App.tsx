@@ -100,6 +100,89 @@ function randomId(prefix: string): string {
   return `${prefix}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
+interface AuditEventRecord {
+  type: string;
+  serviceId: string;
+  accountId: string;
+  bindingId?: string;
+  deviceIss?: string;
+  occurredAt: number;
+}
+
+interface AuditEventsResponse {
+  ok: true;
+  events: AuditEventRecord[];
+}
+
+interface LinkedAccountStatusResponse {
+  ok: true;
+  readiness?: {
+    checkedAt?: number;
+    binding?: {
+      bindingId?: string;
+      serviceId?: string;
+      accountId?: string;
+      deviceIss?: string;
+      createdAt?: number;
+      updatedAt?: number;
+      status?: string;
+      lastLinkedAt?: number;
+      lastVerifiedAt?: number;
+    };
+  };
+}
+
+async function fetchJson<T>(url: string): Promise<T> {
+  const response = await fetch(url, {
+    method: "GET",
+    headers: { Accept: "application/json" },
+  });
+  const raw = await response.text();
+  const parsed = raw ? JSON.parse(raw) : null;
+  if (!response.ok) {
+    throw new Error(parsed?.message ?? `request failed (${response.status})`);
+  }
+  return parsed as T;
+}
+
+function mergeServiceBindings(bindings: ServiceBinding[]): ServiceBinding[] {
+  const byKey = new Map<string, ServiceBinding>();
+
+  for (const binding of bindings) {
+    const key = binding.bindingId || `${binding.serviceId}:${binding.accountId ?? "-"}`;
+    const existing = byKey.get(key);
+    if (!existing) {
+      byKey.set(key, binding);
+      continue;
+    }
+
+    const existingTime = existing.lastVerifiedAt ?? existing.linkedAt ?? 0;
+    const incomingTime = binding.lastVerifiedAt ?? binding.linkedAt ?? 0;
+    byKey.set(key, incomingTime >= existingTime ? { ...existing, ...binding } : { ...binding, ...existing });
+  }
+
+  return [...byKey.values()];
+}
+
+function toServiceBindingFromStatus(response: LinkedAccountStatusResponse): ServiceBinding | null {
+  const binding = response.readiness?.binding;
+  if (!binding?.bindingId || !binding.serviceId || !binding.accountId || !binding.deviceIss) {
+    return null;
+  }
+
+  if (!binding.status) return null;
+
+  return {
+    bindingId: binding.bindingId,
+    serviceId: binding.serviceId,
+    accountId: binding.accountId,
+    linkedDeviceIss: binding.deviceIss,
+    linkedAt: binding.lastLinkedAt ?? binding.createdAt ?? binding.updatedAt ?? response.readiness?.checkedAt ?? Math.floor(Date.now() / 1000),
+    lastVerifiedAt: binding.lastVerifiedAt,
+    status: binding.status as ServiceBinding["status"],
+  };
+}
+
 function isHealthAccessRecoveryNeeded(code?: string, message?: string | null): boolean {
   if (code === "ERR_HEALTHKIT_PERMISSION_DENIED") return true;
   const text = `${code ?? ""} ${message ?? ""}`.toLowerCase();
@@ -356,6 +439,9 @@ export default function App() {
   const [log, setLog] = useState<string[]>([`[${nowTime()}] App started — platform: ${Platform.OS}`]);
   const [pendingSyncJobs, setPendingSyncJobs] = useState(0);
   const [bgDiagnostics, setBgDiagnostics] = useState<BackgroundRefreshDiagnostics | null>(null);
+  const [hydratedServiceBindings, setHydratedServiceBindings] = useState<ServiceBinding[]>([]);
+  const [hydratingServiceBindings, setHydratingServiceBindings] = useState(false);
+  const [serviceBindingsHydrationError, setServiceBindingsHydrationError] = useState<string | null>(null);
 
   const addLog = useCallback((msg: string) => {
     setLog((prev) => [`[${nowTime()}] ${msg}`, ...prev].slice(0, 40));
@@ -448,13 +534,17 @@ export default function App() {
 
   const parsedFromEditor = useMemo(() => parsePresenceLinkUrl(rawLink), [rawLink]);
   const proveOptions = useMemo(() => (openedEnvelope ? envelopeToProveOptions(openedEnvelope) : null), [openedEnvelope]);
-  const hasRecovery = presence.state?.serviceBindings?.some((binding) => binding.status === "recovery_pending" || binding.status === "reauth_required") ?? false;
+  const effectiveServiceBindings = useMemo(
+    () => mergeServiceBindings([...(presence.state?.serviceBindings ?? []), ...hydratedServiceBindings]),
+    [presence.state?.serviceBindings, hydratedServiceBindings]
+  );
+  const hasRecovery = effectiveServiceBindings.some((binding) => binding.status === "recovery_pending" || binding.status === "reauth_required");
   const productState = getProductState(presence.phase, presence.state?.pass, hasRecovery);
   const activeSession = openedEnvelope;
   const openedSessionAlreadyLinked = !!(
     openedEnvelope?.serviceId
     && openedEnvelope?.accountId
-    && (presence.state?.serviceBindings ?? []).some((binding) => (
+    && effectiveServiceBindings.some((binding) => (
       binding.serviceId === openedEnvelope.serviceId
       && binding.accountId === openedEnvelope.accountId
       && binding.status === "linked"
@@ -467,7 +557,7 @@ export default function App() {
     presence.state?.nextMeasurementAt ? `Next check ${new Date(presence.state.nextMeasurementAt * 1000).toLocaleTimeString()}` : null,
     pendingSyncJobs > 0 ? `Retries ${pendingSyncJobs}` : null,
   ].filter(Boolean) as string[];
-  const sortedServiceBindings = [...(presence.state?.serviceBindings ?? [])].sort((a, b) => {
+  const sortedServiceBindings = [...effectiveServiceBindings].sort((a, b) => {
     const statusRank = (status: string) => {
       if (status === "linked") return 0;
       if (status === "recovery_pending" || status === "reauth_required") return 1;
@@ -771,6 +861,12 @@ export default function App() {
                     <Text style={styles.modalClose}>Close</Text>
                   </TouchableOpacity>
                 </View>
+
+                {hydratingServiceBindings ? (
+                  <Text style={styles.modalMeta}>Syncing linked services…</Text>
+                ) : serviceBindingsHydrationError ? (
+                  <Text style={styles.modalMeta}>Service sync fallback: {serviceBindingsHydrationError}</Text>
+                ) : null}
 
                 {sortedServiceBindings.length > 0 ? (
                   <ScrollView style={styles.bindingListScroll} contentContainerStyle={styles.bindingList} showsVerticalScrollIndicator>
@@ -1539,6 +1635,12 @@ const styles = StyleSheet.create({
   modalClose: {
     color: C.subtext,
     fontSize: 14,
+  },
+  modalMeta: {
+    color: C.subtext,
+    fontSize: 12,
+    marginTop: -4,
+    marginBottom: 4,
   },
   modalScroll: {
     gap: 16,
