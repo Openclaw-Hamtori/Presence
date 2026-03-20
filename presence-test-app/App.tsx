@@ -559,6 +559,10 @@ export default function App() {
 
     const completionUrl = buildCompletionUrl(openedEnvelope);
     if (!completionUrl) {
+      setOpenedEnvelope(null);
+      setLastPayload(null);
+      setRawLink("");
+      setConnectionError(null);
       setShowConnection(false);
       addLog("↗ No completion URL available; proof is ready but server completion was skipped");
       await refreshDiagnostics();
