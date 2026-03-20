@@ -15,3 +15,5 @@ presence-test-app/ios/.xcode.env.local
 *.xcuserstate
 *.xcworkspace/xcuserdata/
 *.xcodeproj/xcuserdata/
+presence-sdk/*.tgz
+presence-verifier/*.tgz
