@@ -15,7 +15,7 @@ import type {
 const STORAGE_KEY = "@presence:state:v2";
 const LEGACY_STORAGE_KEY = "@presence:state:v1";
 const STATE_VALIDITY_SECONDS = 3 * 60;
-const RENEWAL_WINDOW_SECONDS = 1 * 60;
+const RENEWAL_WINDOW_SECONDS = 30;
 const FAILED_RETRY_SECONDS = 30 * 60;
 
 export async function loadPresenceState(): Promise<PresenceState | null> {
