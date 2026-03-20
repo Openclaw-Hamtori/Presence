@@ -104,9 +104,7 @@ export async function signAttestation(
   try {
     const canonical = jcsSerialize(payload);
     const canonicalBytes = new TextEncoder().encode(canonical);
-
-    console.log("[PresenceCrypto] signAttestation canonical", canonical);
-    console.log("[PresenceCrypto] signAttestation canonicalBytes", canonicalBytes.length);
+    void canonicalBytes;
 
     const signatureBase64 = await DeviceCrypto.sign(
       KEY_ALIAS,

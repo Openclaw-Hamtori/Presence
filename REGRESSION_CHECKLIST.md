@@ -25,8 +25,8 @@
 - [x] 메인 화면 렌더링 정상
 
 ## 2. Health Permission Flow
-- [ ] `인증` 또는 권한 요청 흐름에서 Health 권한 요청 정상 표시
-- [ ] 권한 허용 후 앱 상태 업데이트 정상
+- [x] `인증` 또는 권한 요청 흐름에서 Health 권한 요청 정상 표시
+- [x] 권한 허용 후 앱 상태 업데이트 정상
 
 ## 3. PASS Evaluation
 - [ ] 최근 72시간 rolling window 기준 PASS 계산 동작
