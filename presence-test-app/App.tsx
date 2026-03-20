@@ -490,6 +490,14 @@ export default function App() {
     addLog("↗ Open the link to connect this session on the current device");
   };
 
+  const clearConnectSession = useCallback(() => {
+    setOpenedEnvelope(null);
+    setLastPayload(null);
+    setRawLink("");
+    setConnectionError(null);
+    setShowConnection(false);
+  }, []);
+
   const handleOpenLink = async () => {
     setConnectionError(null);
     const parsed = parsePresenceLinkUrl(rawLink);
@@ -559,11 +567,7 @@ export default function App() {
 
     const completionUrl = buildCompletionUrl(openedEnvelope);
     if (!completionUrl) {
-      setOpenedEnvelope(null);
-      setLastPayload(null);
-      setRawLink("");
-      setConnectionError(null);
-      setShowConnection(false);
+      clearConnectSession();
       addLog("↗ No completion URL available; proof is ready but server completion was skipped");
       await refreshDiagnostics();
       return;
@@ -597,7 +601,7 @@ export default function App() {
         return;
       }
 
-      setShowConnection(false);
+      clearConnectSession();
       addLog(`✅ completion ${response.status} — binding saved on server`);
       addLog(`   response: ${truncateJson(parsed, 500)}`);
     } catch (error) {
@@ -818,7 +822,7 @@ export default function App() {
                     </View>
                   </View>
 
-                  {openedEnvelope ? (
+                  {openedEnvelope && !openedSessionAlreadyLinked ? (
                     <View style={styles.loadedSessionCard}>
                       <Text style={styles.loadedSessionLabel}>Approve service session</Text>
                       <Text style={styles.loadedSessionBody}>
