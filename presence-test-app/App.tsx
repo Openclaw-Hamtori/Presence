@@ -467,7 +467,23 @@ export default function App() {
     presence.state?.nextMeasurementAt ? `Next check ${new Date(presence.state.nextMeasurementAt * 1000).toLocaleTimeString()}` : null,
     pendingSyncJobs > 0 ? `Retries ${pendingSyncJobs}` : null,
   ].filter(Boolean) as string[];
-  const bindingSummary = getBindingSummary(presence.state?.serviceBindings ?? []);
+  const sortedServiceBindings = [...(presence.state?.serviceBindings ?? [])].sort((a, b) => {
+    const statusRank = (status: string) => {
+      if (status === "linked") return 0;
+      if (status === "recovery_pending" || status === "reauth_required") return 1;
+      if (status === "pending") return 2;
+      if (status === "expired") return 3;
+      if (status === "revoked" || status === "unlinked") return 4;
+      return 5;
+    };
+
+    const timeA = a.lastVerifiedAt ?? a.linkedAt ?? 0;
+    const timeB = b.lastVerifiedAt ?? b.linkedAt ?? 0;
+    const byStatus = statusRank(a.status) - statusRank(b.status);
+    if (byStatus !== 0) return byStatus;
+    return timeB - timeA;
+  });
+  const bindingSummary = getBindingSummary(sortedServiceBindings);
   const displayedErrorCode = presence.error?.code ?? "PRESENCE";
   const displayedErrorMessage = localError ?? presence.error?.message ?? null;
   const showHealthAccessRecovery = isHealthAccessRecoveryNeeded(displayedErrorCode, displayedErrorMessage);
@@ -757,13 +773,13 @@ export default function App() {
                     </TouchableOpacity>
                   </View>
 
-                  {(presence.state?.serviceBindings ?? []).length > 0 ? (
-                    <ScrollView style={styles.bindingListScroll} contentContainerStyle={styles.bindingList}>
-                      {presence.state?.serviceBindings.map((binding) => (
+                  {sortedServiceBindings.length > 0 ? (
+                    <ScrollView style={styles.bindingListScroll} contentContainerStyle={styles.bindingList} showsVerticalScrollIndicator>
+                      {sortedServiceBindings.map((binding) => (
                         <View key={binding.bindingId} style={styles.bindingCard}>
                           <KeyValue label="service" value={binding.serviceId} />
+                          <KeyValue label="account" value={binding.accountId ?? "-"} />
                           <KeyValue label="status" value={binding.status} />
-                          {binding.accountId ? <KeyValue label="account" value={binding.accountId} /> : null}
                         </View>
                       ))}
                     </ScrollView>
@@ -1242,6 +1258,7 @@ const styles = StyleSheet.create({
   },
   bindingListScroll: {
     maxHeight: 360,
+    minHeight: 220,
   },
   bindingList: {
     paddingHorizontal: 18,
