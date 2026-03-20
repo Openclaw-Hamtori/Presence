@@ -14,8 +14,8 @@ import type {
 
 const STORAGE_KEY = "@presence:state:v2";
 const LEGACY_STORAGE_KEY = "@presence:state:v1";
-const STATE_VALIDITY_SECONDS = 72 * 60 * 60;
-const RENEWAL_WINDOW_SECONDS = 30 * 60;
+const STATE_VALIDITY_SECONDS = 3 * 60;
+const RENEWAL_WINDOW_SECONDS = 1 * 60;
 const FAILED_RETRY_SECONDS = 30 * 60;
 
 export async function loadPresenceState(): Promise<PresenceState | null> {
@@ -126,6 +126,10 @@ export function createPresenceState(params: {
     source: "measurement",
   };
 
+  const preservedBindings = params.binding
+    ? touchBindingsForMeasurement([params.binding], { capturedAt: now })
+    : touchBindingsForMeasurement(params.serviceBindings ?? [], { capturedAt: now });
+
   return withComputedStatus({
     status: "ready",
     iss: params.iss,
@@ -143,13 +147,19 @@ export function createPresenceState(params: {
     }),
     lastMeasurementReason: params.reason,
     platform: "ios",
-    linkedDevice: {
-      iss: params.iss,
-      platform: "ios",
-      linkedAt: now,
-    },
+    linkedDevice: params.linkedDevice
+      ? {
+          ...params.linkedDevice,
+          iss: params.iss,
+          platform: "ios",
+        }
+      : {
+          iss: params.iss,
+          platform: "ios",
+          linkedAt: now,
+        },
     activeLinkSession: params.linkSession,
-    serviceBindings: params.binding ? touchBindingsForMeasurement([params.binding], { capturedAt: now }) : [],
+    serviceBindings: preservedBindings,
     lastSnapshot: snapshot,
   });
 }
