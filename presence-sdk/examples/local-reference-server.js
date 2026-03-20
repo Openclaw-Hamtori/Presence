@@ -251,63 +251,17 @@ async function main() {
         return;
       }
 
-      send(404, { ok: false, code: "ERR_NOT_FOUND" });
-    } catch (error) {
-      send(500, {
-        ok: false,
-        code: "ERR_INTERNAL",
-        message: error instanceof Error ? error.message : String(error),
-      });
-    }
-  });
-
-  server.listen(port, host, () => {
-    console.log(JSON.stringify({
-      ok: true,
-      host,
-      port,
-      serviceId,
-      serviceDomain: serviceDomain || undefined,
-      storePath,
-      endpoints: {
-        health: `${publicBaseUrl}/health`,
-        wellKnown: serviceDomain ? `${publicBaseUrl}/.well-known/presence.json` : undefined,
-        createSession: `${publicBaseUrl}/presence/link-sessions`,
-        publicBaseUrl,
-      },
-    }, null, 2));
-  });
-}
-
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
-RR_INTERNAL",
-        message: error instanceof Error ? error.message : String(error),
-      });
-    }
-  });
-
-  server.listen(port, host, () => {
-    console.log(JSON.stringify({
-      ok: true,
-      host,
-      port,
-      serviceId,
-      serviceDomain: serviceDomain || undefined,
-      storePath,
-      endpoints: {
-        health: `${publicBaseUrl}/health`,
-        wellKnown: serviceDomain ? `${publicBaseUrl}/.well-known/presence.json` : undefined,
-        createSession: `${publicBaseUrl}/presence/link-sessions`,
-        publicBaseUrl,
-      },
-    }, null, 2));
-  });
-}
-
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+      const deviceBindingsMatch = url.pathname.match(/^\/presence\/devices\/([^/]+)\/bindings$/);
+      if (method === "GET" && deviceBindingsMatch) {
+        const deviceIss = decodeURIComponent(deviceBindingsMatch[1]);
+        const [device, bindings] = await Promise.all([
+          presence.linkageStore.getLinkedDevice(deviceIss),
+          presence.linkageStore.listBindingsForDevice(deviceIss),
+        ]);
+        send(200, {
+          ok: true,
+          device,
+          bindings: bindings
+            .filter((binding) => binding.serviceId === serviceId)
+            .sort((a, b) => (b.lastVerifiedAt || b.lastLinkedAt || 0) - (a.lastVerifiedAt || a.lastLinkedAt || 0)),
+        });

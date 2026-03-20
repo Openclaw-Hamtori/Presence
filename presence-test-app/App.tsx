@@ -573,6 +573,10 @@ export default function App() {
             }));
           if (!cancelled) {
             setHydratedServiceBindings(recoveredBindings);
+            const persisted = await loadPresenceState();
+            if (persisted?.linkedDevice?.iss === deviceIss) {
+              await savePresenceState(mergeAuthoritativeServiceBindings(persisted, recoveredBindings));
+            }
             addLog(`↻ Recovered ${recoveredBindings.length} bindings from device endpoint`);
           }
           return;

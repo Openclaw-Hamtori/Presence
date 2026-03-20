@@ -25,6 +25,7 @@ const endpointContract = {
   unlinkAccountPath: "/presence/linked-accounts/:accountId/unlink",
   revokeDevicePath: "/presence/devices/:deviceIss/revoke",
   auditEventsPath: "/presence/audit-events",
+  deviceBindingsPath: "/presence/devices/:deviceIss/bindings",
 } as const;
 
 export async function createLinkSessionHandler(req: { body: { accountId: string } }) {
