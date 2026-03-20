@@ -19,7 +19,7 @@ import {
 } from "react-native";
 import { usePresenceState } from "./src/ui/usePresenceState";
 import { usePresenceRenewal } from "./src/ui/usePresenceRenewal";
-import { clearPresenceState } from "./src/state/presenceState";
+import { clearPresenceState, loadPresenceState, savePresenceState, mergeAuthoritativeServiceBindings } from "./src/state/presenceState";
 import { uint8ArrayToBase64url } from "./src/crypto/index";
 import { readBiometricWindow } from "./src/health/healthkit";
 import { buildPresenceLinkUrl, parsePresenceLinkUrl } from "./src/deeplink";

@@ -253,6 +253,15 @@ export function addOrUpdateServiceBinding(
   return withComputedStatus({ ...state, serviceBindings: bindings });
 }
 
+export function mergeAuthoritativeServiceBindings(
+  state: PresenceState,
+  bindings: ServiceBinding[]
+): PresenceState {
+  return bindings.reduce((current, binding) => addOrUpdateServiceBinding(current, binding, {
+    allowLinkedRecoveryExit: binding.status === "linked",
+  }), state);
+}
+
 export function markBindingForRecovery(
   state: PresenceState,
   params: { bindingId: string; recoveryReason: string; status?: "reauth_required" | "recovery_pending" }
