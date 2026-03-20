@@ -854,7 +854,6 @@ export default function App() {
                     </View>
                   ) : (
                     <>
-                      {openedSessionAlreadyLinked ? null : null}
                       <TextInput
                         style={styles.input}
                         value={rawLink}
