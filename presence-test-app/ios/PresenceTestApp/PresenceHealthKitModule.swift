@@ -236,6 +236,3 @@ class PresenceHealthKitModule: NSObject {
     return (start, end)
   }
 }
-, end)
-  }
-}
