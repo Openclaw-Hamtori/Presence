@@ -71,55 +71,37 @@ Still need to check on-device:
 ### 3. Final runtime release evidence
 Still needed before full release signoff:
 - background wake / renewal-window observation on real device
-- real backend completion round-trip
-- recorded evidence for `ready -> stale -> not_ready` propagation behavior
-- known limitations note after device/runtime observation
+- recorded evidence for `ready -> stale -> not_ready` propagation behavior under the latest build
+
+Already closed in this phase:
+- real backend completion round-trip on a real iPhone
+- verifier success after PEM stripping for `signing_public_key`
+- verifier success after signing the canonical attestation payload directly
+- duplicate approve / nonce replay UX guard in the test app
+- iOS verifier plumbing now passes `iosAppleRootCA` into verifier context
+- HealthKit background observer wiring now retains `HKHealthStore` / observer queries and no longer masks BGTask registration failure
+- stale patch entitlements now include the same HealthKit keys as the active test-app entitlements
+- known behavior note established: reused or expired deeplinks can fail with `nonce expired or not issued by service`, while fresh deeplinks continue to link successfully
 
 ## Suggested immediate sequence
-1. Keep the current real-device happy-path result as the new baseline
-2. Collect background refresh / renewal-window evidence
-3. Collect `ready -> stale -> not_ready` propagation evidence
-4. Add a short known-behavior note for deeplink replay / nonce expiry
-5. Then close the remaining release signoff notes
+1. Keep the current real-device happy-path result as the baseline
+2. Run the remaining real-device renewal-window observation
+3. Record the final `ready -> stale -> not_ready` evidence under the latest build
+4. Flip App Attest entitlement from `development` to `production` only at App Store / TestFlight release cut
+5. Then do final release signoff
 
-## Latest resolved issue
+## Latest resolved issues
 - `d954bf4` — `fix: isolate connect flow errors from main banner`
-  - real-device repro matched the bug
-  - source audit identified `activateEnvelope()` / connect-path errors leaking into `localError`
-  - on-device re-test confirmed the bad trust link now shows inside Connect and dismisses cleanly
-
-## Tonight device plan
-When the phone is connected again tonight, use this order:
-1. install latest build
-2. open app and confirm launch/main screen
-3. open Connect modal
-4. paste a deliberately bad session and confirm:
-   - error shows inside the connect modal
-   - editing the link clears the error
-   - closing/reopening the modal clears stale trust error UI
-5. run one valid session against a proper HTTPS trust setup
-6. if that passes, move to renewal / backend evidence collection
+- `8d995e5` — `fix: strip PEM envelope from device public key`
+- `7024628` — `fix: sign canonical attestation payload directly`
+- `71cccdb` — `fix: block duplicate approve for linked sessions`
+- `a804030` — `feat: wire HealthKit background delivery into renewal`
+- `6605e5f` — `fix: harden iOS verifier and health observer wiring`
+- `ccfe361` — `fix: retain health observers and remove nonce self-export`
+- `3f711ea` — `fix: remove corrupted healthkit module tail`
 
 ## Notes
 - This file is the current handoff point for release validation.
 - `REGRESSION_CHECKLIST.md` is the checkbox ledger; this file is the judgment/evidence summary.
-- Relevant latest fixes in this phase:
-  - `a326193` — trust metadata integration guidance
-  - `323e2c5` / `bf1a72c` — release validation + device reinstall progress notes
-  - `5992801` — connect trust errors surfaced + cleared more predictably
-nt handoff point for release validation.
-- `REGRESSION_CHECKLIST.md` is the checkbox ledger; this file is the judgment/evidence summary.
-- Relevant latest fixes in this phase:
-  - `a326193` — trust metadata integration guidance
-  - `323e2c5` / `bf1a72c` — release validation + device reinstall progress notes
-  - `5992801` — connect trust errors surfaced + cleared more predictably
-— connect trust errors surfaced + cleared more predictably
-ed more predictably
-nt handoff point for release validation.
-- `REGRESSION_CHECKLIST.md` is the checkbox ledger; this file is the judgment/evidence summary.
-- Relevant latest fixes in this phase:
-  - `a326193` — trust metadata integration guidance
-  - `323e2c5` / `bf1a72c` — release validation + device reinstall progress notes
-  - `5992801` — connect trust errors surfaced + cleared more predictably
-— connect trust errors surfaced + cleared more predictably
-rrors surfaced + cleared more predictably
+- Code-level ship blockers are closed as of the latest audit.
+- Remaining release risk is concentrated in real-device renewal/background evidence, not the core linking/verifier flow.
