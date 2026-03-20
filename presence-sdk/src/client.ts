@@ -167,6 +167,7 @@ export class PresenceClient {
       nonceStore: this.config.nonceStore ?? this.managedNonces.nonceStore,
       tofuStore: this.config.tofuStore ?? this.tofuStore,
       expectedAppId: this.config.iosAppId,
+      appleRootCA: this.config.iosAppleRootCA,
     };
 
     return coreVerify(

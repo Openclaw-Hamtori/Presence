@@ -113,6 +113,7 @@ export interface PresenceClientConfig {
   nonceStore?: NonceStore;
   tofuStore?: TofuStore;
   iosAppId?: string;
+  iosAppleRootCA?: Uint8Array | string;
   androidPackageName?: string;
   nonceTtlSeconds?: number;
   requireExplicitPlatform?: boolean;

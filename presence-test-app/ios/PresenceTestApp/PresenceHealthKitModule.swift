@@ -22,6 +22,8 @@ class PresenceHealthKitModule: NSObject {
 
   private static let observedTypeIdentifiers: [HKQuantityTypeIdentifier] = [.heartRate, .stepCount]
   private static var observersRegistered = false
+  private static let observerStore = HKHealthStore()
+  private static var observerQueries: [HKObserverQuery] = []
 
   private let store = HKHealthStore()
 
@@ -232,5 +234,8 @@ class PresenceHealthKitModule: NSObject {
     let start = (options["startDate"] as? String).flatMap { formatter.date(from: $0) }
     let end   = (options["endDate"]   as? String).flatMap { formatter.date(from: $0) }
     return (start, end)
+  }
+}
+, end)
   }
 }

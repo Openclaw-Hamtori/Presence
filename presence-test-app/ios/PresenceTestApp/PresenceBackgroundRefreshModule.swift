@@ -42,7 +42,7 @@ class PresenceBackgroundRefreshModule: RCTEventEmitter {
   @objc static func registerBackgroundTasks() {
     guard #available(iOS 13.0, *), !Self.hasRegistered else { return }
 
-    Self.hasRegistered = BGTaskScheduler.shared.register(
+    let registered = BGTaskScheduler.shared.register(
       forTaskWithIdentifier: Self.taskIdentifier,
       using: nil
     ) { task in
@@ -52,7 +52,7 @@ class PresenceBackgroundRefreshModule: RCTEventEmitter {
       }
       Self.handle(refreshTask)
     }
-    Self.hasRegistered = true
+    Self.hasRegistered = registered
   }
 
   @objc static func schedulePersistedRefreshIfNeeded() {
