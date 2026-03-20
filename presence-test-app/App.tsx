@@ -538,8 +538,7 @@ export default function App() {
     }
 
     if (openedSessionAlreadyLinked) {
-      setLocalError("Already linked — load a fresh link.");
-      addLog("↩ Approve blocked — service/account is already linked in the current app state");
+      addLog("↩ Approve ignored — service/account is already linked in the current app state");
       return;
     }
 
