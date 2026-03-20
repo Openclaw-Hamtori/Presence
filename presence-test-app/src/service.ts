@@ -128,7 +128,11 @@ export async function measure(options: MeasureOptions = {}): Promise<Result<Meas
 
   const existingState = state && state.iss === iss ? state : null;
   const currentStatus = existingState ? computeStateStatus(existingState) : null;
-  const shouldPreserveValidity = !!existingState && existingState.pass && !forceRefresh && currentStatus !== "expired";
+  const shouldPreserveValidity = !!existingState
+    && existingState.pass
+    && !forceRefresh
+    && currentStatus !== "expired"
+    && currentStatus !== "needs_renewal";
 
   if (existingState && shouldPreserveValidity) {
     state = updatePresenceSnapshot(existingState, {

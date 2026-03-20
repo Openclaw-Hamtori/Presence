@@ -155,10 +155,10 @@ export function usePresenceRenewal(
         try {
           await finishBackgroundRefresh(success);
         } catch {}
-        try {
-          await scheduleRenewal();
-        } catch {}
       }
+      try {
+        await scheduleRenewal();
+      } catch {}
     }
   }, [scheduleRenewal]);
 
