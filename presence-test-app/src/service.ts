@@ -2,6 +2,8 @@
  * presence-mobile — Presence Service
  */
 
+// INTENTIONAL_FORK: test app preserves app-specific proof orchestration and local-state behavior.
+
 import { readBiometricWindow, requestHealthKitPermissions, isHealthKitAvailable } from "./health/healthkit";
 import { evaluatePass } from "./health/pass";
 import { ensureDeviceKey, deriveIss, signAttestation } from "./crypto/index";

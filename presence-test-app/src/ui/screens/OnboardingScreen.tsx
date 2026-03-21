@@ -156,7 +156,7 @@ function ProveStep({
       <Text style={styles.title}>Create your first PASS</Text>
       <Text style={styles.body}>
         To finish linking, your device creates a unique key, proves its integrity
-        with Apple&apos;s App Attest, and submits a proof to the service.
+        with Apple's App Attest, and submits a proof to the service.
       </Text>
       {error && <Text style={styles.errorText}>{error}</Text>}
       {isLoading ? (

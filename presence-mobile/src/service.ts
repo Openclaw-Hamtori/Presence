@@ -113,11 +113,12 @@ export async function measure(options: MeasureOptions = {}): Promise<Result<Meas
   const passResult = evaluatePass(biometricWindow);
   const capturedAt = Math.floor(Date.now() / 1000);
   let state = await loadPresenceState();
+  const existingState = state && state.iss === iss ? state : null;
   let isNewState = false;
 
   if (!passResult.pass) {
-    if (state && state.iss === iss) {
-      state = recordFailedMeasurement(state, {
+    if (existingState) {
+      state = recordFailedMeasurement(existingState, {
         signals: passResult.signals,
         reason: passResult.reason,
         capturedAt,
@@ -137,7 +138,6 @@ export async function measure(options: MeasureOptions = {}): Promise<Result<Meas
     });
   }
 
-  const existingState = state && state.iss === iss ? state : null;
   const shouldPreserveValidity = !!existingState
     && existingState.pass
     && !forceRefresh
@@ -159,6 +159,8 @@ export async function measure(options: MeasureOptions = {}): Promise<Result<Meas
       iss,
       pass: true,
       signals: passResult.signals,
+      serviceBindings: existingState?.serviceBindings,
+      linkedDevice: existingState?.linkedDevice,
       capturedAt,
       reason: passResult.reason,
     });
@@ -220,7 +222,12 @@ export async function proveMeasured(measurement: MeasureResult, options: ProveOp
   let state: PresenceState = measurement.state;
   const persistedState = await loadPresenceState();
   if (persistedState && persistedState.iss === measurement.iss) {
-    state = persistedState;
+    state = {
+      ...measurement.state,
+      serviceBindings: persistedState.serviceBindings,
+      linkedDevice: persistedState.linkedDevice,
+      activeLinkSession: persistedState.activeLinkSession,
+    };
   }
 
   const isNewState = measurement.isNewState;

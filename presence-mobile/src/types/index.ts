@@ -71,6 +71,12 @@ export type PresenceStateStatus =
   | "check_due"
   | "recovery_pending"
   | "not_ready";
+/**
+ * Wire-level linkage flow names.
+ * `reauth` remains the backend/mobile transport label for "service requested
+ * PASS from an already-linked account"; product copy should describe that as
+ * proof on demand, not as a separate renewal-era product mode.
+ */
 export type LinkFlow = "initial_link" | "reauth" | "relink" | "recovery";
 export type LinkCompletionMethod = "qr" | "deeplink" | "manual_code";
 

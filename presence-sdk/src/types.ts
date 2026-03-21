@@ -90,6 +90,11 @@ export interface RawPresenceRequestBody {
     service_id?: string;
     link_session_id?: string;
     binding_id?: string;
+    /**
+     * Stable mobile/backend flow labels.
+     * `reauth` is still the transport value for linked "request PASS now"
+     * operations even though product docs phrase that as proof on demand.
+     */
     flow?: "initial_link" | "reauth" | "relink" | "recovery";
     recovery_code?: string;
     completion?: {

@@ -44,6 +44,8 @@ export interface UsePresenceStateResult {
   measure: (options?: MeasureOptions) => Promise<MeasureResult | null>;
   /** Call with service nonce or full prove options to generate proof */
   prove: (nonceOrOptions: string | ProveOptions) => Promise<PresenceTransportPayload | null>;
+  /** Reload state from persistence after external updates */
+  refresh: () => Promise<PresenceState | null>;
   /** Request HealthKit permissions */
   requestPermissions: () => Promise<boolean>;
   /** Reset error state */
@@ -86,6 +88,26 @@ export function usePresenceState(): UsePresenceStateResult {
     return () => { cancelled = true; };
   }, [phaseFromState]);
 
+  useEffect(() => {
+    if (!state) return;
+    if (phase === "loading" || phase === "measuring" || phase === "proving" || phase === "error") {
+      return;
+    }
+
+    const syncPhase = () => {
+      setPhase((current) => {
+        if (current === "loading" || current === "measuring" || current === "proving" || current === "error") {
+          return current;
+        }
+        return phaseFromState(state, current);
+      });
+    };
+
+    syncPhase();
+    const interval = setInterval(syncPhase, 1000);
+    return () => clearInterval(interval);
+  }, [state, phase, phaseFromState]);
+
   // ── Request HealthKit permissions ─────────────────────────────────────────
   const requestPermissions = useCallback(async (): Promise<boolean> => {
     if (!isHealthKitAvailable()) {
@@ -105,6 +127,14 @@ export function usePresenceState(): UsePresenceStateResult {
     }
     return true;
   }, []);
+
+  const refresh = useCallback(async (): Promise<PresenceState | null> => {
+    const persisted = await loadPresenceState();
+    setState(persisted);
+    setError(null);
+    setPhase(phaseFromState(persisted));
+    return persisted;
+  }, [phaseFromState]);
 
   // ── Measure ───────────────────────────────────────────────────────────────
   const runMeasure = useCallback(async (options: MeasureOptions = {}): Promise<MeasureResult | null> => {
@@ -160,12 +190,14 @@ export function usePresenceState(): UsePresenceStateResult {
 
     return result.value.payload;
   }, [phaseFromState]);
+
   return {
     phase,
     state,
     error,
     measure: runMeasure,
     prove: runProve,
+    refresh,
     requestPermissions,
     clearError: () => {
       setError(null);

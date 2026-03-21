@@ -2,6 +2,8 @@ import type { LinkCompletionEnvelope } from "./deeplink";
 import type { PresenceBindingSync, Result } from "./types/index";
 import { err, ok } from "./types/index";
 
+// INTENTIONAL_FORK: test app keeps verbose trust-boundary diagnostics during deeplink/QR debugging.
+
 /**
  * First-pass trust model for session-provided sync URLs:
  * - fetch `https://{serviceDomain}/.well-known/presence.json`

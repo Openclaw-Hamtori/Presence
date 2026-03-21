@@ -192,6 +192,9 @@ Recommended architecture:
 If a deeplink/session includes `nonce_url` or `verify_url`, the app now requires
 `service_domain` and validates those URLs against `https://{service_domain}/.well-known/presence.json`
 before proof submission or later binding sync. Mismatches fail closed.
+`status_url`, `nonce_url`, and `verify_url` must already be absolute URLs at the
+mobile boundary; backend-relative paths are rejected until the backend rewrites
+them for public/mobile use.
 
 This gives product teams a path to initial linking and later proof submission without implementing native scanner/camera behavior in this phase.
 

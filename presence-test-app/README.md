@@ -31,6 +31,7 @@ The app now demonstrates the canonical Presence UX:
 - Best-effort background catch-up still exists for testing, but the app now treats that as implementation detail rather than the product promise.
 - Simulator builds can compile, but live QR scanning itself still requires a real iPhone camera.
 - Session links can now carry `service_domain`; if they also include `nonce_url` / `verify_url`, the app validates those URLs against `https://{service_domain}/.well-known/presence.json` before proof submission or later sync.
+- Shared `presence-mobile/src` mirrors and intentional `presence-test-app/src` forks are documented in `../presence-mobile/SOURCE_OF_TRUTH.md` and checked by `npm run check:mobile-sync`.
 
 ## Checks
 

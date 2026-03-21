@@ -9,6 +9,8 @@
  *   - Presence Android Platform Appendix v0.1 (iOS path)
  */
 
+// INTENTIONAL_FORK: test app export surface includes app-only debugging and validation helpers.
+
 // ─── Core service ─────────────────────────────────────────────────────────────
 export { measure, prove, proveMeasured } from "./service";
 export type { MeasureOptions, MeasureResult, ProveOptions, ProveResult } from "./service";

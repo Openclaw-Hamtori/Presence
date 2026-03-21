@@ -8,6 +8,11 @@ import type {
   LinkedAccountReadiness,
 } from "./types.js";
 
+/**
+ * Stable backend transport flow labels.
+ * `reauth` is the wire value for "request PASS from an already-linked account"
+ * even though product-facing docs now describe that as proof on demand.
+ */
 export type PresenceBackendFlow = "initial_link" | "reauth" | "relink" | "recovery";
 
 export interface PresenceCompletionEndpointContract {
@@ -94,6 +99,10 @@ export interface PresenceLinkedNonceResponse {
 }
 
 export interface PresenceLinkedProofRequestDescriptor {
+  /**
+   * Stable wire label for a linked proof request.
+   * Treat this as "service requested PASS now" in product copy.
+   */
   flow: "reauth";
   serviceId: string;
   accountId: string;

@@ -9,6 +9,8 @@
  * Digest:             SHA-256(appAttestBytes) → hex
  */
 
+// INTENTIONAL_FORK: test app keeps extra signature/base64 diagnostics for device crypto debugging.
+
 import DeviceCrypto, { AccessLevel, KeyTypes } from "react-native-device-crypto";
 
 // React Native globals not typed by default in this lib configuration

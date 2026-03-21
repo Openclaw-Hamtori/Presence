@@ -21,7 +21,14 @@ const FAILED_RETRY_SECONDS = 30 * 60;
 export async function loadPresenceState(): Promise<PresenceState | null> {
   try {
     const raw = await AsyncStorage.getItem(STORAGE_KEY);
-    if (raw) return withComputedStatus(JSON.parse(raw) as PresenceState);
+    if (raw) {
+      const parsed = JSON.parse(raw) as PresenceState;
+      const normalized = withComputedStatus(parsed);
+      if (JSON.stringify(normalized) !== JSON.stringify(parsed)) {
+        await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
+      }
+      return normalized;
+    }
 
     const legacyRaw = await AsyncStorage.getItem(LEGACY_STORAGE_KEY);
     if (!legacyRaw) return null;
@@ -113,6 +120,8 @@ export function createPresenceState(params: {
   signals: PresenceSignal[];
   linkSession?: LinkSession;
   binding?: ServiceBinding;
+  serviceBindings?: ServiceBinding[];
+  linkedDevice?: PresenceState["linkedDevice"];
   capturedAt?: number;
   reason?: string;
 }): PresenceState {
@@ -127,6 +136,10 @@ export function createPresenceState(params: {
     reason: params.reason,
     source: "measurement",
   };
+
+  const preservedBindings = params.binding
+    ? touchBindingsForMeasurement([params.binding], { capturedAt: now })
+    : touchBindingsForMeasurement(params.serviceBindings ?? [], { capturedAt: now });
 
   return withComputedStatus({
     status: "ready",
@@ -145,13 +158,19 @@ export function createPresenceState(params: {
     }),
     lastMeasurementReason: params.reason,
     platform: "ios",
-    linkedDevice: {
-      iss: params.iss,
-      platform: "ios",
-      linkedAt: now,
-    },
+    linkedDevice: params.linkedDevice
+      ? {
+          ...params.linkedDevice,
+          iss: params.iss,
+          platform: "ios",
+        }
+      : {
+          iss: params.iss,
+          platform: "ios",
+          linkedAt: now,
+        },
     activeLinkSession: params.linkSession,
-    serviceBindings: params.binding ? touchBindingsForMeasurement([params.binding], { capturedAt: now }) : [],
+    serviceBindings: preservedBindings,
     lastSnapshot: snapshot,
   });
 }
@@ -212,7 +231,12 @@ export function addOrUpdateServiceBinding(
 ): PresenceState {
   const existingById = state.serviceBindings.find((item) => item.bindingId === binding.bindingId);
   const existingByLogicalKey = state.serviceBindings.find(
-    (item) => item.serviceId === binding.serviceId && item.accountId === binding.accountId && isActiveBinding(item)
+    (item) => (
+      item.linkedDeviceIss === binding.linkedDeviceIss
+      && item.serviceId === binding.serviceId
+      && item.accountId === binding.accountId
+      && isActiveBinding(item)
+    )
   );
   const existing = existingById ?? existingByLogicalKey;
 
@@ -221,6 +245,7 @@ export function addOrUpdateServiceBinding(
     if (item.bindingId === binding.bindingId) return false;
     if (
       isActiveBinding(item) &&
+      item.linkedDeviceIss === binding.linkedDeviceIss &&
       item.serviceId === binding.serviceId &&
       item.accountId === binding.accountId
     ) {
@@ -234,7 +259,7 @@ export function addOrUpdateServiceBinding(
     ...binding,
     bindingId: binding.bindingId,
     status: nextStatus,
-    sync: binding.sync ?? existing?.sync,
+    sync: mergeBindingSyncMetadata(existing?.sync, binding.sync),
     recoveryStartedAt: nextStatus === "recovery_pending" || nextStatus === "reauth_required"
       ? binding.recoveryStartedAt ?? existing?.recoveryStartedAt
       : undefined,
@@ -300,8 +325,11 @@ export function attachLinkSession(state: PresenceState, session: LinkSession): P
 
 export function isCheckDue(state: PresenceState): boolean {
   const now = Math.floor(Date.now() / 1000);
+  if (state.pass) {
+    const remaining = state.stateValidUntil - now;
+    return remaining > 0 && remaining <= SCHEDULED_CHECK_LEAD_SECONDS;
+  }
   const status = computeStateStatus(state);
-  if (status === "check_due" || status === "expired") return true;
   if (status === "not_ready") {
     return (state.nextMeasurementAt ?? now) <= now;
   }
@@ -345,12 +373,20 @@ function withComputedStatus(state: PresenceState): PresenceState {
 
 function normalizeState(state: PresenceState): PresenceState {
   const now = Math.floor(Date.now() / 1000);
+  const serviceBindings = suppressShadowedLegacyUnsyncableBindings(state.serviceBindings);
+
   if (!state.activeLinkSession || state.activeLinkSession.expiresAt > now) {
-    return state;
+    return serviceBindings === state.serviceBindings
+      ? state
+      : {
+          ...state,
+          serviceBindings,
+        };
   }
 
   return {
     ...state,
+    serviceBindings,
     activeLinkSession: {
       ...state.activeLinkSession,
       status: "expired",
@@ -358,8 +394,55 @@ function normalizeState(state: PresenceState): PresenceState {
   };
 }
 
-function isActiveBinding(binding: ServiceBinding): boolean {
+export function isActiveBinding(binding: ServiceBinding): boolean {
   return binding.status !== "unlinked" && binding.status !== "revoked";
+}
+
+export function suppressShadowedLegacyUnsyncableBindings(bindings: ServiceBinding[]): ServiceBinding[] {
+  if (bindings.length < 2) return bindings;
+
+  const shadowedBindingIds = getShadowedLegacyUnsyncableBindingIds(bindings);
+  if (shadowedBindingIds.size === 0) {
+    return bindings;
+  }
+
+  return bindings.filter((binding) => !shadowedBindingIds.has(binding.bindingId));
+}
+
+export function getShadowedLegacyUnsyncableBindingIds(bindings: ServiceBinding[]): Set<string> {
+  const shadowedBindingIds = new Set<string>();
+
+  for (const binding of bindings) {
+    if (isShadowedLegacyUnsyncableBinding(binding, bindings)) {
+      shadowedBindingIds.add(binding.bindingId);
+    }
+  }
+
+  return shadowedBindingIds;
+}
+
+export function isShadowedLegacyUnsyncableBinding(
+  binding: ServiceBinding,
+  bindings: ServiceBinding[]
+): boolean {
+  if (!isActiveBinding(binding) || hasRequiredBindingSyncMetadata(binding.sync)) {
+    return false;
+  }
+
+  return bindings.some((candidate) => (
+    candidate.bindingId !== binding.bindingId
+    && isActiveBinding(candidate)
+    && hasRequiredBindingSyncMetadata(candidate.sync)
+    && sharesBindingShadowScope(candidate, binding)
+  ));
+}
+
+export function hasActiveServiceBindings(bindings: ServiceBinding[]): boolean {
+  return bindings.some((binding) => isActiveBinding(binding));
+}
+
+export function hasSyncableServiceBindings(bindings: ServiceBinding[]): boolean {
+  return bindings.some((binding) => isActiveBinding(binding) && hasRequiredBindingSyncMetadata(binding.sync));
 }
 
 function resolveBindingStatus(
@@ -376,6 +459,63 @@ function resolveBindingStatus(
     return existing.status;
   }
   return incomingStatus;
+}
+
+function sharesBindingShadowScope(a: ServiceBinding, b: ServiceBinding): boolean {
+  if (a.linkedDeviceIss !== b.linkedDeviceIss || a.serviceId !== b.serviceId) {
+    return false;
+  }
+
+  if (a.accountId && b.accountId) {
+    return a.accountId === b.accountId;
+  }
+
+  return true;
+}
+
+function normalizeOptionalSyncValue(value?: string): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+export function normalizeBindingSyncMetadata(
+  sync: ServiceBinding["sync"] | undefined | null
+): ServiceBinding["sync"] | undefined {
+  if (!sync) return undefined;
+
+  const normalized = {
+    serviceDomain: normalizeOptionalSyncValue(sync.serviceDomain),
+    nonceUrl: normalizeOptionalSyncValue(sync.nonceUrl),
+    verifyUrl: normalizeOptionalSyncValue(sync.verifyUrl),
+    statusUrl: normalizeOptionalSyncValue(sync.statusUrl),
+  };
+
+  return normalized.serviceDomain || normalized.nonceUrl || normalized.verifyUrl || normalized.statusUrl
+    ? normalized
+    : undefined;
+}
+
+export function hasRequiredBindingSyncMetadata(
+  sync: ServiceBinding["sync"] | undefined | null
+): boolean {
+  const normalized = normalizeBindingSyncMetadata(sync);
+  return !!normalized?.nonceUrl && !!normalized?.verifyUrl;
+}
+
+export function mergeBindingSyncMetadata(
+  existingSync: ServiceBinding["sync"] | undefined,
+  incomingSync: ServiceBinding["sync"] | undefined
+): ServiceBinding["sync"] | undefined {
+  const normalizedExisting = normalizeBindingSyncMetadata(existingSync);
+  const normalizedIncoming = normalizeBindingSyncMetadata(incomingSync);
+
+  if (!normalizedExisting) return normalizedIncoming;
+  if (!normalizedIncoming) return normalizedExisting;
+  return {
+    ...normalizedExisting,
+    ...normalizedIncoming,
+  };
 }
 
 function computeNextMeasurementAt(params: {

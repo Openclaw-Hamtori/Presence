@@ -2,6 +2,8 @@
  * presence-mobile — Presence State Manager
  */
 
+// INTENTIONAL_FORK: test app compresses timing and carries app-only hydration helpers for validation.
+
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import type {
   PresenceState,

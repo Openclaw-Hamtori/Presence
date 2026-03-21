@@ -20,6 +20,7 @@ import { useEffect, useRef, useCallback } from "react";
 import { AppState, AppStateStatus } from "react-native";
 import {
   computeStateStatus,
+  hasSyncableServiceBindings,
   secondsUntilNextMeasurement,
   isCheckDue,
 } from "../state/presenceState";
@@ -34,6 +35,8 @@ import {
   flushQueuedLinkedBindingSyncs,
 } from "../sync/linkedBindings";
 import { hasPendingLinkedBindingSyncJobs } from "../sync/queue";
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 type ScheduledTask = () => Promise<boolean | void>;
 
@@ -58,6 +61,8 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
     );
   });
 }
+
+// ─── Hook ─────────────────────────────────────────────────────────────────────
 
 export function usePresenceBackgroundSync(
   presence: UsePresenceStateResult,
@@ -90,12 +95,15 @@ export function usePresenceBackgroundSync(
     if (!currentPresence.state) return;
     const currentStatus = computeStateStatus(currentPresence.state);
 
-    // Keep retrying while a scheduled check is due or verify work is queued
-    // instead of relying on a single boundary timer.
     const hasPendingSyncJobs = await hasPendingLinkedBindingSyncJobs();
-    const secondsUntil = currentStatus === "expired"
-      || isCheckDue(currentPresence.state)
-      || hasPendingSyncJobs
+    const canRetryExpiredSync = currentStatus === "expired"
+      && hasSyncableServiceBindings(currentPresence.state.serviceBindings);
+
+    if (currentStatus === "expired" && !canRetryExpiredSync && !hasPendingSyncJobs) {
+      return;
+    }
+
+    const secondsUntil = hasPendingSyncJobs || canRetryExpiredSync
       ? SCHEDULE_RETRY_SECONDS
       : secondsUntilNextMeasurement(currentPresence.state);
     const delaySeconds = secondsUntil > 0 ? secondsUntil : SCHEDULE_RETRY_SECONDS;
@@ -120,15 +128,18 @@ export function usePresenceBackgroundSync(
     }
 
     const currentStatus = currentPresence.state ? computeStateStatus(currentPresence.state) : null;
+    const canRetryExpiredSync = !!currentPresence.state
+      && currentStatus === "expired"
+      && hasSyncableServiceBindings(currentPresence.state.serviceBindings);
     const needsMeasurementCheck = !!currentPresence.state
-      && (isCheckDue(currentPresence.state) || currentStatus === "expired");
+      && (isCheckDue(currentPresence.state) || canRetryExpiredSync);
     const initialPendingSyncs = await hasPendingLinkedBindingSyncJobs();
 
     if (!needsMeasurementCheck && !initialPendingSyncs) {
       if (source === "background") {
         await finishBackgroundRefresh(true);
-        await scheduleNextCheck();
       }
+      await scheduleNextCheck();
       return;
     }
 
@@ -140,13 +151,14 @@ export function usePresenceBackgroundSync(
         success = result !== false;
       }
 
-      const shouldFlushQueuedSyncs = needsMeasurementCheck
-        ? false
-        : initialPendingSyncs;
+      const shouldFlushQueuedSyncs = initialPendingSyncs || needsMeasurementCheck;
 
       if (shouldFlushQueuedSyncs) {
         const result = await withTimeout(flushQueuedLinkedBindingSyncs(), BACKGROUND_TIMEOUT_MS);
         success = success && result.errors.length === 0;
+        if (result.attempted > 0) {
+          await presenceRef.current.refresh();
+        }
       }
     } catch {
       success = false;
@@ -156,10 +168,10 @@ export function usePresenceBackgroundSync(
         try {
           await finishBackgroundRefresh(success);
         } catch {}
-        try {
-          await scheduleNextCheck();
-        } catch {}
       }
+      try {
+        await scheduleNextCheck();
+      } catch {}
     }
   }, [scheduleNextCheck]);
 
@@ -187,6 +199,7 @@ export function usePresenceBackgroundSync(
     };
   }, []);
 
+  // ── AppState foreground listener ──────────────────────────────────────────
   useEffect(() => {
     const subscription = AppState.addEventListener(
       "change",
@@ -209,6 +222,7 @@ export function usePresenceBackgroundSync(
     };
   }, [scheduleNextCheck, clearTimer]);
 
+  // ── Re-schedule when state changes ───────────────────────────────────────
   useEffect(() => {
     if (presence.state) {
       void scheduleNextCheck();

@@ -254,6 +254,8 @@ Return shape:
 - `ok: false` with `state: "unlinked" | "revoked" | "recovery_pending"` when a binding exists but should not accept a fresh PASS request
 - the normalized HTTP success shape is `{ ok: true, proofRequest: { flow: "reauth", bindingId, nonce, endpoints } }`
 
+`flow: "reauth"` is the stable wire label for this already-linked proof request. In product copy, describe it as "request PASS now" or "prove on demand" rather than a separate renewal mode.
+
 ### `getLinkedAccountReadiness({ serviceId?, accountId, now?, maxSnapshotAgeSeconds? })`
 
 Returns the service-side linked account readiness decision that should gate access.

@@ -10,6 +10,31 @@
 - If the test app needs app-only glue, keep that glue narrow and explicit.
 - Shared crypto / health / service / state / deeplink / linkage logic belongs in `presence-mobile/src/`.
 
+## Guardrail
+- Run `npm run check:mobile-sync` before landing mobile/test-app changes that touch duplicated paths.
+- The guard classifies every duplicated file as either:
+  - a byte-identical mirror that must stay in lockstep, or
+  - an explicit `INTENTIONAL_FORK` in `presence-test-app/src/` with a narrow reason.
+- New duplicated files are not allowed to appear silently; the guard fails until they are categorized deliberately.
+
+## Boundary vocabulary
+- Backend/sdk `ServiceBinding.deviceIss` is the same identifier that mobile/test-app local state stores as `ServiceBinding.linkedDeviceIss`.
+- Backend/session completion metadata may start as backend-relative paths; mobile/test-app `PresenceBindingSync` only accepts public absolute URLs after the backend rewrites them.
+- Mobile UI is local UX only. Backend readiness and bindings remain authoritative.
+
+## Intentional duplication today
+- `presence-test-app/src/crypto/index.ts` remains a diagnostic fork of [`presence-mobile/src/crypto/index.ts`](/Users/chaesung/Desktop/Presence_GPT/presence-mobile/src/crypto/index.ts) so the test app can log signature/base64 normalization details during device debugging.
+- `presence-test-app/src/health/healthkit.ts` remains a validation fork of [`presence-mobile/src/health/healthkit.ts`](/Users/chaesung/Desktop/Presence_GPT/presence-mobile/src/health/healthkit.ts) because the test app uses tuned query settings for compressed real-device checks.
+- `presence-test-app/src/index.ts` remains an app-surface fork of [`presence-mobile/src/index.ts`](/Users/chaesung/Desktop/Presence_GPT/presence-mobile/src/index.ts) so the test app can expose validation-only helpers without redefining the reusable package contract silently.
+- `presence-test-app/src/linkTrust.ts` remains a diagnostic fork of [`presence-mobile/src/linkTrust.ts`](/Users/chaesung/Desktop/Presence_GPT/presence-mobile/src/linkTrust.ts) so the test app can log trust-boundary normalization details during QR/deeplink debugging.
+- `presence-test-app/src/service.ts` remains an app-behavior fork of [`presence-mobile/src/service.ts`](/Users/chaesung/Desktop/Presence_GPT/presence-mobile/src/service.ts) so the test app can preserve app-specific proof orchestration/local persistence behavior.
+- `presence-test-app/src/state/presenceState.ts` remains a validation fork of [`presence-mobile/src/state/presenceState.ts`](/Users/chaesung/Desktop/Presence_GPT/presence-mobile/src/state/presenceState.ts) because the test app uses compressed timing constants and app-only hydration helpers.
+- `presence-test-app/src/sync/linkedBindings.ts` remains a diagnostic fork of [`presence-mobile/src/sync/linkedBindings.ts`](/Users/chaesung/Desktop/Presence_GPT/presence-mobile/src/sync/linkedBindings.ts) because the test app records detailed sync diagnostics that the reusable package does not expose.
+
+## Mirrored duplicates today
+- Remaining duplicated files under `presence-test-app/src/` are expected to stay byte-identical to their `presence-mobile/src/` counterpart and are enforced by `npm run check:mobile-sync`.
+
 ## Near-term follow-up
 - Reduce remaining duplication between `presence-mobile/src/` and `presence-test-app/src/`.
-- Prefer import/re-export or sync tooling over parallel manual edits.
+- Prefer import/re-export or shared helpers over parallel manual edits whenever the test app does not need extra diagnostics.
+- When a duplicated file changes behavior, mirror the equivalent change in its counterpart in the same pass or document the intentional divergence immediately.

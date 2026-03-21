@@ -1,4 +1,4 @@
-import { loadPresenceState } from "../state/presenceState";
+import { loadPresenceState, savePresenceState } from "../state/presenceState";
 import { validateBindingSyncConfiguration } from "../linkTrust";
 import { markBindingMismatchForRecovery, markBindingSyncExhausted, markBindingVerified, measure, proveMeasured } from "../service";
 import type { MeasureResult } from "../service";
@@ -203,6 +203,7 @@ async function executeBindingSync(
 
   const proof = await proveMeasured(measurement, {
     nonce,
+    persistLocalState: false,
     bindingHint: {
       bindingId: bindingWithSync.bindingId,
       serviceId: bindingWithSync.serviceId,
@@ -237,6 +238,7 @@ async function executeBindingSync(
     throw new Error("verify endpoint returned no explicit success");
   }
 
+  await savePresenceState(proof.value.state);
   await markBindingVerified(bindingWithSync.bindingId);
   return {
     bindingId: bindingWithSync.bindingId,

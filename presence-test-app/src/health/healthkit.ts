@@ -14,6 +14,8 @@
  *   - per-day matching uses the user's local calendar day, not UTC day
  */
 
+// INTENTIONAL_FORK: test app uses tuned HealthKit query settings for rapid device validation.
+
 import { NativeModules, Platform } from "react-native";
 import type {
   BpmSample,

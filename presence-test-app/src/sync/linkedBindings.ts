@@ -1,3 +1,5 @@
+// INTENTIONAL_FORK: test app records detailed linked-sync diagnostics and stricter debug guardrails.
+
 import {
   getShadowedLegacyUnsyncableBindingIds,
   hasActiveServiceBindings,
