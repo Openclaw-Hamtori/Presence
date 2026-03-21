@@ -382,14 +382,14 @@ function getProductState(params: {
   const { phase, pass, hasRecovery, linkedServiceCount, requestedServiceId } = params;
   const linkedSummary = formatLinkedServiceLabel(linkedServiceCount);
   const requestSummary = requestedServiceId ? ` for ${requestedServiceId}` : "";
-  const hasPass = !!pass && phase !== "expired" && phase !== "not_ready" && phase !== "error" && !hasRecovery;
+  const hasPass = !!pass && phase !== "not_ready" && phase !== "error" && !hasRecovery;
 
   if (phase === "measuring") {
     return {
       label: hasPass ? "PASS" : "FAIL",
       tone: hasPass ? C.success : C.warn,
       heading: "Checking this device",
-      detail: "Presence is reading recent on-device health signals to compute PASS or FAIL.",
+      detail: "Presence is running a local on-device check to determine PASS or FAIL.",
       action: "Keep the app open while the local check completes.",
       summary: linkedSummary,
     };
@@ -428,7 +428,7 @@ function getProductState(params: {
         ? `This device is ready to submit PASS${requestSummary}.`
         : linkedServiceCount > 0
           ? "Presence keeps your linked services connected and submits proof only when one asks."
-          : "This device has PASS and can be linked to a service from a deeplink or QR.",
+          : "This device currently has PASS and can be linked to a service from a deeplink or QR.",
       action: requestedServiceId
         ? "Tap the orb to submit PASS to the requesting service."
         : linkedServiceCount > 0
@@ -440,17 +440,17 @@ function getProductState(params: {
 
   return {
     label: "FAIL",
-    tone: phase === "error" || phase === "expired" ? C.error : C.warn,
+    tone: phase === "error" ? C.error : C.warn,
     heading: requestedServiceId ? "Proof request blocked" : "Presence is not ready",
     detail: requestedServiceId
-      ? `This request cannot be submitted until the device returns PASS${requestSummary}.`
+      ? `This request cannot be submitted until this device returns PASS${requestSummary}.`
       : linkedServiceCount > 0
-        ? "Linked services stay connected, but this device needs a fresh local PASS before proof can be submitted."
-        : "Open a service deeplink or QR to link Presence, then create the first PASS.",
+        ? "Linked services stay connected, but proof is blocked until this device returns PASS."
+        : "Open a service deeplink or QR to start linking Presence, then run a local check when PASS is needed.",
     action: requestedServiceId
       ? "Tap the orb to run a new local check."
       : linkedServiceCount > 0
-        ? "Tap the orb to check again."
+        ? "Tap the orb to run a local check."
         : "Open Connect to start a link from your service.",
     summary: linkedSummary,
   };
@@ -497,13 +497,13 @@ export default function App() {
       source === "scheduled"
         ? (
           measurement.pass
-            ? "🔄 Scheduled renewal measurement passed"
-            : `⚠️ Scheduled measurement reported NOT READY — ${measurement.reason}`
+            ? "↻ Scheduled background check returned PASS"
+            : `⚠️ Scheduled background check returned FAIL — ${measurement.reason}`
         )
         : (
           measurement.pass
-            ? "✅ PASS measurement refreshed"
-            : `⚠️ NOT READY — ${measurement.reason}`
+            ? "✅ Local check returned PASS"
+            : `⚠️ Local check returned FAIL — ${measurement.reason}`
         )
     );
 
@@ -528,21 +528,21 @@ export default function App() {
     return { measurement, syncResult };
   }, [addLog, presence]);
 
-  const runAutomaticRefresh = useCallback(async () => {
+  const runScheduledSync = useCallback(async () => {
     const result = await runMeasurementAndSync("scheduled");
     if (!result) {
-      addLog("❌ Automatic refresh finished without a measurement result");
+      addLog("❌ Scheduled sync finished without a measurement result");
       return false;
     }
 
     const success = result.measurement.pass && result.syncResult.errors.length === 0;
     addLog(
-      `↻ Automatic refresh finished — pass=${result.measurement.pass} attempted=${result.syncResult.attempted} verified=${result.syncResult.verified} errors=${result.syncResult.errors.length}`
+      `↻ Scheduled sync finished — pass=${result.measurement.pass} attempted=${result.syncResult.attempted} verified=${result.syncResult.verified} errors=${result.syncResult.errors.length}`
     );
     return success;
   }, [addLog, runMeasurementAndSync]);
 
-  usePresenceRenewal(presence, runAutomaticRefresh);
+  usePresenceRenewal(presence, runScheduledSync);
 
   const hydratedBindingsForCurrentDevice = useMemo(() => {
     if (!currentDeviceIss || hydratedServiceBindings?.deviceIss !== currentDeviceIss) {
@@ -866,7 +866,7 @@ export default function App() {
     if (!loaded) {
       return;
     }
-    addLog(`✅ Link session ${parsed.sessionId} loaded — tap Approve to create a linked proof`);
+    addLog(`✅ Link session ${parsed.sessionId} loaded — tap Submit PASS to link or answer the request`);
   };
 
   const handleScanQr = async () => {
@@ -973,7 +973,7 @@ export default function App() {
   };
 
   const handleMeasure = async () => {
-    addLog("→ measure() — rolling 72h window");
+    addLog("→ run local PASS check");
     const result = await runMeasurementAndSync("manual");
     if (!result) {
       setLocalError(presence.error?.message ?? "Could not complete the measurement.");

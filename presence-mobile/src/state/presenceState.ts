@@ -15,7 +15,7 @@ import type {
 const STORAGE_KEY = "@presence:state:v2";
 const LEGACY_STORAGE_KEY = "@presence:state:v1";
 const STATE_VALIDITY_SECONDS = 72 * 60 * 60;
-const RENEWAL_WINDOW_SECONDS = 30 * 60;
+const SCHEDULED_CHECK_LEAD_SECONDS = 30 * 60;
 const FAILED_RETRY_SECONDS = 30 * 60;
 
 export async function loadPresenceState(): Promise<PresenceState | null> {
@@ -85,6 +85,11 @@ export async function clearPresenceState(): Promise<void> {
   await AsyncStorage.multiRemove([STORAGE_KEY, LEGACY_STORAGE_KEY]);
 }
 
+/**
+ * Internal scheduler status. Product-facing UI should generally collapse
+ * `ready`/`needs_renewal` into PASS and `not_ready`/`expired` into FAIL,
+ * while handling recovery separately.
+ */
 export function computeStateStatus(state: PresenceState): PresenceStateStatus {
   const now = Math.floor(Date.now() / 1000);
   const remaining = state.stateValidUntil - now;
@@ -94,7 +99,7 @@ export function computeStateStatus(state: PresenceState): PresenceStateStatus {
   if (state.serviceBindings.some((binding) => binding.status === "recovery_pending" || binding.status === "reauth_required")) {
     return "recovery_pending";
   }
-  if (remaining <= RENEWAL_WINDOW_SECONDS) return "needs_renewal";
+  if (remaining <= SCHEDULED_CHECK_LEAD_SECONDS) return "needs_renewal";
   return "ready";
 }
 
@@ -310,25 +315,29 @@ export function secondsUntilNextMeasurement(state: PresenceState): number {
     return Math.max(0, (state.nextMeasurementAt ?? now) - now);
   }
 
-  const renewalStart = state.stateValidUntil - RENEWAL_WINDOW_SECONDS;
-  return Math.max(0, renewalStart - now);
+  const scheduledCheckStart = state.stateValidUntil - SCHEDULED_CHECK_LEAD_SECONDS;
+  return Math.max(0, scheduledCheckStart - now);
 }
 
 export function secondsUntilRenewalWindow(state: PresenceState): number {
   return secondsUntilNextMeasurement(state);
 }
 
+/**
+ * Retained for debug/scheduler surfaces. Product UI should prefer PASS / FAIL
+ * messaging instead of time-based copy.
+ */
 export function formatTimeRemaining(state: PresenceState): string {
   const now = Math.floor(Date.now() / 1000);
   if (!state.pass) {
     if (state.nextMeasurementAt && state.nextMeasurementAt > now) {
-      return `Retry in ${formatDuration(state.nextMeasurementAt - now)}`;
+      return `Next local check in ${formatDuration(state.nextMeasurementAt - now)}`;
     }
-    return "Not ready";
+    return "PASS unavailable";
   }
   const remaining = state.stateValidUntil - now;
 
-  if (remaining <= 0) return "Expired";
+  if (remaining <= 0) return "PASS unavailable";
   return formatDuration(remaining);
 }
 
@@ -401,7 +410,7 @@ function computeNextMeasurementAt(params: {
     return params.capturedAt + FAILED_RETRY_SECONDS;
   }
 
-  return Math.max(params.capturedAt, params.stateValidUntil - RENEWAL_WINDOW_SECONDS);
+  return Math.max(params.capturedAt, params.stateValidUntil - SCHEDULED_CHECK_LEAD_SECONDS);
 }
 
 function touchBindingsForMeasurement(

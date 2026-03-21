@@ -34,7 +34,6 @@ export function PresenceStatusCard({ presence, fetchNonce }: PresenceStatusCardP
   };
 
   const hasPass = !!state?.pass
-    && phase !== "expired"
     && phase !== "not_ready"
     && phase !== "error"
     && phase !== "recovery_pending";
@@ -44,7 +43,7 @@ export function PresenceStatusCard({ presence, fetchNonce }: PresenceStatusCardP
     : phase === "measuring"
       ? "Checking device"
       : hasPass
-        ? "Ready to prove"
+        ? "Ready for request"
         : phase === "recovery_pending"
           ? "Recovery needed"
           : "";
@@ -81,7 +80,7 @@ export function PresenceStatusCard({ presence, fetchNonce }: PresenceStatusCardP
             <Text style={styles.helper}>
               {phase === "proving"
                 ? "Submitting PASS to the current service request."
-                : "Ready to submit proof when a linked service asks."}
+                : "PASS is ready to submit when a linked service asks."}
             </Text>
             {phase !== "proving" && (
               <TouchableOpacity style={styles.primaryButton} onPress={handleSubmitProof}>
@@ -91,15 +90,15 @@ export function PresenceStatusCard({ presence, fetchNonce }: PresenceStatusCardP
           </>
         )}
 
-        {(phase === "expired" || phase === "not_ready" || phase === "recovery_pending") && (
+        {(phase === "not_ready" || phase === "recovery_pending") && (
           <>
             <Text style={styles.helper}>
               {phase === "recovery_pending"
                 ? "A linked service needs recovery or relink before proof can be accepted."
-                : "PASS is not ready. Run a fresh local check before submitting proof."}
+                : "PASS is unavailable right now. Run a local check before submitting proof."}
             </Text>
             <TouchableOpacity style={styles.primaryButton} onPress={handleMeasure}>
-              <Text style={styles.primaryButtonText}>Check again</Text>
+              <Text style={styles.primaryButtonText}>Run local check</Text>
             </TouchableOpacity>
           </>
         )}

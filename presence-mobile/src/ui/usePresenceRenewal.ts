@@ -34,15 +34,15 @@ import {
 } from "../sync/linkedBindings";
 import { hasPendingLinkedBindingSyncJobs } from "../sync/queue";
 
-type RenewalTask = () => Promise<boolean | void>;
+type ScheduledTask = () => Promise<boolean | void>;
 
 const BACKGROUND_TIMEOUT_MS = 25_000;
-const RENEWAL_RETRY_SECONDS = 5;
+const SCHEDULE_RETRY_SECONDS = 5;
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(() => {
-      reject(new Error(`renewal timed out after ${timeoutMs}ms`));
+      reject(new Error(`scheduled Presence task timed out after ${timeoutMs}ms`));
     }, timeoutMs);
 
     promise.then(
@@ -60,7 +60,7 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
 
 export function usePresenceRenewal(
   presence: UsePresenceStateResult,
-  runScheduledTask: RenewalTask
+  runScheduledTask: ScheduledTask
 ): void {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isRenewingRef = useRef(false);
@@ -88,15 +88,15 @@ export function usePresenceRenewal(
     const currentPresence = presenceRef.current;
     if (!currentPresence.state) return;
 
-    // Keep retrying while renewal is due or verify work is queued instead of
-    // relying on a single boundary timer.
+    // Keep retrying while a scheduled check is due or verify work is queued
+    // instead of relying on a single boundary timer.
     const hasPendingSyncJobs = await hasPendingLinkedBindingSyncJobs();
-    const secondsUntil = currentPresence.phase === "expired"
+    const secondsUntil = currentPresence.stateStatus === "expired"
       || shouldRenew(currentPresence.state)
       || hasPendingSyncJobs
-      ? RENEWAL_RETRY_SECONDS
+      ? SCHEDULE_RETRY_SECONDS
       : secondsUntilNextMeasurement(currentPresence.state);
-    const delaySeconds = secondsUntil > 0 ? secondsUntil : RENEWAL_RETRY_SECONDS;
+    const delaySeconds = secondsUntil > 0 ? secondsUntil : SCHEDULE_RETRY_SECONDS;
 
     await scheduleBackgroundRefresh(Math.floor(Date.now() / 1000) + delaySeconds);
 
@@ -118,7 +118,7 @@ export function usePresenceRenewal(
     }
 
     const needsMeasurementSync = !!currentPresence.state
-      && (shouldRenew(currentPresence.state) || currentPresence.phase === "expired");
+      && (shouldRenew(currentPresence.state) || currentPresence.stateStatus === "expired");
     const initialPendingSyncs = await hasPendingLinkedBindingSyncJobs();
 
     if (!needsMeasurementSync && !initialPendingSyncs) {

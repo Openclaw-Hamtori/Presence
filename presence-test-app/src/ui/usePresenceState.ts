@@ -4,7 +4,7 @@
  * React hook that manages Presence state lifecycle:
  *   - Load persisted state on mount
  *   - Expose prove() with loading/error states
- *   - Auto-detect renewal need
+ *   - Keep scheduler status available without making it the product-facing model
  *   - Drive onboarding flow
  */
 
@@ -17,7 +17,12 @@ import {
   formatTimeRemaining,
 } from "../state/presenceState";
 import { requestHealthKitPermissions, isHealthKitAvailable } from "../health/healthkit";
-import type { PresenceState, PresenceTransportPayload, PresenceMobileError } from "../types/index";
+import type {
+  PresenceState,
+  PresenceStateStatus,
+  PresenceTransportPayload,
+  PresenceMobileError,
+} from "../types/index";
 import { PresenceMobileError as PresenceMobileErrorClass } from "../types/index";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -27,9 +32,7 @@ export type PresenceHookPhase =
   | "needs_healthkit"   // HealthKit permission required
   | "ready"             // has valid state
   | "not_ready"         // latest measurement failed
-  | "needs_renewal"     // state expiring soon
   | "recovery_pending"  // linked account needs recovery / relink
-  | "expired"           // state expired, needs full re-prove
   | "uninitialized"     // no state yet (first launch)
   | "measuring"         // measure() in progress
   | "proving"           // prove() in progress
@@ -39,7 +42,11 @@ export interface UsePresenceStateResult {
   phase: PresenceHookPhase;
   state: PresenceState | null;
   error: PresenceMobileError | null;
+  /** Raw scheduler/debug status. Product UI should usually collapse this into PASS / FAIL. */
+  stateStatus: PresenceStateStatus | null;
+  /** Scheduling/debug metadata, not primary product copy. */
   timeRemaining: string | null;
+  /** Scheduler hint for background work, not primary product copy. */
   needsRenewal: boolean;
   /** Read 72h health data and update local PASS/FAIL state */
   measure: (options?: MeasureOptions) => Promise<MeasureResult | null>;
@@ -65,10 +72,8 @@ export function usePresenceState(): UsePresenceStateResult {
     (nextState: PresenceState | null, fallback: PresenceHookPhase = "uninitialized"): PresenceHookPhase => {
       if (!nextState) return fallback;
       const status = computeStateStatus(nextState);
-      if (status === "expired") return "expired";
-      if (status === "needs_renewal") return "needs_renewal";
       if (status === "recovery_pending") return "recovery_pending";
-      if (status === "not_ready") return "not_ready";
+      if (status === "not_ready" || status === "expired") return "not_ready";
       return "ready";
     },
     []
@@ -211,16 +216,18 @@ export function usePresenceState(): UsePresenceStateResult {
   }, [phaseFromState]);
 
   // ── Derived values ────────────────────────────────────────────────────────
+  const stateStatus = state ? computeStateStatus(state) : null;
   const timeRemaining = useMemo(() => {
     void clockTick;
     return state ? formatTimeRemaining(state) : null;
   }, [state, clockTick]);
-  const needsRenewal = state ? computeStateStatus(state) === "needs_renewal" : false;
+  const needsRenewal = stateStatus === "needs_renewal";
 
   return {
     phase,
     state,
     error,
+    stateStatus,
     timeRemaining,
     needsRenewal,
     measure: runMeasure,

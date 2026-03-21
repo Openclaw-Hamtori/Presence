@@ -58,6 +58,11 @@ export interface PresenceBindingSync {
   statusUrl?: string;
 }
 
+/**
+ * Internal local state status.
+ * `expired` and `needs_renewal` remain available for scheduling/debug logic,
+ * but product UI should generally collapse them into PASS / FAIL.
+ */
 export type PresenceStateStatus =
   | "uninitialized"
   | "ready"
