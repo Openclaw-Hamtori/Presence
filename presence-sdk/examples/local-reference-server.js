@@ -77,8 +77,9 @@ async function main() {
   const serviceId = process.env.PRESENCE_SERVICE_ID || "demo-service";
   const publicBaseUrl = (process.env.PUBLIC_BASE_URL || `http://${host}:${port}`).replace(/\/$/, "");
   const serviceDomain = process.env.PRESENCE_SERVICE_DOMAIN || "";
-  const root = mkdtempSync(join(tmpdir(), "presence-local-reference-server-"));
-  const storePath = fileLinkageStorePath(root);
+  const storageRoot = process.env.PRESENCE_STORAGE_ROOT || join(process.cwd(), "var", "presence");
+  mkdirSync(storageRoot, { recursive: true });
+  const storePath = fileLinkageStorePath(storageRoot);
 
   const presence = new PresenceClient({
     silent: true,
