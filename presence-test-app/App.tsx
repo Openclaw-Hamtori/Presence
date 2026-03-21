@@ -1011,13 +1011,19 @@ export default function App() {
               ) : null}
 
               {sortedServiceBindings.length > 0 ? (
-                <View style={styles.bindingViewport}>
+                <View
+                  style={styles.bindingViewport}
+                  onLayout={(event) => setServiceViewportHeight(event.nativeEvent.layout.height)}
+                >
                   <ScrollView
                     style={styles.bindingListScroll}
                     contentContainerStyle={styles.bindingList}
                     showsVerticalScrollIndicator
                     keyboardShouldPersistTaps="handled"
                     bounces={false}
+                    scrollEventThrottle={16}
+                    onContentSizeChange={(_, height) => setServiceContentHeight(height)}
+                    onScroll={(event) => setServiceScrollOffset(event.nativeEvent.contentOffset.y)}
                   >
                     {sortedServiceBindings.map((binding) => (
                       <View key={binding.bindingId} style={styles.bindingCard}>
@@ -1027,6 +1033,19 @@ export default function App() {
                       </View>
                     ))}
                   </ScrollView>
+                  <View pointerEvents="none" style={styles.bindingScrollRailDebug}>
+                    <View
+                      style={[
+                        styles.bindingScrollThumbDebug,
+                        serviceScrollTrackVisible
+                          ? {
+                              height: serviceScrollThumbHeight,
+                              transform: [{ translateY: serviceScrollThumbTop }],
+                            }
+                          : styles.bindingScrollThumbDebugStatic,
+                      ]}
+                    />
+                  </View>
                 </View>
               ) : (
                 <View style={styles.emptyCard}>
@@ -1528,6 +1547,26 @@ const styles = StyleSheet.create({
     width: "100%",
     borderRadius: 999,
     backgroundColor: "rgba(15, 23, 42, 0.32)",
+  },
+  bindingScrollRailDebug: {
+    position: "absolute",
+    top: 12,
+    right: 6,
+    bottom: 12,
+    width: 8,
+    borderRadius: 999,
+    backgroundColor: "rgba(239, 68, 68, 0.28)",
+    overflow: "hidden",
+    zIndex: 20,
+  },
+  bindingScrollThumbDebug: {
+    width: "100%",
+    minHeight: 56,
+    borderRadius: 999,
+    backgroundColor: "rgba(220, 38, 38, 0.9)",
+  },
+  bindingScrollThumbDebugStatic: {
+    height: 56,
   },
   bindingCard: {
     borderRadius: 18,
