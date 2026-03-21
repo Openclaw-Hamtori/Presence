@@ -7,7 +7,7 @@ import {
   ActivityIndicator,
   Image,
 } from "react-native";
-import type { UsePresenceStateResult, PresenceHookPhase } from "../usePresenceState";
+import type { UsePresenceStateResult } from "../usePresenceState";
 
 const ORB_IMAGE = require("../assets/presence-orb.png");
 
@@ -18,9 +18,9 @@ interface PresenceStatusCardProps {
 }
 
 export function PresenceStatusCard({ presence, fetchNonce }: PresenceStatusCardProps) {
-  const { phase, state, error, timeRemaining, needsRenewal } = presence;
+  const { phase, state, error } = presence;
 
-  const handleRenew = async () => {
+  const handleSubmitProof = async () => {
     try {
       const nonce = await fetchNonce();
       await presence.prove(nonce);
@@ -33,22 +33,21 @@ export function PresenceStatusCard({ presence, fetchNonce }: PresenceStatusCardP
     } catch {}
   };
 
-  const statusLabel = phase === "expired"
-    ? "EXPIRED"
-    : phase === "needs_renewal"
-      ? "RENEW"
-      : phase === "not_ready"
-        ? "FAIL"
-        : state?.pass
-          ? "PASS"
-          : "PRESENCE";
-  const topRightText = phase === "expired"
-    ? ""
-    : state?.pass
-      ? timeRemaining ?? ""
-      : phase === "not_ready"
-        ? "Measure again"
-        : "";
+  const hasPass = !!state?.pass
+    && phase !== "expired"
+    && phase !== "not_ready"
+    && phase !== "error"
+    && phase !== "recovery_pending";
+  const statusLabel = hasPass ? "PASS" : "FAIL";
+  const topRightText = phase === "proving"
+    ? "Submitting proof"
+    : phase === "measuring"
+      ? "Checking device"
+      : hasPass
+        ? "Ready to prove"
+        : phase === "recovery_pending"
+          ? "Recovery needed"
+          : "";
 
   return (
     <View style={styles.card}>
@@ -58,8 +57,8 @@ export function PresenceStatusCard({ presence, fetchNonce }: PresenceStatusCardP
         </TouchableOpacity>
 
         <View style={styles.topRight}>
-          <View style={[styles.badge, statusLabel === "FAIL" && styles.badgeFail, statusLabel === "RENEW" && styles.badgeRenew]}>
-            <Text style={[styles.badgeText, statusLabel === "FAIL" && styles.badgeTextFail, statusLabel === "RENEW" && styles.badgeTextRenew]}>{statusLabel}</Text>
+          <View style={[styles.badge, statusLabel === "FAIL" && styles.badgeFail]}>
+            <Text style={[styles.badgeText, statusLabel === "FAIL" && styles.badgeTextFail]}>{statusLabel}</Text>
           </View>
           {!!topRightText && <Text style={styles.topMeta}>{topRightText}</Text>}
         </View>
@@ -75,33 +74,32 @@ export function PresenceStatusCard({ presence, fetchNonce }: PresenceStatusCardP
       </View>
 
       <View style={styles.bottomArea}>
-        {phase === "uninitialized" && <Text style={styles.helper}>No proof yet</Text>}
+        {phase === "uninitialized" && <Text style={styles.helper}>Open a service link to connect Presence.</Text>}
 
-        {(phase === "ready" || phase === "needs_renewal" || phase === "proving") && state && (
+        {hasPass && state && (
           <>
-            <Text style={styles.helper}>{state.lastMeasurementReason ?? "Presence active"}</Text>
-            {needsRenewal && phase !== "proving" && (
-              <TouchableOpacity style={styles.primaryButton} onPress={handleRenew}>
-                <Text style={styles.primaryButtonText}>Renew proof</Text>
+            <Text style={styles.helper}>
+              {phase === "proving"
+                ? "Submitting PASS to the current service request."
+                : "Ready to submit proof when a linked service asks."}
+            </Text>
+            {phase !== "proving" && (
+              <TouchableOpacity style={styles.primaryButton} onPress={handleSubmitProof}>
+                <Text style={styles.primaryButtonText}>Submit proof</Text>
               </TouchableOpacity>
             )}
           </>
         )}
 
-        {phase === "expired" && (
+        {(phase === "expired" || phase === "not_ready" || phase === "recovery_pending") && (
           <>
-            <Text style={styles.helper}>Proof expired</Text>
-            <TouchableOpacity style={styles.primaryButton} onPress={handleRenew}>
-              <Text style={styles.primaryButtonText}>Generate new proof</Text>
-            </TouchableOpacity>
-          </>
-        )}
-
-        {phase === "not_ready" && (
-          <>
-            <Text style={styles.helper}>Latest measurement is not ready</Text>
+            <Text style={styles.helper}>
+              {phase === "recovery_pending"
+                ? "A linked service needs recovery or relink before proof can be accepted."
+                : "PASS is not ready. Run a fresh local check before submitting proof."}
+            </Text>
             <TouchableOpacity style={styles.primaryButton} onPress={handleMeasure}>
-              <Text style={styles.primaryButtonText}>Measure again</Text>
+              <Text style={styles.primaryButtonText}>Check again</Text>
             </TouchableOpacity>
           </>
         )}
@@ -119,24 +117,12 @@ export function PresenceStatusCard({ presence, fetchNonce }: PresenceStatusCardP
   );
 }
 
-function phaseColor(phase: PresenceHookPhase): string {
-  switch (phase) {
-    case "ready": return COLORS.success;
-    case "needs_renewal": return COLORS.warning;
-    case "not_ready":
-    case "expired":
-    case "error": return COLORS.error;
-    default: return COLORS.subtext;
-  }
-}
-
 const COLORS = {
   bg: "#FAFAF7",
   text: "#1B1B18",
   subtext: "#8C8C84",
   border: "#E8E7E1",
   success: "#2F7D4A",
-  warning: "#B07B1A",
   error: "#A94A4A",
   chip: "rgba(255,255,255,0.72)",
 };
@@ -182,9 +168,6 @@ const styles = StyleSheet.create({
   badgeFail: {
     backgroundColor: "rgba(169,74,74,0.08)",
   },
-  badgeRenew: {
-    backgroundColor: "rgba(176,123,26,0.08)",
-  },
   badgeText: {
     color: COLORS.success,
     fontSize: 12,
@@ -193,9 +176,6 @@ const styles = StyleSheet.create({
   },
   badgeTextFail: {
     color: COLORS.error,
-  },
-  badgeTextRenew: {
-    color: COLORS.warning,
   },
   topMeta: {
     color: COLORS.subtext,

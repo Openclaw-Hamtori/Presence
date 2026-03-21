@@ -88,3 +88,14 @@ Today’s work fixed both layers and aligned them again.
 
 This hardens the current single-host JSON store significantly, but it is still a file-based authoritative store.
 For longer-term robustness, SQLite/WAL (or another transactional store) remains the likely next authoritative-store step.
+
+## Product direction update after stabilization
+
+After confirming the current linked proof pipeline, the product direction shifted away from background auto-renewal as the main promise.
+
+New preferred model:
+- link once via QR/deeplink
+- stay linked
+- when a service needs human proof, the user opens Presence and submits a fresh PASS proof on demand
+
+This better matches iOS lifecycle reality, simplifies the app, and gives the service a clearer action-time proof model.

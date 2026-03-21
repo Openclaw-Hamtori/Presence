@@ -4,10 +4,10 @@
  * Presence onboarding flow — Mobile Client Flow v0.4.
  *
  * Steps:
- *   1. Welcome   — explain what Presence does
+ *   1. Welcome   — explain linked Presence
  *   2. Heartbeat — explain smartwatch requirement + HealthKit permission
- *   3. Prove     — first proof generation
- *   4. Done      — state established
+ *   3. Prove     — create first PASS
+ *   4. Done      — service linked
  */
 
 import React, { useState } from "react";
@@ -95,13 +95,13 @@ function WelcomeStep({ onNext }: { onNext: () => void }) {
   return (
     <View style={styles.step}>
       <Text style={styles.emoji}>💓</Text>
-      <Text style={styles.title}>Prove you're human with Presence</Text>
+      <Text style={styles.title}>Link services with Presence</Text>
       <Text style={styles.body}>
-        Presence proves you're human using your heartbeat — no account, no server,
-        no data ever leaves your device.
+        Presence links your device to a service and uses on-device heartbeat data
+        to compute a simple PASS or FAIL result when proof is needed.
       </Text>
       <Text style={styles.subtext}>
-        You'll need a smartwatch paired with your iPhone.
+        Services receive proof results, not your raw heart rate data.
       </Text>
       <PrimaryButton label="Get started" onPress={onNext} />
     </View>
@@ -120,14 +120,15 @@ function HeartbeatStep({
   return (
     <View style={styles.step}>
       <Text style={styles.emoji}>❤️</Text>
-      <Text style={styles.title}>Share your heartbeat</Text>
+      <Text style={styles.title}>Allow heartbeat access</Text>
       <Text style={styles.body}>
         Presence reads recent heart rate data from Apple Health to confirm you're
-        present. Only a pass or fail result is computed — raw BPM values are
-        never sent anywhere.
+        present. Only a PASS or FAIL result is computed locally. Raw BPM values
+        are never submitted as part of the proof.
       </Text>
       <Text style={styles.subtext}>
-        Tap Allow when iOS asks for Health access.
+        You'll need a smartwatch paired with your iPhone. Tap Allow when iOS asks
+        for Health access.
       </Text>
       {isLoading ? (
         <ActivityIndicator style={styles.loader} color={COLORS.accent} />
@@ -152,19 +153,19 @@ function ProveStep({
   return (
     <View style={styles.step}>
       <Text style={styles.emoji}>🔐</Text>
-      <Text style={styles.title}>Establishing your proof</Text>
+      <Text style={styles.title}>Create your first PASS</Text>
       <Text style={styles.body}>
-        Your device will generate a unique key and prove its integrity using
-        Apple's App Attest. This takes a few seconds.
+        To finish linking, your device creates a unique key, proves its integrity
+        with Apple's App Attest, and submits a proof to the service.
       </Text>
       {error && <Text style={styles.errorText}>{error}</Text>}
       {isLoading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator color={COLORS.accent} />
-          <Text style={styles.loadingText}>Generating proof…</Text>
+          <Text style={styles.loadingText}>Creating PASS…</Text>
         </View>
       ) : (
-        <PrimaryButton label="Generate proof" onPress={onProve} />
+        <PrimaryButton label="Create PASS" onPress={onProve} />
       )}
     </View>
   );
@@ -180,15 +181,15 @@ function DoneStep({
   return (
     <View style={styles.step}>
       <Text style={styles.emoji}>✅</Text>
-      <Text style={styles.title}>You're human</Text>
+      <Text style={styles.title}>Service linked</Text>
       <Text style={styles.body}>
-        Your Presence proof is active for 72 hours. Services that support Presence can
-        verify you're human without knowing who you are.
+        Presence is now linked to the service. Later, when the service needs human
+        proof, open Presence and submit PASS on demand.
       </Text>
       <View style={styles.statusBadge}>
         <Text style={styles.statusLabel}>Status</Text>
         <Text style={styles.statusValue}>PASS</Text>
-        <Text style={styles.statusHint}>Linked and ready</Text>
+        <Text style={styles.statusHint}>Linked and ready for proof requests</Text>
       </View>
       <PrimaryButton label="Continue" onPress={onComplete} />
     </View>

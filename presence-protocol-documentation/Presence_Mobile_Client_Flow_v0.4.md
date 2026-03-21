@@ -42,9 +42,9 @@ The user should not need to fully reconnect for every request.
 
 ## 5. Initial link flow
 
-1. service creates a link session
+1. service creates a link session and shows it as a deeplink / QR
 2. service issues a nonce
-3. mobile app evaluates PASS
+3. mobile app opens the request and evaluates PASS
 4. mobile app creates or refreshes local Presence state
 5. mobile app generates fresh App Attest evidence
 6. mobile app signs the Presence Attestation
@@ -53,10 +53,10 @@ The user should not need to fully reconnect for every request.
 
 ---
 
-## 6. Re-auth / linked proof flow
+## 6. On-demand linked proof flow
 
 For already-linked accounts:
-1. service recognizes an existing binding
+1. service recognizes an existing binding and decides a human check is needed
 2. service issues a fresh nonce
 3. mobile app reuses persistent linkage metadata
 4. mobile app generates a fresh attestation
@@ -71,8 +71,8 @@ Persistent linkage and fresh attestation are complementary, not substitutes.
 Background behavior is best-effort.
 
 The app should:
-- maintain PASS state when OS scheduling allows
-- keep the local Presence snapshot fresh enough for fast auth
+- keep local PASS/FAIL state available when OS scheduling allows
+- optionally catch up linked proof state when the app wakes
 - request fresh attestation whenever the service asks
 
 The app MUST NOT assume exact periodic execution.

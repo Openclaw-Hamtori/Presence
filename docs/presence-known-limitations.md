@@ -4,19 +4,19 @@ This document captures product and platform limitations that should be understoo
 
 ---
 
-## 1. iOS background execution is not a guaranteed scheduler
+## 1. iOS background execution is not the core product path
 
 Presence on iOS can attempt background refresh behavior, but iOS does not provide a general-purpose guarantee that apps will run at exact times in the background.
 
 Implications:
-- background renewal can be best-effort
+- background catch-up can be best-effort
 - exact periodic deadlines are not guaranteed
 - app refresh timing is controlled by system heuristics
 - short background execution windows may expire early
 
 Recommended public wording:
-- Presence attempts background refresh where platform conditions allow it
-- Presence should not promise exact periodic renewal while backgrounded
+- Presence links the service once and submits proof on demand
+- Background refresh is auxiliary and platform-dependent
 
 ---
 
@@ -25,7 +25,7 @@ Recommended public wording:
 If the user force quits the app, iOS generally prevents background relaunch until the user opens it again.
 
 Implications:
-- do not promise automatic renewal after force quit
+- do not promise automatic proof refresh after force quit
 - design product UX around foreground-resume recovery
 - document this clearly rather than implying unsupported behavior
 
@@ -54,7 +54,7 @@ Implications:
 
 ## 5. Background success and guaranteed freshness are different goals
 
-Presence may succeed in many background cases, especially with platform-specific triggers like HealthKit delivery, but that is still different from guaranteeing exact freshness windows under all lifecycle conditions.
+Presence may succeed in many background cases, especially with platform-specific triggers like HealthKit delivery, but that is still different from guaranteeing exact proof freshness windows under all lifecycle conditions.
 
 Implications:
 - document best-effort background behavior honestly
@@ -79,6 +79,7 @@ Implications:
 
 Avoid claims like:
 - "Presence always renews in the background"
+- "Presence always refreshes proof without user action"
 - "Presence survives force quit automatically"
 - "The app alone decides whether the user is valid"
 

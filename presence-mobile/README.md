@@ -18,7 +18,7 @@ Phase 4 extends the persistent linkage model on device with:
 - unlink / revoke / relink-aware local state
 - local recovery markers for binding mismatch or re-auth requirement
 - deeplink parsing / generation helpers for link completion
-- a reusable `ConnectionFlowScreen` that walks through service session -> QR/deeplink -> device approval -> proof completion
+- a reusable `ConnectionFlowScreen` that walks through service request -> QR/deeplink -> device proof submission -> server completion
 - richer `link_context` routing metadata for initial link, re-auth, relink, and recovery
 - explicit local-calendar-day PASS evaluation semantics for BPM + steps
 
@@ -43,7 +43,7 @@ presence-mobile/src/
 ├── deeplink.ts                    — deeplink / QR payload build+parse helpers
 └── ui/
    ├── usePresenceState.ts         — hook that now accepts full `ProveOptions`
-   └── screens/ConnectionFlowScreen.tsx — reference session approval flow
+   └── screens/ConnectionFlowScreen.tsx — reference link/proof-request flow
 ```
 
 ---
@@ -55,15 +55,15 @@ presence-mobile/src/
 - **LinkedDevice** — local durable device identity derived from Secure Enclave key / `iss`
 - **LinkSession** — one-time bootstrap context for initial link or recovery relink
 - **ServiceBinding** — persistent mapping from a service account to this linked device
-- **PresenceSnapshot** — most recent PASS snapshot maintained on device
+- **PresenceSnapshot** — most recent local PASS/FAIL snapshot maintained on device
 
 ### Lifecycle
 
-1. Service starts a one-time link session and issues a nonce.
+1. Service starts a one-time link or proof request and issues a nonce.
 2. Mobile app enters one of four flows: `initial_link`, `reauth`, `relink`, or `recovery`.
 3. Device evaluates PASS, produces fresh App Attest evidence, and returns proof.
-4. After service verification succeeds, the binding remains active until revoked/unlinked.
-5. Future auth checks reuse the binding, while the device still produces a **fresh attestation** when requested.
+4. On the first successful verification, the service stores the binding and the connection becomes active until revoked/unlinked.
+5. Later auth checks reuse that binding, and the device produces a **fresh proof** only when the service asks.
 6. If the service detects a mismatch, local state can be marked `recovery_pending` until relink completes.
 
 ---
@@ -160,9 +160,9 @@ Recommended architecture:
 
 If a deeplink/session includes `nonce_url` or `verify_url`, the app now requires
 `service_domain` and validates those URLs against `https://{service_domain}/.well-known/presence.json`
-before approval or later binding sync. Mismatches fail closed.
+before proof submission or later binding sync. Mismatches fail closed.
 
-This gives product teams a path to UX completion without implementing native scanner/camera behavior in this phase.
+This gives product teams a path to initial linking and later proof submission without implementing native scanner/camera behavior in this phase.
 
 ---
 
@@ -198,21 +198,21 @@ Raw sample duration may still be preserved as source metadata, but it no longer 
 
 ## Background behavior
 
-Background work is still best-effort.
+Background work is still best-effort, but it is no longer the product centerpiece.
 The test app includes an iOS `BGTaskScheduler` scaffold, but the reusable mobile package is not yet a production-hardened background runtime.
 Failed linked PASS verify attempts may be retried on the next foreground or background wake when the app has enough context to do so.
 A linked account stays linked even when a specific PASS snapshot expires.
-The next successful auth still requires fresh PASS state + fresh attestation.
+The main user-facing model is still: stay linked, then submit fresh proof when a service asks.
 
 Important public expectation-setting:
 - foreground and foreground-resume flows can be made highly reliable
-- background renewal may succeed opportunistically
+- background catch-up may succeed opportunistically
 - exact periodic execution is not guaranteed by iOS
 - force-quit survival should not be treated as guaranteed behavior
 
 So product design should prefer:
 - strong resume recovery
-- explicit backend freshness checks
+- explicit backend proof checks
 - honest background-lifecycle documentation
 
 ---

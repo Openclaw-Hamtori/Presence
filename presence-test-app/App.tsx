@@ -367,48 +367,92 @@ function syncFromEnvelope(envelope: LinkCompletionEnvelope | null): ServiceBindi
   });
 }
 
-function getProductState(phase: string, pass: boolean | undefined, hasRecovery: boolean) {
-  if (phase === "proving" || phase === "measuring") {
+function formatLinkedServiceLabel(count: number): string {
+  if (count === 0) return "No linked services";
+  return `${count} linked service${count === 1 ? "" : "s"}`;
+}
+
+function getProductState(params: {
+  phase: string;
+  pass: boolean | undefined;
+  hasRecovery: boolean;
+  linkedServiceCount: number;
+  requestedServiceId?: string | null;
+}) {
+  const { phase, pass, hasRecovery, linkedServiceCount, requestedServiceId } = params;
+  const linkedSummary = formatLinkedServiceLabel(linkedServiceCount);
+  const requestSummary = requestedServiceId ? ` for ${requestedServiceId}` : "";
+  const hasPass = !!pass && phase !== "expired" && phase !== "not_ready" && phase !== "error" && !hasRecovery;
+
+  if (phase === "measuring") {
     return {
-      label: phase === "measuring" ? "MEASURING" : "VERIFYING",
-      tone: C.text,
-      detail: phase === "measuring" ? "Reading the latest 72-hour health window." : "Verifying the current device state.",
-      accentBg: "#F5F5F2",
+      label: hasPass ? "PASS" : "FAIL",
+      tone: hasPass ? C.success : C.warn,
+      heading: "Checking this device",
+      detail: "Presence is reading recent on-device health signals to compute PASS or FAIL.",
+      action: "Keep the app open while the local check completes.",
+      summary: linkedSummary,
+    };
+  }
+
+  if (phase === "proving") {
+    return {
+      label: hasPass ? "PASS" : "FAIL",
+      tone: hasPass ? C.success : C.warn,
+      heading: requestedServiceId ? "Submitting proof" : "Creating proof",
+      detail: requestedServiceId
+        ? `Presence is submitting PASS${requestSummary}.`
+        : "Presence is creating a proof for the current request.",
+      action: "The service will verify the proof before allowing the action.",
+      summary: linkedSummary,
     };
   }
 
   if (hasRecovery || phase === "recovery_pending") {
     return {
-      label: "RECOVERY NEEDED",
+      label: "FAIL",
       tone: C.warn,
-      detail: "This linked account needs recovery approval.",
-      accentBg: "#FFF8EC",
+      heading: "Recovery required",
+      detail: "A linked service needs recovery or relink before it can accept proof from this device.",
+      action: "Open the next service request to relink this device.",
+      summary: linkedSummary,
     };
   }
 
-  if (phase === "expired") {
+  if (hasPass) {
     return {
-      label: "EXPIRED",
-      tone: C.error,
-      detail: "Proof expired. Renew only if this device still qualifies.",
-      accentBg: "#FFFFFF",
-    };
-  }
-
-  if ((phase === "ready" || phase === "needs_renewal") && pass) {
-    return {
-      label: phase === "needs_renewal" ? "RENEW SOON" : "PASS",
-      tone: phase === "needs_renewal" ? C.warn : C.success,
-      detail: phase === "needs_renewal" ? "Refresh will be needed soon." : "This device is currently eligible.",
-      accentBg: "#FFFFFF",
+      label: "PASS",
+      tone: C.success,
+      heading: requestedServiceId ? "Proof request ready" : "Presence is linked",
+      detail: requestedServiceId
+        ? `This device is ready to submit PASS${requestSummary}.`
+        : linkedServiceCount > 0
+          ? "Presence keeps your linked services connected and submits proof only when one asks."
+          : "This device has PASS and can be linked to a service from a deeplink or QR.",
+      action: requestedServiceId
+        ? "Tap the orb to submit PASS to the requesting service."
+        : linkedServiceCount > 0
+          ? "Open a service request when proof is needed."
+          : "Open Connect to scan a QR or load a service link.",
+      summary: linkedSummary,
     };
   }
 
   return {
-    label: "NOT READY",
-    tone: phase === "error" ? C.error : C.warn,
-    detail: phase === "not_ready" ? "The latest measurement did not pass." : "A check or connection is needed.",
-    accentBg: "#FFFFFF",
+    label: "FAIL",
+    tone: phase === "error" || phase === "expired" ? C.error : C.warn,
+    heading: requestedServiceId ? "Proof request blocked" : "Presence is not ready",
+    detail: requestedServiceId
+      ? `This request cannot be submitted until the device returns PASS${requestSummary}.`
+      : linkedServiceCount > 0
+        ? "Linked services stay connected, but this device needs a fresh local PASS before proof can be submitted."
+        : "Open a service deeplink or QR to link Presence, then create the first PASS.",
+    action: requestedServiceId
+      ? "Tap the orb to run a new local check."
+      : linkedServiceCount > 0
+        ? "Tap the orb to check again."
+        : "Open Connect to start a link from your service.",
+    summary: linkedSummary,
   };
 }
 
@@ -765,7 +809,6 @@ export default function App() {
     );
   }, [currentDeviceIss, hydratedServiceBindings, localBindingsForHydration, presence.state]);
   const hasRecovery = effectiveServiceBindings.some((binding) => binding.status === "recovery_pending" || binding.status === "reauth_required");
-  const productState = getProductState(presence.phase, presence.state?.pass, hasRecovery);
   const openedSessionAlreadyLinked = !!(
     openedEnvelope?.serviceId
     && openedEnvelope?.accountId
@@ -783,6 +826,13 @@ export default function App() {
       return timeB - timeA;
     })
     .slice(0, 10);
+  const productState = getProductState({
+    phase: presence.phase,
+    pass: presence.state?.pass,
+    hasRecovery,
+    linkedServiceCount: recentServiceBindings.length,
+    requestedServiceId: openedEnvelope?.serviceId ?? null,
+  });
   const serviceScrollTrackVisible = serviceContentHeight > serviceViewportHeight + 8;
   const serviceScrollThumbHeight = serviceScrollTrackVisible
     ? Math.max(36, (serviceViewportHeight * serviceViewportHeight) / Math.max(serviceContentHeight, 1))
@@ -951,7 +1001,7 @@ export default function App() {
               <View style={[styles.stateDot, { backgroundColor: productState.tone }]} />
               <Text style={[styles.stateLabel, { color: productState.tone }]}>{productState.label}</Text>
             </View>
-            {!!presence.timeRemaining && <Text style={styles.topTime}>{presence.timeRemaining}</Text>}
+            <Text style={styles.topMeta}>{productState.summary}</Text>
           </View>
         </View>
 
@@ -969,6 +1019,12 @@ export default function App() {
           </TouchableOpacity>
         </View>
 
+        <View style={styles.heroCopy}>
+          <Text style={styles.heroTitle}>{productState.heading}</Text>
+          <Text style={styles.heroBody}>{productState.detail}</Text>
+          <Text style={styles.heroHint}>{productState.action}</Text>
+        </View>
+
         {(localError || presence.error) && (
           <View style={styles.errorBox}>
             <Text style={styles.errorCode}>{displayedErrorCode}</Text>
@@ -976,7 +1032,7 @@ export default function App() {
             {showHealthAccessRecovery ? (
               <>
                 <Text style={styles.errorHint}>
-                  Health access is required to create proof. Open App Settings for app permissions. If Health access is still off, open the Health app → Data Access & Devices → Presence, then allow read access for Heart Rate and Steps.
+                  Health access is required to compute PASS and submit proof. Open App Settings for app permissions. If Health access is still off, open the Health app → Data Access & Devices → Presence, then allow read access for Heart Rate and Steps.
                 </Text>
                 <TouchableOpacity
                   style={styles.errorActionButton}
@@ -995,7 +1051,7 @@ export default function App() {
 
         <View style={styles.bottomBar}>
           <TouchableOpacity style={styles.bottomBarButton} onPress={() => setShowService(true)} activeOpacity={0.85}>
-            <Text style={styles.bottomBarButtonText}>SERVICE</Text>
+            <Text style={styles.bottomBarButtonText}>LINKED SERVICES</Text>
           </TouchableOpacity>
         </View>
 
@@ -1004,7 +1060,7 @@ export default function App() {
             <TouchableOpacity style={styles.modalBackdropPressable} onPress={() => setShowService(false)} activeOpacity={1} />
             <View style={styles.modalCard}>
               <View style={styles.modalHeader}>
-                <Text style={styles.sectionTitle}>Service</Text>
+                <Text style={styles.sectionTitle}>Linked Services</Text>
                 <TouchableOpacity onPress={() => setShowService(false)} activeOpacity={0.85}>
                   <Text style={styles.modalClose}>Close</Text>
                 </TouchableOpacity>
@@ -1059,7 +1115,7 @@ export default function App() {
               ) : (
                 <View style={styles.emptyCard}>
                   <Text style={styles.emptyTitle}>No linked services yet</Text>
-                  <Text style={styles.emptyBody}>Complete a /presence/link flow from your service to populate this list.</Text>
+                  <Text style={styles.emptyBody}>Complete an initial Presence link from your service to populate this list.</Text>
                 </View>
               )}
             </View>
@@ -1083,7 +1139,7 @@ export default function App() {
                 <ScrollView contentContainerStyle={styles.connectionScrollContent} keyboardShouldPersistTaps="handled">
                   <View style={styles.modalCard}>
                   <View style={styles.modalHeader}>
-                    <Text style={styles.sectionTitle}>Connect</Text>
+                    <Text style={styles.sectionTitle}>Link Or Prove</Text>
                     <TouchableOpacity onPress={() => setShowConnection(false)} activeOpacity={0.85}>
                       <Text style={styles.modalClose}>Close</Text>
                     </TouchableOpacity>
@@ -1094,7 +1150,7 @@ export default function App() {
                       <Text style={styles.optionIcon}>⌗</Text>
                       <Text style={styles.optionTitle}>Scan QR</Text>
                       <Text style={styles.optionBody}>
-                        {scannerSupported ? "Scan a Presence QR code with your camera." : "Direct scanning is not available on this device. Use the link below."}
+                        {scannerSupported ? "Scan a service QR to link Presence or answer a proof request." : "Direct scanning is not available on this device. Use the link option below."}
                       </Text>
                       {scannerSupported ? (
                         <TouchableOpacity
@@ -1114,18 +1170,18 @@ export default function App() {
 
                     <View style={styles.optionCard}>
                       <Text style={styles.optionIcon}>↗</Text>
-                      <Text style={styles.optionTitle}>Load link session</Text>
-                      <Text style={styles.optionBody}>Load a Presence link into this app, then approve to generate a proof.</Text>
+                      <Text style={styles.optionTitle}>Open service link</Text>
+                      <Text style={styles.optionBody}>Load a Presence link into this app, then submit PASS to connect or answer the request.</Text>
                     </View>
                   </View>
 
                   {openedEnvelope && !openedSessionAlreadyLinked ? (
                     <View style={styles.loadedSessionCard}>
-                      <Text style={styles.loadedSessionLabel}>Approve service session</Text>
+                      <Text style={styles.loadedSessionLabel}>Submit PASS to service</Text>
                       <Text style={styles.loadedSessionBody}>
                         {openedSessionAlreadyLinked
-                          ? "This service/account is already linked in the current app state. Load a fresh link if you want to re-approve."
-                          : "Session loaded. Review the details below, then tap Approve to generate a proof for this service."}
+                          ? "This service/account is already linked in the current app state. Load a fresh request if you want to relink."
+                          : "Request loaded. Review the details below, then tap Submit PASS. Initial links connect the service; later requests submit proof on demand."}
                       </Text>
                       <View style={styles.loadedSessionMeta}>
                         <KeyValue label="Service" value={openedEnvelope.serviceId ?? "unknown"} />
@@ -1141,7 +1197,7 @@ export default function App() {
                         activeOpacity={0.85}
                       >
                         <Text style={styles.primaryActionButtonText}>
-                          {presence.phase === "proving" ? "Approving…" : "Approve service session"}
+                          {presence.phase === "proving" ? "Submitting PASS…" : "Submit PASS"}
                         </Text>
                       </TouchableOpacity>
                       <TouchableOpacity
@@ -1153,7 +1209,7 @@ export default function App() {
                         }}
                         activeOpacity={0.85}
                       >
-                        <Text style={styles.ghostButtonText}>Load different session</Text>
+                        <Text style={styles.ghostButtonText}>Choose different request</Text>
                       </TouchableOpacity>
                     </View>
                   ) : (
@@ -1166,7 +1222,7 @@ export default function App() {
                           setConnectionError(null);
                           setOpenedEnvelope(null);
                         }}
-                        placeholder="Paste a presence://link session here"
+                        placeholder="Paste a presence://link request here"
                         placeholderTextColor={C.subtext}
                         multiline
                         autoCapitalize="none"
@@ -1174,7 +1230,7 @@ export default function App() {
                       />
 
                       <TouchableOpacity style={styles.primaryActionButton} onPress={handleOpenLink} activeOpacity={0.85}>
-                        <Text style={styles.primaryActionButtonText}>Load session</Text>
+                        <Text style={styles.primaryActionButtonText}>Open request</Text>
                       </TouchableOpacity>
 
                       {connectionError ? (
@@ -1246,7 +1302,7 @@ const styles = StyleSheet.create({
     alignItems: "flex-end",
     gap: 8,
   },
-  topTime: {
+  topMeta: {
     color: C.subtext,
     fontSize: 12,
   },
@@ -1273,6 +1329,11 @@ const styles = StyleSheet.create({
     paddingVertical: 0,
     alignItems: "center",
     justifyContent: "center",
+  },
+  heroCopy: {
+    alignItems: "center",
+    gap: 6,
+    marginTop: -2,
   },
   heroEyebrow: {
     color: C.subtext,

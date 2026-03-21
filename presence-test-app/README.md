@@ -6,30 +6,30 @@ This app is primarily for:
 - integration testing
 - product-flow validation
 - QR/deeplink linking UX checks
-- renewal and server-sync debugging
+- linked proof and server-sync debugging
 
 It should not be described as the whole Presence product by itself.
 It is a reference/testing surface around the broader Presence architecture.
 
 ## What changed in this phase
 
-The app now demonstrates a realistic connection UX:
+The app now demonstrates the canonical Presence UX:
 
 1. Service creates a one-time link session
 2. Session is encoded as a QR/deeplink payload (`presence://link?...`)
-3. App opens the deeplink and previews the session
-4. User approves on device
-5. Proof is generated with `link_context` and a completion target
-6. Linked services refresh from successful PASS proofs; ordinary FAIL measurements are kept local and are not pushed upstream as a separate failure event
+3. App opens the deeplink and previews the request
+4. User submits PASS on device
+5. Service verifies the proof, stores the binding, and the service becomes connected
+6. Later, linked services can request proof on demand; ordinary FAIL measurements stay local and are not pushed upstream as a separate failure event
 
 ## Notes
 
-- On iPhone, the top-right QR entry now opens a native AVFoundation-based camera scanner and feeds the scanned payload into the same link-session approval flow.
-- Manual paste / deeplink open still works as a fallback and uses the exact same parsing + approval path.
+- On iPhone, the top-right QR entry now opens a native AVFoundation-based camera scanner and feeds the scanned payload into the same link/proof-request flow.
+- Manual paste / deeplink open still works as a fallback and uses the exact same parsing + proof-submission path.
 - The app also registers the `presence://` URL scheme so a service deeplink can jump straight into the current session preview.
-- The home screen now exposes product-facing state changes more clearly: session opened, ready to approve, proof created, binding saved, and recovery needed.
+- The home screen now emphasizes PASS / FAIL, linked services, and proof submission when requested instead of countdown-style renewal UX.
 - Simulator builds can compile, but live QR scanning itself still requires a real iPhone camera.
-- Session links can now carry `service_domain`; if they also include `nonce_url` / `verify_url`, the app validates those URLs against `https://{service_domain}/.well-known/presence.json` before approval or later sync.
+- Session links can now carry `service_domain`; if they also include `nonce_url` / `verify_url`, the app validates those URLs against `https://{service_domain}/.well-known/presence.json` before proof submission or later sync.
 
 ## Checks
 

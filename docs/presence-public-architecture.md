@@ -12,11 +12,15 @@ Presence is **not** just a mobile app and it is **not** just a verifier library.
 It is a split system:
 
 - the **Presence app** measures health-derived signals and produces proofs
-- the **Presence SDK** runs on the service/backend side and manages linking, re-auth, readiness, and persistence
+- the **Presence SDK** runs on the service/backend side and manages linking, proof verification flows, readiness, and persistence
 - the **Presence verifier** performs the proof verification itself
 - the **service backend** decides access based on server-side authoritative truth
 
 That split is intentional.
+
+The simplest current product description is:
+
+**Link once -> stay linked -> prove on demand**
 
 ---
 
@@ -106,14 +110,14 @@ Recommended rule:
    - latest verified PASS snapshot
    - audit event
 
-### Re-auth / renewal
+### On-demand proof submission
 
-1. The linked app/device needs a fresh proof
-2. App requests a nonce from the service
-3. App creates a fresh proof
+1. A linked service decides a human check is required
+2. Service issues a nonce for the linked account
+3. App opens the request and creates a fresh proof
 4. App submits proof to the verify endpoint
 5. Backend verifies and updates the latest snapshot
-6. Service readiness remains `ready` only while the verified snapshot remains fresh enough
+6. Service allows or denies the action based on authoritative readiness
 
 ### Unlink / relink
 
@@ -174,8 +178,8 @@ Practical expectations:
 This means Presence should be documented and designed around:
 - strong foreground correctness
 - strong foreground-resume recovery
-- best-effort background refresh
-- explicit server freshness rules
+- best-effort background catch-up
+- explicit server proof rules
 
 ---
 

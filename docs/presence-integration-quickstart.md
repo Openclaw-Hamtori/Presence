@@ -33,10 +33,10 @@ A Presence integration is not:
 - just a verifier
 - just a one-time QR link
 
-It is a linked auth system with **freshness**.
+It is a linked identity system with **on-demand proof submission**.
 
 The service should trust:
-- fresh verified snapshots
+- fresh verified proofs
 - stored linkage state
 - server readiness
 
@@ -61,7 +61,7 @@ Your product UI renders the QR or exposes the deeplink.
 
 ### 3. Mobile opens the session
 
-The Presence app opens the deeplink / scanned payload, evaluates PASS locally, and prepares proof.
+The Presence app opens the deeplink / scanned payload, evaluates PASS locally, and prepares a proof for the service.
 
 ### 4. Backend completes the link
 
@@ -80,16 +80,18 @@ Recommended rule:
 
 ---
 
-## Minimal renewal flow
+## Minimal proof-on-demand flow
 
-After linking, the service can request a fresh proof for a linked account.
+After linking, the service can request a fresh proof whenever a human check is needed.
 
 Typical path:
-1. backend issues linked-account nonce
-2. app generates a fresh proof
-3. app submits proof to verify endpoint
-4. backend verifies and updates authoritative snapshot
-5. readiness remains `ready` while the snapshot is fresh enough
+1. backend decides a proof is required for an action or session
+2. backend issues linked-account nonce
+3. app is opened via deeplink / QR / explicit action
+4. app generates a fresh proof
+5. app submits proof to verify endpoint
+6. backend verifies and updates authoritative snapshot
+7. service allows or denies the gated action based on the result
 
 ---
 
@@ -146,8 +148,8 @@ Force-quit survival should not be treated as guaranteed.
 So Presence on iOS should be designed around:
 - strong foreground correctness
 - strong resume recovery
-- best-effort background renewal
-- explicit server freshness gating
+- best-effort background catch-up
+- explicit server proof gating
 
 ---
 

@@ -161,13 +161,13 @@ export function ConnectionFlowScreen({
     setLocalError(null);
     const options = proveOptions;
     if (!options) {
-      setLocalError("Open a valid link session before approving.");
+      setLocalError("Open a valid service request before submitting proof.");
       return;
     }
 
     const granted = await presence.requestPermissions();
     if (!granted) {
-      setLocalError(presence.error?.message ?? "Health permissions are required before approval.");
+      setLocalError(presence.error?.message ?? "Health permissions are required before submitting proof.");
       return;
     }
 
@@ -184,12 +184,12 @@ export function ConnectionFlowScreen({
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scroll}>
-        <Text style={styles.title}>Connect Presence</Text>
+        <Text style={styles.title}>Link Or Prove With Presence</Text>
         <Text style={styles.subtitle}>
-          Simulates the product flow: service creates a one-time session, renders a QR/deeplink, app opens it, user approves, then proof is ready for completion.
+          Simulates the product flow: service creates a link or proof request, renders a QR/deeplink, app opens it, user submits PASS, and the service completes the request.
         </Text>
 
-        <Card title="1. Service creates a link session">
+        <Card title="1. Service creates a link or proof request">
           <PrimaryButton label="Create demo session" onPress={handleCreateSession} />
           {session && (
             <View style={styles.metaList}>
@@ -197,7 +197,7 @@ export function ConnectionFlowScreen({
               <Meta label="Service" value={session.serviceId} />
               <Meta label="Service domain" value={session.serviceDomain} mono />
               <Meta label="Flow" value={session.flow} />
-              <Meta label="Binding" value={session.bindingId ?? "created after first approval"} mono />
+              <Meta label="Binding" value={session.bindingId ?? "created after first link"} mono />
             </View>
           )}
         </Card>
@@ -234,16 +234,16 @@ export function ConnectionFlowScreen({
               <Meta label="Recovery code" value={parsedEnvelope.code ?? "not supplied"} mono />
             </View>
           ) : (
-            <Text style={styles.empty}>Open a valid session to preview the approval sheet.</Text>
+            <Text style={styles.empty}>Open a valid request to preview the device proof sheet.</Text>
           )}
         </Card>
 
-        <Card title="4. Approve + generate proof">
+        <Card title="4. Submit PASS on this device">
           <Text style={styles.small}>
-            Approval requests Health access if needed, evaluates PASS, creates attestation, and attaches link_context so the service can complete the session.
+            Presence requests Health access if needed, evaluates PASS, creates attestation, and attaches `link_context` so the service can link or verify the request.
           </Text>
           <PrimaryButton
-            label={presence.phase === "proving" ? "Generating proof…" : "Approve on this device"}
+            label={presence.phase === "proving" ? "Submitting PASS…" : "Submit PASS"}
             onPress={handleApprove}
             disabled={!proveOptions || presence.phase === "proving"}
           />
@@ -253,8 +253,8 @@ export function ConnectionFlowScreen({
           )}
           {proof && (
             <View style={styles.successBox}>
-              <Text style={styles.successTitle}>Proof ready for completion</Text>
-              <Text style={styles.successText}>Send this payload back to the service and finish the session at:</Text>
+              <Text style={styles.successTitle}>Proof ready for the service</Text>
+              <Text style={styles.successText}>Send this payload back to the service so it can finish the link or verify the request at:</Text>
               <Text style={styles.code}>{proof.link_context?.completion?.return_url ?? parsedEnvelope?.returnUrl ?? "service callback / completion endpoint"}</Text>
               <Text style={styles.small}>link_session_id={proof.link_context?.link_session_id ?? "n/a"}</Text>
               <Text style={styles.small}>binding_id={proof.link_context?.binding_id ?? "created server-side"}</Text>

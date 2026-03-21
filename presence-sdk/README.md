@@ -304,9 +304,9 @@ Minimal reference model in this phase:
    - optional `flow`
    - optional fallback `code`
    - optional `nonce_url`, `verify_url`
-5. If the deeplink/session includes sync URLs like `nonce_url` or `verify_url`, mobile should validate them against `https://{service_domain}/.well-known/presence.json` before approval.
+5. If the deeplink/session includes sync URLs like `nonce_url` or `verify_url`, mobile should validate them against `https://{service_domain}/.well-known/presence.json` before proof submission.
 6. Mobile produces proof and posts to `session.completion.completionApiUrl` or the standardized completion endpoint.
-7. After the first link, mobile can refresh in background by calling:
+7. After the first link, mobile can optionally catch up linked proof state in background by calling:
    - `linkedNonceApiUrl` to mint a fresh nonce
    - `verifyLinkedAccountApiUrl` to submit a fresh PASS proof
 7. Mobile persists failed PASS verify attempts locally and retries them on foreground/background wake.
@@ -327,10 +327,10 @@ For service integrators, one subtle but important point is that the mobile app a
 That means a Presence integration should be designed around:
 - strong foreground correctness
 - strong foreground-resume recovery
-- best-effort background renewal where platform conditions allow it
+- best-effort background catch-up where platform conditions allow it
 - explicit backend freshness checks
 
-Do not assume that a background-capable mobile app implies guaranteed periodic renewal at exact deadlines.
+Do not assume that a background-capable mobile app implies guaranteed periodic proof refresh at exact deadlines.
 
 ---
 
