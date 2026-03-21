@@ -87,3 +87,14 @@ Prefer claims like:
 - "Presence uses fresh proofs and backend readiness"
 - "Background refresh is best-effort on iOS"
 - "Server-side readiness is authoritative for access decisions"
+
+---
+
+## 8. One-time deeplinks and nonces can expire or be consumed
+
+Presence link sessions and proof nonces are intentionally one-time or time-bounded.
+
+Implications:
+- reused deeplinks can fail with messages like `nonce expired or not issued by service`
+- previously valid QR/deeplink payloads may stop working after expiry or first use
+- product UI should request a fresh link/proof session instead of retrying stale payloads indefinitely

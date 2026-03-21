@@ -1,5 +1,9 @@
 # Presence Release Audit — 2026-03-16
 
+Historical note:
+- This audit predates the final repo-wide shift away from renewal-centric product framing.
+- Any mention of "renewal" below should be read as background/runtime validation language, not as the current end-user model.
+
 ## Verdict
 Presence is now **repo-level release-ready / runtime-level pending**.
 

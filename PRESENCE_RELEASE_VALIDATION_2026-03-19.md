@@ -1,5 +1,9 @@
 # Presence Release Validation — 2026-03-19
 
+Historical note:
+- This validation summary captures the final stage of runtime/device verification before the repo standardized on the simpler public model: link once, stay linked, prove on demand.
+- Legacy "renewal" wording below refers to freshness/background validation work from that phase, not to the current product headline.
+
 ## Current verdict
 Presence is now **code/test/integration-doc ready**, and the previously blocking **real iPhone HTTPS trust + completion + verifier happy-path** has been validated end-to-end. Full ship signoff is now mainly waiting on the remaining runtime/device evidence outside this core linking gate.
 
@@ -101,7 +105,7 @@ Already closed in this phase:
 - `3f711ea` — `fix: remove corrupted healthkit module tail`
 
 ## Notes
-- This file is the current handoff point for release validation.
+- This file was the handoff point for release validation during that phase.
 - `REGRESSION_CHECKLIST.md` is the checkbox ledger; this file is the judgment/evidence summary.
 - Code-level ship blockers are closed as of the latest audit.
 - Remaining release risk is concentrated in real-device renewal/background evidence, not the core linking/verifier flow.

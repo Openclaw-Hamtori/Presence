@@ -1,5 +1,9 @@
 # Presence Time Test Checklist
 
+Historical/internal note:
+- This checklist uses legacy "renewal window" wording for the internal freshness/check-due timer because it was written during background-timing validation.
+- It is still useful for test planning, but it is not the current product framing. Public docs should say link once, stay linked, prove on demand.
+
 이 체크리스트는 Presence 테스트에서 시간 관련 축을 분리해서 관리하기 위한 파일이다.
 목표는 서로 다른 시간 로직이 섞여 꼬이지 않게 하고, 특정 테스트 목적에 필요한 시간만 짧게 바꿔 검증하는 것이다.
 

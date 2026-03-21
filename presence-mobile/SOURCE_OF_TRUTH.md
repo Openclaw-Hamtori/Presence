@@ -14,6 +14,7 @@
 - Run `npm run check:mobile-sync` before landing mobile/test-app changes that touch duplicated paths.
 - The guard classifies every duplicated file as either:
   - a byte-identical mirror that must stay in lockstep, or
+  - a bridge file in `presence-test-app/src/` that re-exports the canonical `presence-mobile/src/` implementation, or
   - an explicit `INTENTIONAL_FORK` in `presence-test-app/src/` with a narrow reason.
 - New duplicated files are not allowed to appear silently; the guard fails until they are categorized deliberately.
 
@@ -30,6 +31,15 @@
 - `presence-test-app/src/service.ts` remains an app-behavior fork of [`presence-mobile/src/service.ts`](/Users/chaesung/Desktop/Presence_GPT/presence-mobile/src/service.ts) so the test app can preserve app-specific proof orchestration/local persistence behavior.
 - `presence-test-app/src/state/presenceState.ts` remains a validation fork of [`presence-mobile/src/state/presenceState.ts`](/Users/chaesung/Desktop/Presence_GPT/presence-mobile/src/state/presenceState.ts) because the test app uses compressed timing constants and app-only hydration helpers.
 - `presence-test-app/src/sync/linkedBindings.ts` remains a diagnostic fork of [`presence-mobile/src/sync/linkedBindings.ts`](/Users/chaesung/Desktop/Presence_GPT/presence-mobile/src/sync/linkedBindings.ts) because the test app records detailed sync diagnostics that the reusable package does not expose.
+
+## Bridged duplicates today
+- `presence-test-app/src/backgroundRefresh.ts` re-exports [`presence-mobile/src/backgroundRefresh.ts`](/Users/chaesung/Desktop/Presence_GPT/presence-mobile/src/backgroundRefresh.ts).
+- `presence-test-app/src/deeplink.ts` re-exports [`presence-mobile/src/deeplink.ts`](/Users/chaesung/Desktop/Presence_GPT/presence-mobile/src/deeplink.ts).
+- `presence-test-app/src/health/pass.ts` re-exports [`presence-mobile/src/health/pass.ts`](/Users/chaesung/Desktop/Presence_GPT/presence-mobile/src/health/pass.ts).
+- `presence-test-app/src/qrScanner.ts` re-exports [`presence-mobile/src/qrScanner.ts`](/Users/chaesung/Desktop/Presence_GPT/presence-mobile/src/qrScanner.ts).
+- `presence-test-app/src/sync/queue.ts` re-exports [`presence-mobile/src/sync/queue.ts`](/Users/chaesung/Desktop/Presence_GPT/presence-mobile/src/sync/queue.ts).
+- `presence-test-app/src/types/index.ts` re-exports [`presence-mobile/src/types/index.ts`](/Users/chaesung/Desktop/Presence_GPT/presence-mobile/src/types/index.ts).
+- `presence-test-app/src/ui/connectionLinking.ts` re-exports [`presence-mobile/src/ui/connectionLinking.ts`](/Users/chaesung/Desktop/Presence_GPT/presence-mobile/src/ui/connectionLinking.ts).
 
 ## Mirrored duplicates today
 - Remaining duplicated files under `presence-test-app/src/` are expected to stay byte-identical to their `presence-mobile/src/` counterpart and are enforced by `npm run check:mobile-sync`.

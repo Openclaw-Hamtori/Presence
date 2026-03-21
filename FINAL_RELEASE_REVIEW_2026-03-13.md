@@ -1,5 +1,9 @@
 # Presence Final Release Review — 2026-03-13
 
+Historical note:
+- This review was written before the repo settled on the current public framing: link once, stay linked, prove on demand.
+- References to "renewal" or background refresh here describe runtime validation focus at that time, not the current product promise.
+
 ## Executive Summary
 Current state is **close to release-ready in code/document/test consistency**, but **not yet fully release-complete operationally**.
 

@@ -51,6 +51,7 @@ POST /presence/linked-accounts/:accountId/verify
 GET  /presence/linked-accounts/:accountId/status
 POST /presence/linked-accounts/:accountId/unlink
 POST /presence/devices/:deviceIss/revoke
+GET  /presence/devices/:deviceIss/bindings
 GET  /presence/audit-events
 ```
 
@@ -64,6 +65,7 @@ Recommended meaning:
 - `GET /presence/linked-accounts/:accountId/status` returns authoritative readiness for gating.
 - `POST /presence/linked-accounts/:accountId/unlink` removes the binding.
 - `POST /presence/devices/:deviceIss/revoke` revokes a device across bindings.
+- `GET /presence/devices/:deviceIss/bindings` exposes authoritative bindings for device-centric hydration/admin views.
 - `GET /presence/audit-events` exposes lifecycle history for ops/debugging.
 
 ---
@@ -78,12 +80,16 @@ const { session } = await presence.createLinkSession({
 });
 
 return createCompletionSessionResponse({
-  session,
+  session: rewriteLinkSessionForPublicBase(session, {
+    publicBaseUrl: "https://presence.example.com",
+    serviceDomain: "presence.example.com",
+  }),
   contract: endpointContract,
 });
 ```
 
 Your product UI renders `session.completion.qrUrl` or `session.completion.deeplinkUrl`.
+Use `rewriteLinkSessionForPublicBase()` before returning session completion metadata to mobile or web UI; the default helper emits backend-relative API paths that mobile will reject.
 
 The app then:
 
@@ -202,6 +208,7 @@ The canonical `POST /presence/linked-accounts/:accountId/nonce` success shape is
 ```
 
 That is the canonical "service-driven PASS request" contract. Use it instead of inventing a second renewal-specific flow.
+The stable wire label remains `flow: "reauth"` for this linked proof request shape; treat it as "service requested PASS now" in product/UI copy.
 
 ---
 

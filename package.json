@@ -8,6 +8,7 @@
     "presence-test-app"
   ],
   "scripts": {
-    "test": "npm run test -w presence-verifier && npm run test -w presence-sdk && npm run type-check -w presence-mobile && npm run type-check -w presence-test-app"
+    "check:mobile-sync": "node scripts/check-mobile-sync.mjs",
+    "test": "npm run check:mobile-sync && npm run test -w presence-verifier && npm run test -w presence-sdk && npm run type-check -w presence-mobile && npm run type-check -w presence-test-app"
   }
 }

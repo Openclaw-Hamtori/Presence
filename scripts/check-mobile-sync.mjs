@@ -9,20 +9,23 @@ const testAppRoot = path.join(repoRoot, "presence-test-app/src");
 
 const mirroredDuplicates = [
   "attestation/appAttest.ts",
-  "backgroundRefresh.ts",
-  "deeplink.ts",
   "health/pass.test.mjs",
-  "health/pass.ts",
-  "qrScanner.ts",
-  "sync/queue.ts",
-  "types/index.ts",
   "ui/assets/presence-orb.png",
   "ui/components/PresenceStatusCard.tsx",
-  "ui/connectionLinking.ts",
   "ui/screens/OnboardingScreen.tsx",
   "ui/usePresenceBackgroundSync.ts",
   "ui/usePresenceState.ts",
 ];
+
+const reexportBridges = {
+  "backgroundRefresh.ts": "../../presence-mobile/src/backgroundRefresh",
+  "deeplink.ts": "../../presence-mobile/src/deeplink",
+  "health/pass.ts": "../../../presence-mobile/src/health/pass",
+  "qrScanner.ts": "../../presence-mobile/src/qrScanner",
+  "sync/queue.ts": "../../../presence-mobile/src/sync/queue",
+  "types/index.ts": "../../../presence-mobile/src/types/index",
+  "ui/connectionLinking.ts": "../../../presence-mobile/src/ui/connectionLinking",
+};
 
 const intentionalForks = {
   "crypto/index.ts": "test app keeps extra signature/base64 diagnostics for device crypto debugging",
@@ -64,6 +67,7 @@ const testAppFiles = new Set(walk(testAppRoot));
 const duplicatedPaths = [...mobileFiles].filter((relPath) => testAppFiles.has(relPath)).sort();
 const categorizedPaths = new Set([
   ...mirroredDuplicates,
+  ...Object.keys(reexportBridges),
   ...Object.keys(intentionalForks),
 ]);
 const errors = [];
@@ -85,6 +89,21 @@ for (const relPath of mirroredDuplicates) {
   assert(
     sha256(mobileFile) === sha256(testFile),
     `Mirrored file drifted: ${relPath}`,
+    errors
+  );
+}
+
+for (const [relPath, bridgeSpecifier] of Object.entries(reexportBridges)) {
+  const mobileFile = path.join(mobileRoot, relPath);
+  const testFile = path.join(testAppRoot, relPath);
+  assert(existsSync(mobileFile), `Missing bridged mobile file: ${relPath}`, errors);
+  assert(existsSync(testFile), `Missing bridged test-app file: ${relPath}`, errors);
+  if (!existsSync(testFile)) continue;
+
+  const testFileText = readFileSync(testFile, "utf8");
+  assert(
+    testFileText.includes(`export * from "${bridgeSpecifier}"`),
+    `Bridge file does not re-export the canonical mobile implementation for ${relPath}; expected ${bridgeSpecifier}`,
     errors
   );
 }
@@ -131,5 +150,5 @@ if (errors.length > 0) {
 }
 
 console.log(
-  `presence-mobile / presence-test-app sync guard passed: ${mirroredDuplicates.length} mirrored files, ${Object.keys(intentionalForks).length} intentional forks.`
+  `presence-mobile / presence-test-app sync guard passed: ${mirroredDuplicates.length} mirrored files, ${Object.keys(reexportBridges).length} bridges, ${Object.keys(intentionalForks).length} intentional forks.`
 );

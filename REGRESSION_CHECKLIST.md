@@ -1,5 +1,9 @@
 # Presence_GPT Regression Checklist
 
+Historical/archive note:
+- This checklist is preserved as release-validation evidence from the final pre-audit pass, not as the canonical current product explainer.
+- When wording here reflects older runtime validation language, prefer the current public model in `docs/`: link once, stay linked, prove on demand.
+
 이 체크리스트는 기능 추가/수정 후, 기존에 되던 핵심 흐름이 깨지지 않았는지 확인하기 위한 기준이다.
 
 ## Rule
@@ -81,7 +85,7 @@
 ## 10. Runtime Notes / Known Behavior
 - [x] 이미 사용했거나 만료된 deeplink는 `nonce expired or not issued by service`로 실패할 수 있음
 - [x] fresh deeplink에서는 같은 기기/앱 상태에서 즉시 정상 링크 성공 재현됨
-- [ ] 이 동작을 사용자/통합자 문서의 known behavior 또는 troubleshooting에 정리
+- [x] 이 동작을 사용자/통합자 문서의 known behavior 또는 troubleshooting에 정리
 
 ---
 
@@ -90,7 +94,3 @@
 1. 바뀐 범위와 직접 관련된 항목은 반드시 재확인
 2. 최소한 App Launch / PASS / Proof / Link 중 영향 받는 핵심 항목은 다시 확인
 3. 회귀 의심 항목이 있으면 다음 단계로 넘어가지 않음
-�� 의심 항목이 있으면 다음 단계로 넘어가지 않음
-�� 있으면 다음 단계로 넘어가지 않음
-�� 의심 항목이 있으면 다음 단계로 넘어가지 않음
-목이 있으면 다음 단계로 넘어가지 않음
