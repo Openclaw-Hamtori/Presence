@@ -121,6 +121,7 @@ export interface LinkageStore {
   saveLinkedDevice(device: LinkedDevice): Promise<void>;
   appendAuditEvent(event: LinkageAuditEvent): Promise<void>;
   listAuditEvents(filter?: { serviceId?: string; accountId?: string; bindingId?: string }): Promise<LinkageAuditEvent[]>;
+  mutate?<T>(mutator: (store: LinkageStore) => Promise<T>): Promise<T>;
 }
 
 export interface CreateLinkSessionOptions {
@@ -197,6 +198,7 @@ export class InMemoryLinkageStore implements LinkageStore {
   private readonly bindings = new Map<string, ServiceBinding>();
   private readonly devices = new Map<string, LinkedDevice>();
   private readonly auditEvents: LinkageAuditEvent[] = [];
+  private mutationQueue: Promise<void> = Promise.resolve();
 
   async saveLinkSession(session: LinkSession): Promise<void> {
     this.sessions.set(session.id, { ...session });
@@ -241,6 +243,17 @@ export class InMemoryLinkageStore implements LinkageStore {
         return true;
       })
       .map((event) => ({ ...event }));
+  }
+
+  async mutate<T>(mutator: (store: LinkageStore) => Promise<T>): Promise<T> {
+    let result!: T;
+    const run = async () => {
+      result = await mutator(this);
+    };
+    const queued = this.mutationQueue.then(run, run);
+    this.mutationQueue = queued.then(() => undefined, () => undefined);
+    await queued;
+    return result;
   }
 
   private bindingKey(serviceId: string, accountId: string): string {
@@ -312,6 +325,17 @@ export class FileSystemLinkageStore implements LinkageStore {
       if (filter?.bindingId && event.bindingId !== filter.bindingId) return false;
       return true;
     });
+  }
+
+  async mutate<T>(mutator: (store: LinkageStore) => Promise<T>): Promise<T> {
+    let result!: T;
+    const run = async () => {
+      result = await mutator(this);
+    };
+    const queued = this.updateQueue.then(run, run);
+    this.updateQueue = queued.then(() => undefined, () => undefined);
+    await queued;
+    return result;
   }
 
   private bindingKey(serviceId: string, accountId: string): string {

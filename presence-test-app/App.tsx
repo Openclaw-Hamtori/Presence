@@ -578,92 +578,88 @@ export default function App() {
     void refreshDiagnostics();
   }, [presence.state?.stateValidUntil, presence.state?.nextMeasurementAt, presence.phase, refreshDiagnostics]);
 
+  const hydrateAuthoritativeBindings = useCallback(async (deviceIss: string, source: string) => {
+    setHydratingServiceBindings(true);
+    setServiceBindingsHydrationError(null);
+    try {
+      try {
+        const deviceBindings = await fetchJson<DeviceBindingsResponse>(`https://noctu.link/presence-demo/presence/devices/${encodeURIComponent(deviceIss)}/bindings`);
+        const recoveredBindings: ServiceBinding[] = deviceBindings.bindings
+          .filter((binding) => binding.deviceIss === deviceIss)
+          .map((binding) => ({
+            bindingId: binding.bindingId,
+            serviceId: binding.serviceId,
+            accountId: binding.accountId,
+            linkedDeviceIss: binding.deviceIss,
+            linkedAt: binding.lastLinkedAt ?? binding.createdAt ?? binding.updatedAt ?? Math.floor(Date.now() / 1000),
+            lastVerifiedAt: binding.lastVerifiedAt,
+            status: binding.status,
+          }));
+        setHydratedServiceBindings(recoveredBindings);
+        const persisted = await loadPresenceState();
+        if (persisted?.linkedDevice?.iss === deviceIss) {
+          await savePresenceState(mergeAuthoritativeServiceBindings(persisted, recoveredBindings));
+        }
+        addLog(`↻ Recovered ${recoveredBindings.length} bindings from device endpoint (${source})`);
+        return;
+      } catch (deviceEndpointError) {
+        addLog(`ℹ️ Device bindings endpoint unavailable (${source}) — ${deviceEndpointError instanceof Error ? deviceEndpointError.message : String(deviceEndpointError)}`);
+      }
+
+      const audit = await fetchJson<AuditEventsResponse>("https://noctu.link/presence-demo/presence/audit-events");
+      const recentAccounts = new Map<string, number>();
+      for (const event of audit.events) {
+        if (event.deviceIss !== deviceIss) continue;
+        if (!["link_completed", "reauth_succeeded", "binding_relinked", "recovery_completed"].includes(event.type)) continue;
+        const previous = recentAccounts.get(event.accountId) ?? 0;
+        if (event.occurredAt > previous) recentAccounts.set(event.accountId, event.occurredAt);
+      }
+
+      const orderedAccountIds = [...recentAccounts.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .map(([accountId]) => accountId);
+
+      const recoveredBindings = (
+        await Promise.all(
+          orderedAccountIds.map(async (accountId) => {
+            try {
+              const status = await fetchJson<LinkedAccountStatusResponse>(`https://noctu.link/presence-demo/presence/linked-accounts/${encodeURIComponent(accountId)}/status`);
+              const binding = toServiceBindingFromStatus(status);
+              return binding?.linkedDeviceIss === deviceIss ? binding : null;
+            } catch {
+              return null;
+            }
+          })
+        )
+      ).filter((binding): binding is ServiceBinding => !!binding);
+
+      setHydratedServiceBindings(recoveredBindings);
+      addLog(`↻ Recovered ${recoveredBindings.length} bindings via audit fallback (${source})`);
+    } catch (error) {
+      setServiceBindingsHydrationError(error instanceof Error ? error.message : String(error));
+      setHydratedServiceBindings([]);
+    } finally {
+      setHydratingServiceBindings(false);
+    }
+  }, [addLog]);
+
   useEffect(() => {
     if (!showService) return;
     const indicatorTimer = setTimeout(() => {
       serviceScrollRef.current?.flashScrollIndicators();
     }, 150);
     const deviceIss = presence.state?.linkedDevice?.iss;
-    if (!deviceIss) {
-      return () => clearTimeout(indicatorTimer);
+    if (deviceIss) {
+      void hydrateAuthoritativeBindings(deviceIss, "service_modal");
     }
+    return () => clearTimeout(indicatorTimer);
+  }, [hydrateAuthoritativeBindings, showService, presence.state?.linkedDevice?.iss]);
 
-    let cancelled = false;
-    void (async () => {
-      setHydratingServiceBindings(true);
-      setServiceBindingsHydrationError(null);
-      try {
-        try {
-          const deviceBindings = await fetchJson<DeviceBindingsResponse>(`https://noctu.link/presence-demo/presence/devices/${encodeURIComponent(deviceIss)}/bindings`);
-          const recoveredBindings: ServiceBinding[] = deviceBindings.bindings
-            .filter((binding) => binding.deviceIss === deviceIss)
-            .map((binding) => ({
-              bindingId: binding.bindingId,
-              serviceId: binding.serviceId,
-              accountId: binding.accountId,
-              linkedDeviceIss: binding.deviceIss,
-              linkedAt: binding.lastLinkedAt ?? binding.createdAt ?? binding.updatedAt ?? Math.floor(Date.now() / 1000),
-              lastVerifiedAt: binding.lastVerifiedAt,
-              status: binding.status,
-            }));
-          if (!cancelled) {
-            setHydratedServiceBindings(recoveredBindings);
-            const persisted = await loadPresenceState();
-            if (persisted?.linkedDevice?.iss === deviceIss) {
-              await savePresenceState(mergeAuthoritativeServiceBindings(persisted, recoveredBindings));
-            }
-            addLog(`↻ Recovered ${recoveredBindings.length} bindings from device endpoint`);
-          }
-          return;
-        } catch (deviceEndpointError) {
-          addLog(`ℹ️ Device bindings endpoint unavailable — ${deviceEndpointError instanceof Error ? deviceEndpointError.message : String(deviceEndpointError)}`);
-        }
-
-        const audit = await fetchJson<AuditEventsResponse>("https://noctu.link/presence-demo/presence/audit-events");
-        const recentAccounts = new Map<string, number>();
-        for (const event of audit.events) {
-          if (event.deviceIss !== deviceIss) continue;
-          if (!["link_completed", "reauth_succeeded", "binding_relinked", "recovery_completed"].includes(event.type)) continue;
-          const previous = recentAccounts.get(event.accountId) ?? 0;
-          if (event.occurredAt > previous) recentAccounts.set(event.accountId, event.occurredAt);
-        }
-
-        const orderedAccountIds = [...recentAccounts.entries()]
-          .sort((a, b) => b[1] - a[1])
-          .map(([accountId]) => accountId);
-
-        const recoveredBindings = (
-          await Promise.all(
-            orderedAccountIds.map(async (accountId) => {
-              try {
-                const status = await fetchJson<LinkedAccountStatusResponse>(`https://noctu.link/presence-demo/presence/linked-accounts/${encodeURIComponent(accountId)}/status`);
-                const binding = toServiceBindingFromStatus(status);
-                return binding?.linkedDeviceIss === deviceIss ? binding : null;
-              } catch {
-                return null;
-              }
-            })
-          )
-        ).filter((binding): binding is ServiceBinding => !!binding);
-
-        if (!cancelled) {
-          setHydratedServiceBindings(recoveredBindings);
-          addLog(`↻ Recovered ${recoveredBindings.length} bindings from audit fallback`);
-        }
-      } catch (error) {
-        if (!cancelled) {
-          setServiceBindingsHydrationError(error instanceof Error ? error.message : String(error));
-          setHydratedServiceBindings([]);
-        }
-      } finally {
-        if (!cancelled) setHydratingServiceBindings(false);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [addLog, showService, presence.state?.linkedDevice?.iss]);
+  useEffect(() => {
+    const deviceIss = presence.state?.linkedDevice?.iss;
+    if (!deviceIss) return;
+    void hydrateAuthoritativeBindings(deviceIss, "presence_state_change");
+  }, [hydrateAuthoritativeBindings, presence.state?.linkedDevice?.iss]);
 
   const parsedFromEditor = useMemo(() => parsePresenceLinkUrl(rawLink), [rawLink]);
   const proveOptions = useMemo(() => (openedEnvelope ? envelopeToProveOptions(openedEnvelope) : null), [openedEnvelope]);

@@ -30,6 +30,7 @@ import type {
   LinkedAccountReadiness,
   BindingMutationResult,
   LinkageAuditEvent,
+  LinkageStore,
 } from "./types.js";
 import {
   InMemoryLinkageStore,
@@ -593,30 +594,32 @@ export class PresenceClient {
     const now = Math.floor(Date.now() / 1000);
     device.trustState = "revoked";
     device.revokedAt = now;
-    await this.linkageStore.saveLinkedDevice(device);
 
     const bindings = await this.linkageStore.listBindingsForDevice(params.deviceIss);
-    const events: LinkageAuditEvent[] = [];
-    for (const binding of bindings) {
-      const updated = {
-        ...binding,
-        status: "revoked" as const,
-        updatedAt: now,
-        revokedAt: now,
-        recoveryReason: params.reason,
-      };
-      await this.linkageStore.saveServiceBinding(updated);
-      events.push(
-        await this.appendAudit({
-          type: "device_revoked",
-          serviceId: updated.serviceId,
-          accountId: updated.accountId,
-          bindingId: updated.bindingId,
-          deviceIss: updated.deviceIss,
-          reason: params.reason,
-        })
-      );
-    }
+    const events: LinkageAuditEvent[] = bindings.map((binding) => createAuditEvent({
+      type: "device_revoked",
+      serviceId: binding.serviceId,
+      accountId: binding.accountId,
+      bindingId: binding.bindingId,
+      deviceIss: binding.deviceIss,
+      reason: params.reason,
+    }));
+    await this.runStoreMutation(async (store) => {
+      await store.saveLinkedDevice(device);
+      for (const binding of bindings) {
+        const updated = {
+          ...binding,
+          status: "revoked" as const,
+          updatedAt: now,
+          revokedAt: now,
+          recoveryReason: params.reason,
+        };
+        await store.saveServiceBinding(updated);
+      }
+      for (const event of events) {
+        await store.appendAuditEvent(event);
+      }
+    });
     return events;
   }
 
@@ -632,5 +635,13 @@ export class PresenceClient {
     const auditEvent = createAuditEvent(event);
     await this.linkageStore.appendAuditEvent(auditEvent);
     return auditEvent;
+  }
+
+
+  private async runStoreMutation<T>(mutator: (store: LinkageStore) => Promise<T>): Promise<T> {
+    if (this.linkageStore.mutate) {
+      return this.linkageStore.mutate(mutator);
+    }
+    return mutator(this.linkageStore);
   }
 }

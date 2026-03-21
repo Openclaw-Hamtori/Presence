@@ -19,6 +19,8 @@ export interface RedisLikeClient {
 }
 
 export class RedisLinkageStore implements LinkageStore {
+  private mutationQueue: Promise<void> = Promise.resolve();
+
   constructor(
     private readonly client: RedisLikeClient,
     private readonly key = "presence:linkage:store"
@@ -76,6 +78,17 @@ export class RedisLinkageStore implements LinkageStore {
       if (filter?.bindingId && event.bindingId !== filter.bindingId) return false;
       return true;
     });
+  }
+
+  async mutate<T>(mutator: (store: LinkageStore) => Promise<T>): Promise<T> {
+    let result!: T;
+    const run = async () => {
+      result = await mutator(this);
+    };
+    const queued = this.mutationQueue.then(run, run);
+    this.mutationQueue = queued.then(() => undefined, () => undefined);
+    await queued;
+    return result;
   }
 
   private bindingKey(serviceId: string, accountId: string): string {
