@@ -8,7 +8,7 @@
  *   - Drive onboarding flow
  */
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { prove, measure } from "../service";
 import type { ProveOptions, MeasureOptions, MeasureResult } from "../service";
 import {
@@ -57,6 +57,7 @@ export function usePresenceState(): UsePresenceStateResult {
   const [phase, setPhase] = useState<PresenceHookPhase>("loading");
   const [state, setState] = useState<PresenceState | null>(null);
   const [error, setError] = useState<PresenceMobileError | null>(null);
+  const [clockTick, setClockTick] = useState(0);
 
   const phaseFromState = useCallback(
     (nextState: PresenceState | null, fallback: PresenceHookPhase = "uninitialized"): PresenceHookPhase => {
@@ -96,6 +97,7 @@ export function usePresenceState(): UsePresenceStateResult {
     }
 
     const syncPhase = () => {
+      setClockTick((tick) => tick + 1);
       setPhase((current) => {
         if (current === "loading" || current === "measuring" || current === "proving" || current === "error") {
           return current;
@@ -185,7 +187,10 @@ export function usePresenceState(): UsePresenceStateResult {
   }, [phaseFromState]);
 
   // ── Derived values ────────────────────────────────────────────────────────
-  const timeRemaining = state ? formatTimeRemaining(state) : null;
+  const timeRemaining = useMemo(() => {
+    void clockTick;
+    return state ? formatTimeRemaining(state) : null;
+  }, [state, clockTick]);
   const needsRenewal = state ? computeStateStatus(state) === "needs_renewal" : false;
 
   return {
