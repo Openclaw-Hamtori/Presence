@@ -1503,14 +1503,31 @@ const styles = StyleSheet.create({
   bindingViewport: {
     height: 360,
     overflow: "hidden",
+    position: "relative",
   },
   bindingListScroll: {
     flex: 1,
   },
   bindingList: {
     paddingHorizontal: 18,
+    paddingRight: 24,
     paddingBottom: 18,
     gap: 12,
+  },
+  bindingScrollRail: {
+    position: "absolute",
+    top: 12,
+    right: 8,
+    bottom: 12,
+    width: 4,
+    borderRadius: 999,
+    backgroundColor: "rgba(15, 23, 42, 0.08)",
+    overflow: "hidden",
+  },
+  bindingScrollThumb: {
+    width: "100%",
+    borderRadius: 999,
+    backgroundColor: "rgba(15, 23, 42, 0.32)",
   },
   bindingCard: {
     borderRadius: 18,
