@@ -485,6 +485,9 @@ export default function App() {
   const [hydratingServiceBindings, setHydratingServiceBindings] = useState(false);
   const [serviceBindingsHydrationError, setServiceBindingsHydrationError] = useState<string | null>(null);
   const serviceScrollRef = useRef<ScrollView | null>(null);
+  const [serviceViewportHeight, setServiceViewportHeight] = useState(0);
+  const [serviceContentHeight, setServiceContentHeight] = useState(0);
+  const [serviceScrollOffset, setServiceScrollOffset] = useState(0);
 
   const addLog = useCallback((msg: string) => {
     setLog((prev) => [`[${nowTime()}] ${msg}`, ...prev].slice(0, 40));
@@ -703,6 +706,15 @@ export default function App() {
     if (byStatus !== 0) return byStatus;
     return timeB - timeA;
   });
+  const serviceScrollTrackVisible = serviceContentHeight > serviceViewportHeight + 8;
+  const serviceScrollThumbHeight = serviceScrollTrackVisible
+    ? Math.max(36, (serviceViewportHeight * serviceViewportHeight) / Math.max(serviceContentHeight, 1))
+    : 0;
+  const serviceScrollMaxOffset = Math.max(serviceContentHeight - serviceViewportHeight, 0);
+  const serviceScrollThumbTravel = Math.max(serviceViewportHeight - serviceScrollThumbHeight, 0);
+  const serviceScrollThumbTop = serviceScrollTrackVisible && serviceScrollMaxOffset > 0
+    ? (serviceScrollOffset / serviceScrollMaxOffset) * serviceScrollThumbTravel
+    : 0;
   const bindingSummary = getBindingSummary(sortedServiceBindings);
   const displayedErrorCode = presence.error?.code ?? "PRESENCE";
   const displayedErrorMessage = localError ?? presence.error?.message ?? null;
