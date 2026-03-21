@@ -51,6 +51,8 @@ export interface PresenceBindingSync {
    * Domain that owns the Presence well-known metadata for these service URLs.
    * When sync URLs are present, the app validates them against
    * `https://{serviceDomain}/.well-known/presence.json` before use.
+   * Sync URLs must already be absolute at this boundary; backend-relative
+   * paths are rejected until the backend rewrites them for public/mobile use.
    */
   serviceDomain?: string;
   nonceUrl?: string;
@@ -102,6 +104,10 @@ export interface ServiceBinding {
   bindingId: string;
   serviceId: string;
   accountId?: string;
+  /**
+   * Local/mobile name for the linked device identifier.
+   * Backend/sdk payloads serialize this same value as `deviceIss`.
+   */
   linkedDeviceIss: string;
   linkedAt: number;
   lastVerifiedAt?: number;

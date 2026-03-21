@@ -43,6 +43,7 @@ export async function validateLinkCompletionEnvelope(envelope: LinkCompletionEnv
     serviceDomain: envelope.serviceDomain,
     nonceUrl: envelope.nonceUrl,
     verifyUrl: envelope.verifyUrl,
+    statusUrl: envelope.statusUrl,
   });
 }
 
@@ -88,7 +89,16 @@ async function validateServiceSyncTargets(params: {
   serviceDomain?: string;
   nonceUrl?: string;
   verifyUrl?: string;
+  statusUrl?: string;
 }): Promise<Result<void>> {
+  const statusUrl = params.statusUrl?.trim();
+  if (statusUrl && !normalizeAbsoluteUrl(statusUrl)) {
+    return err(
+      "ERR_SERVICE_TRUST_INVALID",
+      "status_url must be an absolute URL. Rewrite backend-relative completion URLs before showing this Presence link on mobile."
+    );
+  }
+
   const syncTargets = [
     ["nonce_url", params.nonceUrl],
     ["verify_url", params.verifyUrl],

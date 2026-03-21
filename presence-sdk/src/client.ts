@@ -53,7 +53,11 @@ export class PresenceClient {
   private readonly config: PresenceClientConfig & { nonceTtlSeconds: number };
   private readonly managedNonces: InMemoryManagedNonceStore;
   private readonly tofuStore: InMemoryTofuStore;
-  private readonly linkageStore: InMemoryLinkageStore | NonNullable<PresenceClientConfig["linkageStore"]>;
+  /**
+   * Public for admin/debug surfaces that need direct store reads.
+   * Prefer the higher-level client methods for normal linkage mutations.
+   */
+  readonly linkageStore: LinkageStore;
   private readonly warn: (msg: string) => void;
   private hasWarnedLegacyPlatform = false;
 
@@ -198,8 +202,9 @@ export class PresenceClient {
     options: CreateLinkSessionOptions
   ): Promise<CreateLinkSessionResult> {
     const nonce = this.generateNonce({ ttlSeconds: options.ttlSeconds ?? this.config.nonceTtlSeconds });
+    const sessionId = randomId("plink");
     const session = {
-      id: randomId("plink"),
+      id: sessionId,
       serviceId: options.serviceId,
       accountId: options.accountId,
       issuedNonce: nonce.value,
@@ -208,13 +213,7 @@ export class PresenceClient {
       status: "pending" as const,
       relinkOfBindingId: options.relinkOfBindingId,
       recoveryReason: options.recoveryReason,
-      completion: options.completion ?? defaultLinkCompletion(
-        randomId("plink_preview"),
-        options.serviceId,
-        options.accountId,
-        nonce.value,
-        nonce.expiresAt
-      ),
+      completion: options.completion,
       metadata: options.metadata,
     };
 

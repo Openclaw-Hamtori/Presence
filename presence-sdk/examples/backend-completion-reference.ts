@@ -13,12 +13,16 @@ import {
   createAuditEventsResponse,
   createLinkedProofRequestResponse,
   createLinkedAccountReadinessResponse,
+  rewriteLinkSessionForPublicBase,
 } from "../src/index.js";
 
 const presence = new PresenceClient({
   serviceId: "discord-bot",
   linkageStore: new FileSystemLinkageStore(fileLinkageStorePath("./var/presence")),
 });
+
+const publicBaseUrl = process.env.PUBLIC_BASE_URL ?? "https://presence.example.com";
+const serviceDomain = process.env.PRESENCE_SERVICE_DOMAIN ?? "presence.example.com";
 
 const endpointContract = {
   createSessionPath: "/presence/link-sessions",
@@ -39,7 +43,13 @@ export async function createLinkSessionHandler(req: { body: { accountId: string 
     accountId: req.body.accountId,
   });
 
-  return createCompletionSessionResponse({ session, contract: endpointContract });
+  return createCompletionSessionResponse({
+    session: rewriteLinkSessionForPublicBase(session, {
+      publicBaseUrl,
+      serviceDomain,
+    }),
+    contract: endpointContract,
+  });
 }
 
 export async function completeLinkSessionHandler(req: { params: { sessionId: string }; body: unknown }) {

@@ -11,6 +11,7 @@ import {
   createLinkedProofRequestResponse,
   createLinkedAccountReadinessResponse,
   createAuditEventsResponse,
+  rewriteLinkSessionForPublicBase,
 } from "../dist/index.js";
 
 function readJson(req) {
@@ -34,40 +35,6 @@ function absolutize(baseUrl, value) {
   if (/^https?:\/\//.test(value)) return value;
   if (!value.startsWith("/")) return value;
   return `${baseUrl}${value}`;
-}
-
-function rewritePresenceQrUrl(rawUrl, baseUrl, serviceDomain) {
-  if (!rawUrl) return rawUrl;
-  const [root, query = ""] = rawUrl.split("?");
-  if (!query) return rawUrl;
-
-  const params = new URLSearchParams(query);
-  for (const key of ["nonce_url", "verify_url", "status_url"]) {
-    const value = params.get(key);
-    if (value?.startsWith("/")) {
-      params.set(key, absolutize(baseUrl, value));
-    }
-  }
-  if (serviceDomain && !params.get("service_domain")) {
-    params.set("service_domain", serviceDomain);
-  }
-  return `${root}?${params.toString()}`;
-}
-
-function rewriteSessionForPublicBase(session, baseUrl, serviceDomain) {
-  if (!session?.completion) return session;
-  return {
-    ...session,
-    completion: {
-      ...session.completion,
-      qrUrl: rewritePresenceQrUrl(session.completion.qrUrl, baseUrl, serviceDomain),
-      deeplinkUrl: rewritePresenceQrUrl(session.completion.deeplinkUrl, baseUrl, serviceDomain),
-      sessionStatusUrl: absolutize(baseUrl, session.completion.sessionStatusUrl),
-      completionApiUrl: absolutize(baseUrl, session.completion.completionApiUrl),
-      linkedNonceApiUrl: absolutize(baseUrl, session.completion.linkedNonceApiUrl),
-      verifyLinkedAccountApiUrl: absolutize(baseUrl, session.completion.verifyLinkedAccountApiUrl),
-    },
-  };
 }
 
 async function main() {
@@ -141,7 +108,10 @@ async function main() {
           metadata: body.metadata || { source: "local-reference-server" },
           relinkOfBindingId: body.relinkOfBindingId,
         });
-        const publicSession = rewriteSessionForPublicBase(session, publicBaseUrl, serviceDomain);
+        const publicSession = rewriteLinkSessionForPublicBase(session, {
+          publicBaseUrl,
+          serviceDomain,
+        });
         const response = createCompletionSessionResponse({ session: publicSession, contract: endpointContract });
         if (response.completion?.endpoints?.complete?.path) {
           response.completion.endpoints.complete.path = absolutize(publicBaseUrl, response.completion.endpoints.complete.path);
@@ -186,7 +156,13 @@ async function main() {
           send(404, { ok: false, code: "ERR_SESSION_NOT_FOUND" });
           return;
         }
-        send(200, { ok: true, session: rewriteSessionForPublicBase(session, publicBaseUrl, serviceDomain) });
+        send(200, {
+          ok: true,
+          session: rewriteLinkSessionForPublicBase(session, {
+            publicBaseUrl,
+            serviceDomain,
+          }),
+        });
         return;
       }
 

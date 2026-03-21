@@ -65,6 +65,10 @@ export interface ServiceBinding {
   bindingId: string;
   serviceId: string;
   accountId: string;
+  /**
+   * Backend/source-of-truth name for the linked device identifier.
+   * Mobile/test-app local state stores this same value as `linkedDeviceIss`.
+   */
   deviceIss: string;
   createdAt: number;
   updatedAt: number;
@@ -94,6 +98,11 @@ export interface LinkageAuditEvent {
 }
 
 export interface LinkCompletion {
+  /**
+   * `defaultLinkCompletion()` emits backend-relative API paths by default.
+   * Rewrite them to public absolute URLs before exposing session completion
+   * metadata to mobile or product UI.
+   */
   method: LinkCompletionMethod;
   qrUrl?: string;
   deeplinkUrl?: string;

@@ -85,6 +85,7 @@ import {
   fileLinkageStorePath,
   createCompletionSessionResponse,
   createLinkedProofRequestResponse,
+  rewriteLinkSessionForPublicBase,
 } from "presence-sdk";
 
 const endpointContract = {
@@ -120,7 +121,10 @@ export async function createLinkSessionHandler(req) {
   });
 
   return createCompletionSessionResponse({
-    session,
+    session: rewriteLinkSessionForPublicBase(session, {
+      publicBaseUrl: "https://presence.example.com",
+      serviceDomain: "presence.example.com",
+    }),
     contract: endpointContract,
   });
 }
@@ -345,6 +349,7 @@ POST /presence/linked-accounts/:accountId/verify
 GET  /presence/linked-accounts/:accountId/status
 POST /presence/linked-accounts/:accountId/unlink
 POST /presence/devices/:deviceIss/revoke
+GET  /presence/devices/:deviceIss/bindings
 GET  /presence/audit-events
 ```
 
@@ -364,7 +369,7 @@ Use `../docs/presence-integration-quickstart.md` as the canonical flow/state gui
 Minimal reference model in this phase:
 
 1. Backend creates `LinkSession`.
-2. Backend exposes `session.completion.qrUrl` and/or `session.completion.deeplinkUrl`.
+2. Backend rewrites the session with `rewriteLinkSessionForPublicBase()` and exposes `session.completion.qrUrl` and/or `session.completion.deeplinkUrl`.
 3. Web or desktop client renders QR.
 4. Mobile app opens the deeplink and extracts:
    - `session_id`
@@ -375,6 +380,7 @@ Minimal reference model in this phase:
    - optional fallback `code`
    - optional `nonce_url`, `verify_url`
 5. If the deeplink/session includes sync URLs like `nonce_url` or `verify_url`, mobile should validate them against `https://{service_domain}/.well-known/presence.json` before proof submission.
+   Relative `status_url`, `nonce_url`, and `verify_url` values must be rewritten to public absolute URLs before the link reaches mobile.
 6. Mobile produces proof and posts to `session.completion.completionApiUrl` or the standardized completion endpoint.
 7. Later, when the service needs PASS for a linked account, backend calls `createLinkedProofRequest()` and returns a normalized `/presence/linked-accounts/:accountId/nonce` response containing:
    - fresh nonce

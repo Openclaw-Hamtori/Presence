@@ -21,6 +21,7 @@ export function PresenceStatusCard({ presence, fetchNonce }: PresenceStatusCardP
   const { phase, state, error } = presence;
   const [actionError, setActionError] = React.useState<string | null>(null);
   const visibleErrorMessage = actionError ?? error?.message ?? null;
+  const hasServiceRequest = !!state?.activeLinkSession;
 
   const handleSubmitProof = async () => {
     setActionError(null);
@@ -49,11 +50,13 @@ export function PresenceStatusCard({ presence, fetchNonce }: PresenceStatusCardP
     && phase !== "recovery_pending";
   const statusLabel = hasPass ? "PASS" : "FAIL";
   const topRightText = phase === "proving"
-    ? "Submitting PASS"
+    ? "Submitting requested PASS"
     : phase === "measuring"
       ? "Checking device"
       : hasPass
-        ? "Ready for request"
+        ? hasServiceRequest
+          ? "Request loaded"
+          : "Ready when asked"
         : phase === "recovery_pending"
           ? "Recovery needed"
           : "";
@@ -90,11 +93,13 @@ export function PresenceStatusCard({ presence, fetchNonce }: PresenceStatusCardP
             <Text style={styles.helper}>
               {phase === "proving"
                 ? "Submitting PASS to the current service request."
-                : "PASS is ready to submit when a linked service asks."}
+                : hasServiceRequest
+                  ? "A service request is loaded. Submit PASS to finish this link or answer the request."
+                  : "PASS is available, but proof should only be submitted after a linked service request is loaded."}
             </Text>
             {phase !== "proving" && (
               <TouchableOpacity style={styles.primaryButton} onPress={handleSubmitProof}>
-                <Text style={styles.primaryButtonText}>Submit PASS</Text>
+                <Text style={styles.primaryButtonText}>{hasServiceRequest ? "Submit PASS to request" : "Submit requested PASS"}</Text>
               </TouchableOpacity>
             )}
           </>

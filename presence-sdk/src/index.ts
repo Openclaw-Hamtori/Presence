@@ -31,6 +31,7 @@ export {
   createLinkedProofRequestDescriptor,
   createLinkedProofRequestResponse,
   createLinkedAccountReadinessResponse,
+  rewriteLinkSessionForPublicBase,
 } from "./api.js";
 
 export type {
@@ -87,5 +88,6 @@ export type {
   PresenceLinkedProofRequestDescriptor,
   PresenceLinkedProofRequestResponse,
   PresenceLinkedAccountReadinessResponse,
+  LinkSessionPublicBaseOptions,
   RedisLikeClient,
 } from "./types.js";

@@ -14,7 +14,12 @@ import {
   InMemoryNonceStore,
 } from "presence-verifier";
 import { PresenceClient } from "../client.js";
-import { createCompletionSessionResponse, createLinkedProofRequestResponse, createRecoveryResponse } from "../api.js";
+import {
+  createCompletionSessionResponse,
+  createLinkedProofRequestResponse,
+  createRecoveryResponse,
+  rewriteLinkSessionForPublicBase,
+} from "../api.js";
 import { InMemoryLinkageStore, FileSystemLinkageStore, LinkageStoreCorruptionError, fileLinkageStorePath } from "../linkage.js";
 import { parsePresenceRequest, ParseError } from "../transport.js";
 import { createNonce, generateNonce } from "../nonce.js";
@@ -257,6 +262,37 @@ function buildAndroidBody(
 
     assert.equal(response.completion.endpoints.complete.path, `/custom/sessions/${session.id}/complete`);
     assert.equal(response.completion.endpoints.status?.path, `/custom/sessions/${session.id}`);
+  });
+
+  await test("rewriteLinkSessionForPublicBase() absolutizes default completion URLs for mobile-facing transport", async () => {
+    const store = new InMemoryLinkageStore();
+    const client = new PresenceClient({ silent: true, linkageStore: store, serviceId: "svc" });
+    const { session } = await client.createLinkSession({ serviceId: "svc", accountId: "acct-public" });
+    const rewritten = rewriteLinkSessionForPublicBase(session, {
+      publicBaseUrl: "https://presence.example.com",
+      serviceDomain: "presence.example.com",
+    });
+    const qrUrl = new URL(rewritten.completion?.qrUrl ?? "");
+
+    assert.equal(rewritten.completion?.sessionStatusUrl, `https://presence.example.com/presence/link-sessions/${encodeURIComponent(session.id)}`);
+    assert.equal(rewritten.completion?.completionApiUrl, `https://presence.example.com/presence/link-sessions/${encodeURIComponent(session.id)}/complete`);
+    assert.equal(rewritten.completion?.linkedNonceApiUrl, "https://presence.example.com/presence/linked-accounts/acct-public/nonce");
+    assert.equal(rewritten.completion?.verifyLinkedAccountApiUrl, "https://presence.example.com/presence/linked-accounts/acct-public/verify");
+    assert.equal(qrUrl.searchParams.get("service_domain"), "presence.example.com");
+    assert.equal(qrUrl.searchParams.get("status_url"), `https://presence.example.com/presence/link-sessions/${encodeURIComponent(session.id)}`);
+    assert.equal(qrUrl.searchParams.get("nonce_url"), "https://presence.example.com/presence/linked-accounts/acct-public/nonce");
+    assert.equal(qrUrl.searchParams.get("verify_url"), "https://presence.example.com/presence/linked-accounts/acct-public/verify");
+
+    const response = createCompletionSessionResponse({
+      session: rewritten,
+      contract: {
+        createSessionPath: "/presence/link-sessions",
+        completeSessionPath: "/presence/link-sessions/:sessionId/complete",
+        sessionStatusPath: "/presence/link-sessions/:sessionId",
+      },
+    });
+    assert.equal(response.completion.endpoints.complete.path, `https://presence.example.com/presence/link-sessions/${encodeURIComponent(session.id)}/complete`);
+    assert.equal(response.completion.endpoints.status?.path, `https://presence.example.com/presence/link-sessions/${encodeURIComponent(session.id)}`);
   });
 
   await test("createLinkedProofRequest() returns active binding + nonce and formats proof-request response", async () => {

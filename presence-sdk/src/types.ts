@@ -48,6 +48,7 @@ import type {
   PresenceLinkedProofRequestDescriptor,
   PresenceLinkedProofRequestResponse,
   PresenceLinkedAccountReadinessResponse,
+  LinkSessionPublicBaseOptions,
 } from "./api.js";
 import type { RedisLikeClient } from "./redis.js";
 
@@ -190,5 +191,6 @@ export type {
   PresenceLinkedProofRequestDescriptor,
   PresenceLinkedProofRequestResponse,
   PresenceLinkedAccountReadinessResponse,
+  LinkSessionPublicBaseOptions,
   RedisLikeClient,
 };

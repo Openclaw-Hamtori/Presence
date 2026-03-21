@@ -118,6 +118,79 @@ export interface PresenceLinkedAccountReadinessResponse {
   readiness: LinkedAccountReadiness;
 }
 
+export interface LinkSessionPublicBaseOptions {
+  publicBaseUrl: string;
+  serviceDomain?: string;
+}
+
+function normalizePublicBaseUrl(publicBaseUrl: string): string {
+  const normalized = new URL(publicBaseUrl);
+  if (normalized.protocol !== "http:" && normalized.protocol !== "https:") {
+    throw new Error("publicBaseUrl must use http:// or https://");
+  }
+  normalized.hash = "";
+  normalized.search = "";
+  return normalized.toString().replace(/\/$/, "");
+}
+
+function absolutizePublicUrl(publicBaseUrl: string, value: string | undefined): string | undefined {
+  if (!value) return value;
+  if (/^https?:\/\//i.test(value)) return value;
+  if (!value.startsWith("/")) return value;
+  return `${publicBaseUrl}${value}`;
+}
+
+function rewriteLinkUrlForPublicBase(
+  rawUrl: string | undefined,
+  publicBaseUrl: string,
+  serviceDomain?: string
+): string | undefined {
+  if (!rawUrl) return rawUrl;
+
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    return rawUrl;
+  }
+
+  for (const key of ["nonce_url", "verify_url", "status_url"]) {
+    const current = parsed.searchParams.get(key);
+    if (current?.startsWith("/")) {
+      parsed.searchParams.set(key, absolutizePublicUrl(publicBaseUrl, current)!);
+    }
+  }
+
+  if (serviceDomain && !parsed.searchParams.get("service_domain")) {
+    parsed.searchParams.set("service_domain", serviceDomain);
+  }
+
+  return parsed.toString();
+}
+
+export function rewriteLinkSessionForPublicBase(
+  session: LinkSession,
+  options: LinkSessionPublicBaseOptions
+): LinkSession {
+  if (!session.completion) {
+    return session;
+  }
+
+  const publicBaseUrl = normalizePublicBaseUrl(options.publicBaseUrl);
+  return {
+    ...session,
+    completion: {
+      ...session.completion,
+      qrUrl: rewriteLinkUrlForPublicBase(session.completion.qrUrl, publicBaseUrl, options.serviceDomain),
+      deeplinkUrl: rewriteLinkUrlForPublicBase(session.completion.deeplinkUrl, publicBaseUrl, options.serviceDomain),
+      sessionStatusUrl: absolutizePublicUrl(publicBaseUrl, session.completion.sessionStatusUrl),
+      completionApiUrl: absolutizePublicUrl(publicBaseUrl, session.completion.completionApiUrl),
+      linkedNonceApiUrl: absolutizePublicUrl(publicBaseUrl, session.completion.linkedNonceApiUrl),
+      verifyLinkedAccountApiUrl: absolutizePublicUrl(publicBaseUrl, session.completion.verifyLinkedAccountApiUrl),
+    },
+  };
+}
+
 
 function completionEndpointPath(completion?: LinkCompletion, sessionId?: string): string | undefined {
   return completion?.completionApiUrl ?? (sessionId ? `/presence/link-sessions/${encodeURIComponent(sessionId)}/complete` : undefined);

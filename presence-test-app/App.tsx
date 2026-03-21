@@ -92,11 +92,21 @@ function formatSyncErrorEntries(errors: LinkedBindingSyncError[]): string[] {
   );
 }
 
+function normalizeAbsoluteUrl(value?: string): string | null {
+  if (!value) return null;
+  try {
+    return new URL(value).href;
+  } catch {
+    return null;
+  }
+}
+
 function buildCompletionUrl(envelope: LinkCompletionEnvelope | null): string | null {
-  if (!envelope?.statusUrl) return null;
-  return envelope.statusUrl.endsWith("/complete")
-    ? envelope.statusUrl
-    : `${envelope.statusUrl.replace(/\/$/, "")}/complete`;
+  const statusUrl = normalizeAbsoluteUrl(envelope?.statusUrl);
+  if (!statusUrl) return null;
+  return statusUrl.endsWith("/complete")
+    ? statusUrl
+    : `${statusUrl.replace(/\/$/, "")}/complete`;
 }
 
 interface AuditEventRecord {
@@ -292,6 +302,8 @@ function toServiceBindingFromRecord(
     return null;
   }
 
+  // Backend payloads use `deviceIss`; app-local state stores the same value as
+  // `linkedDeviceIss` to distinguish the local binding view from the SDK model.
   return {
     bindingId: binding.bindingId,
     serviceId: binding.serviceId,
@@ -919,8 +931,9 @@ export default function App() {
 
     const completionUrl = buildCompletionUrl(currentEnvelope);
     if (!completionUrl) {
-      clearConnectSession();
-      addLog("↗ No completion URL available; proof is ready but server completion was skipped");
+      const message = "This link is missing a valid absolute status_url/completion URL. Ask the service to rewrite public completion URLs before rendering the link.";
+      setLocalError(message);
+      addLog("❌ completion blocked — status_url missing or not absolute");
       return;
     }
 

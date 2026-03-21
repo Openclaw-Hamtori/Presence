@@ -37,6 +37,7 @@ import { ok, err } from "./types/index";
 export interface ProveOptions {
   nonce: string;
   forceRefresh?: boolean;
+  persistLocalState?: boolean;
   flow?: LinkFlow;
   linkSession?: {
     id: string;
@@ -61,6 +62,16 @@ export interface ProveOptions {
 
 export interface MeasureOptions {
   forceRefresh?: boolean;
+  /**
+   * Deprecated internal scheduler hint kept for compatibility.
+   * Presence no longer models renewal as a distinct product flow.
+   */
+  renewalAttempt?: boolean;
+  /**
+   * Deprecated internal scheduler hint kept for compatibility.
+   * Presence no longer models renewal as a distinct product flow.
+   */
+  persistRenewalLocally?: boolean;
 }
 
 export interface MeasureResult {
@@ -169,7 +180,7 @@ export async function measure(options: MeasureOptions = {}): Promise<Result<Meas
 }
 
 export async function proveMeasured(measurement: MeasureResult, options: ProveOptions): Promise<Result<ProveResult>> {
-  const { nonce, linkSession: linkSessionHint, bindingHint } = options;
+  const { nonce, linkSession: linkSessionHint, bindingHint, persistLocalState = true } = options;
   const flow = options.flow ?? (linkSessionHint ? "initial_link" : bindingHint ? "reauth" : undefined);
 
   if (!nonce) return err("ERR_NONCE_MISSING", "nonce is required");
@@ -296,7 +307,9 @@ export async function proveMeasured(measurement: MeasureResult, options: ProveOp
     stateCreatedAt: state.stateCreatedAt,
     stateValidUntil: state.stateValidUntil,
   });
-  await savePresenceState(state);
+  if (persistLocalState) {
+    await savePresenceState(state);
+  }
 
   return ok({
     payload: {
