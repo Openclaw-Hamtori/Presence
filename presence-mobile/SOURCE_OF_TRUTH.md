@@ -25,6 +25,7 @@
 
 ## Field aliasing
 - Mobile/test-app `activeLinkSession.status: "consumed"` is the same completed-session meaning as sdk `LinkSession.status: "consumed"`; older local state may still contain the legacy alias `"linked"`.
+- Other `LinkSession.status` values are layer-specific: mobile/test-app may surface local UX states like `revoked` or `recovery_pending`, while sdk linkage store may emit backend lifecycle values like `cancelled`. Do not assume every non-`consumed` value is shared verbatim across layers.
 - Mobile/test-app `PresenceSnapshot.source: "measurement" | "proof"` maps to sdk `PresenceSnapshot.source: "local_measurement" | "verified_proof"`.
 - Mobile/test-app `linkedDevice.linkedAt` maps to sdk `LinkedDevice.firstLinkedAt`.
 - Mobile/test-app `activeLinkSession.lastNonce` maps to sdk `LinkSession.issuedNonce`.

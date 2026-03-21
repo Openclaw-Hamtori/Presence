@@ -15,7 +15,6 @@ Wraps `presence-verifier` with:
 Based on:
 - Presence Signal Spec v0.4
 - Presence Verifier Spec v0.4
-- Presence Android Platform Appendix v0.1
 
 ---
 

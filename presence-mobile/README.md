@@ -13,6 +13,7 @@ Based on:
 ## Status
 
 > ⚠️ Reference implementation. Requires native module integration before production use.
+> Current runtime target is iOS. Some transport/state types already allow `android` so the wire model can stay forward-compatible, but this package currently implements only the iOS client path.
 
 Phase 4 extends the persistent linkage model on device with:
 - unlink / revoke / relink-aware local state
