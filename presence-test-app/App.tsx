@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   SafeAreaView,
   View,
@@ -484,6 +484,7 @@ export default function App() {
   const [hydratedServiceBindings, setHydratedServiceBindings] = useState<ServiceBinding[]>([]);
   const [hydratingServiceBindings, setHydratingServiceBindings] = useState(false);
   const [serviceBindingsHydrationError, setServiceBindingsHydrationError] = useState<string | null>(null);
+  const serviceScrollRef = useRef<ScrollView | null>(null);
 
   const addLog = useCallback((msg: string) => {
     setLog((prev) => [`[${nowTime()}] ${msg}`, ...prev].slice(0, 40));
@@ -576,8 +577,13 @@ export default function App() {
 
   useEffect(() => {
     if (!showService) return;
+    const indicatorTimer = setTimeout(() => {
+      serviceScrollRef.current?.flashScrollIndicators();
+    }, 150);
     const deviceIss = presence.state?.linkedDevice?.iss;
-    if (!deviceIss) return;
+    if (!deviceIss) {
+      return () => clearTimeout(indicatorTimer);
+    }
 
     let cancelled = false;
     void (async () => {
