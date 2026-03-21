@@ -8,7 +8,7 @@ import {
   createCompletionSessionResponse,
   createCompletionSuccessResponse,
   createRecoveryResponse,
-  createLinkedNonceResponse,
+  createLinkedProofRequestResponse,
   createLinkedAccountReadinessResponse,
   createAuditEventsResponse,
 } from "../dist/index.js";
@@ -192,8 +192,32 @@ async function main() {
 
       const linkedNonceMatch = url.pathname.match(/^\/presence\/linked-accounts\/([^/]+)\/nonce$/);
       if (method === "POST" && linkedNonceMatch) {
-        const nonce = presence.generateNonce();
-        send(200, createLinkedNonceResponse(nonce));
+        const request = await presence.createLinkedProofRequest({
+          accountId: decodeURIComponent(linkedNonceMatch[1]),
+        });
+        if (!request.ok) {
+          send(request.state === "missing_binding" ? 404 : 409, {
+            ok: false,
+            code: request.state === "missing_binding" ? "ERR_BINDING_NOT_FOUND" : "ERR_LINKED_PROOF_UNAVAILABLE",
+            message: request.reason,
+            state: request.state,
+            bindingId: request.binding?.bindingId,
+          });
+          return;
+        }
+        const response = createLinkedProofRequestResponse({
+          binding: request.binding,
+          nonce: request.nonce,
+          contract: endpointContract,
+        });
+        response.proofRequest.endpoints.verify.path = absolutize(publicBaseUrl, response.proofRequest.endpoints.verify.path);
+        if (response.proofRequest.endpoints.status?.path) {
+          response.proofRequest.endpoints.status.path = absolutize(publicBaseUrl, response.proofRequest.endpoints.status.path);
+        }
+        if (response.proofRequest.endpoints.unlink?.path) {
+          response.proofRequest.endpoints.unlink.path = absolutize(publicBaseUrl, response.proofRequest.endpoints.unlink.path);
+        }
+        send(200, response);
         return;
       }
 

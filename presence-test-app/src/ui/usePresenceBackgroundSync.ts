@@ -1,7 +1,7 @@
 /**
- * presence-mobile — usePresenceRenewal Hook
+ * presence-mobile — usePresenceBackgroundSync Hook
  *
- * Schedules background Presence measurement / sync.
+ * Schedules best-effort background Presence measurement / linked proof catch-up.
  *
  * Strategy:
  *   - On app foreground: check if state needs a scheduled measurement
@@ -13,15 +13,16 @@
  *
  * Usage:
  *   const presence = usePresenceState();
- *   usePresenceRenewal(presence, runScheduledSync);  // mount once at app root
+ *   usePresenceBackgroundSync(presence, runScheduledSync);  // mount once at app root
  */
 
 import { useEffect, useRef, useCallback } from "react";
 import { AppState, AppStateStatus } from "react-native";
 import {
   computeStateStatus,
+  hasSyncableServiceBindings,
   secondsUntilNextMeasurement,
-  shouldRenew,
+  isCheckDue,
 } from "../state/presenceState";
 import type { UsePresenceStateResult } from "./usePresenceState";
 import {
@@ -34,6 +35,8 @@ import {
   flushQueuedLinkedBindingSyncs,
 } from "../sync/linkedBindings";
 import { hasPendingLinkedBindingSyncJobs } from "../sync/queue";
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 type ScheduledTask = () => Promise<boolean | void>;
 
@@ -59,12 +62,14 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   });
 }
 
-export function usePresenceRenewal(
+// ─── Hook ─────────────────────────────────────────────────────────────────────
+
+export function usePresenceBackgroundSync(
   presence: UsePresenceStateResult,
   runScheduledTask: ScheduledTask
 ): void {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const isRenewingRef = useRef(false);
+  const isBackgroundSyncRunningRef = useRef(false);
   const presenceRef = useRef(presence);
   const runScheduledTaskRef = useRef(runScheduledTask);
 
@@ -83,19 +88,22 @@ export function usePresenceRenewal(
     }
   }, []);
 
-  const scheduleRenewal = useCallback(async () => {
+  const scheduleNextCheck = useCallback(async () => {
     clearTimer();
 
     const currentPresence = presenceRef.current;
     if (!currentPresence.state) return;
     const currentStatus = computeStateStatus(currentPresence.state);
 
-    // Keep retrying while a scheduled check is due or verify work is queued
-    // instead of relying on a single boundary timer.
     const hasPendingSyncJobs = await hasPendingLinkedBindingSyncJobs();
-    const secondsUntil = currentStatus === "expired"
-      || shouldRenew(currentPresence.state)
-      || hasPendingSyncJobs
+    const canRetryExpiredSync = currentStatus === "expired"
+      && hasSyncableServiceBindings(currentPresence.state.serviceBindings);
+
+    if (currentStatus === "expired" && !canRetryExpiredSync && !hasPendingSyncJobs) {
+      return;
+    }
+
+    const secondsUntil = hasPendingSyncJobs || canRetryExpiredSync
       ? SCHEDULE_RETRY_SECONDS
       : secondsUntilNextMeasurement(currentPresence.state);
     const delaySeconds = secondsUntil > 0 ? secondsUntil : SCHEDULE_RETRY_SECONDS;
@@ -104,12 +112,12 @@ export function usePresenceRenewal(
 
     const delayMs = Math.min(delaySeconds * 1000, 24 * 60 * 60 * 1000);
     timerRef.current = setTimeout(() => {
-      void tryRenewRef.current("timer");
+      void runCheckIfDueRef.current("timer");
     }, delayMs);
   }, [clearTimer]);
 
-  const tryRenew = useCallback(async (source: "timer" | "foreground" | "background") => {
-    if (isRenewingRef.current) return;
+  const runCheckIfDue = useCallback(async (source: "timer" | "foreground" | "background") => {
+    if (isBackgroundSyncRunningRef.current) return;
 
     const currentPresence = presenceRef.current;
     if (currentPresence.phase === "proving" || currentPresence.phase === "measuring") {
@@ -120,65 +128,69 @@ export function usePresenceRenewal(
     }
 
     const currentStatus = currentPresence.state ? computeStateStatus(currentPresence.state) : null;
-    const needsMeasurementSync = !!currentPresence.state
-      && (shouldRenew(currentPresence.state) || currentStatus === "expired");
+    const canRetryExpiredSync = !!currentPresence.state
+      && currentStatus === "expired"
+      && hasSyncableServiceBindings(currentPresence.state.serviceBindings);
+    const needsMeasurementCheck = !!currentPresence.state
+      && (isCheckDue(currentPresence.state) || canRetryExpiredSync);
     const initialPendingSyncs = await hasPendingLinkedBindingSyncJobs();
 
-    if (!needsMeasurementSync && !initialPendingSyncs) {
+    if (!needsMeasurementCheck && !initialPendingSyncs) {
       if (source === "background") {
         await finishBackgroundRefresh(true);
-        await scheduleRenewal();
       }
+      await scheduleNextCheck();
       return;
     }
 
-    isRenewingRef.current = true;
+    isBackgroundSyncRunningRef.current = true;
     let success = true;
     try {
-      if (needsMeasurementSync) {
+      if (needsMeasurementCheck) {
         const result = await withTimeout(runScheduledTaskRef.current(), BACKGROUND_TIMEOUT_MS);
         success = result !== false;
       }
 
-      const shouldFlushQueuedSyncs = needsMeasurementSync
-        ? false
-        : initialPendingSyncs;
+      const shouldFlushQueuedSyncs = initialPendingSyncs || needsMeasurementCheck;
 
       if (shouldFlushQueuedSyncs) {
         const result = await withTimeout(flushQueuedLinkedBindingSyncs(), BACKGROUND_TIMEOUT_MS);
         success = success && result.errors.length === 0;
+        if (result.attempted > 0) {
+          await presenceRef.current.refresh();
+        }
       }
     } catch {
       success = false;
     } finally {
-      isRenewingRef.current = false;
+      isBackgroundSyncRunningRef.current = false;
       if (source === "background") {
         try {
           await finishBackgroundRefresh(success);
         } catch {}
-        try {
-          await scheduleRenewal();
-        } catch {}
       }
+      try {
+        await scheduleNextCheck();
+      } catch {}
     }
-  }, [scheduleRenewal]);
+  }, [scheduleNextCheck]);
 
-  const tryRenewRef = useRef(tryRenew);
+  const runCheckIfDueRef = useRef(runCheckIfDue);
   useEffect(() => {
-    tryRenewRef.current = tryRenew;
-  }, [tryRenew]);
+    runCheckIfDueRef.current = runCheckIfDue;
+  }, [runCheckIfDue]);
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       const pending = await consumePendingBackgroundRefresh();
       if (pending && !cancelled) {
-        void tryRenewRef.current("background");
+        void runCheckIfDueRef.current("background");
       }
     })();
 
     const unsubscribe = addBackgroundRefreshListener(() => {
-      void tryRenewRef.current("background");
+      void runCheckIfDueRef.current("background");
     });
 
     return () => {
@@ -187,32 +199,34 @@ export function usePresenceRenewal(
     };
   }, []);
 
+  // ── AppState foreground listener ──────────────────────────────────────────
   useEffect(() => {
     const subscription = AppState.addEventListener(
       "change",
       (nextState: AppStateStatus) => {
         if (nextState === "active") {
-          void tryRenewRef.current("foreground");
-          void scheduleRenewal();
+          void runCheckIfDueRef.current("foreground");
+          void scheduleNextCheck();
         } else {
           clearTimer();
         }
       }
     );
 
-    void tryRenewRef.current("foreground");
-    void scheduleRenewal();
+    void runCheckIfDueRef.current("foreground");
+    void scheduleNextCheck();
 
     return () => {
       subscription.remove();
       clearTimer();
     };
-  }, [scheduleRenewal, clearTimer]);
+  }, [scheduleNextCheck, clearTimer]);
 
+  // ── Re-schedule when state changes ───────────────────────────────────────
   useEffect(() => {
     if (presence.state) {
-      void scheduleRenewal();
+      void scheduleNextCheck();
     }
     return clearTimer;
-  }, [presence.state?.stateValidUntil, presence.state?.nextMeasurementAt, scheduleRenewal, clearTimer, presence.state]);
+  }, [presence.state?.stateValidUntil, presence.state?.nextMeasurementAt, scheduleNextCheck, clearTimer, presence.state]);
 }

@@ -34,6 +34,7 @@ export interface LinkedBindingProofSubmissionResult {
 export interface LinkedBindingSyncResult {
   attempted: number;
   verified: number;
+  recoveryRequired: number;
   skipped: number;
   errors: LinkedBindingSyncError[];
   diagnostics: string[];
@@ -324,8 +325,12 @@ function applyOutcome(
   result: LinkedBindingSyncResult,
   outcome: LinkedBindingProofSubmissionStatus
 ): void {
-  if (outcome === "verified" || outcome === "recovery_required") {
+  if (outcome === "verified") {
     result.verified += 1;
+    return;
+  }
+  if (outcome === "recovery_required") {
+    result.recoveryRequired += 1;
     return;
   }
   result.skipped += 1;
@@ -468,13 +473,19 @@ async function requestJson(
 }
 
 function extractNonce(payload: any): string | null {
-  if (!payload || typeof payload !== "object") return null;
-  if (typeof payload.nonce === "string") return payload.nonce;
-  if (typeof payload.value === "string") return payload.value;
-  if (payload.proofRequest && typeof payload.proofRequest.nonce === "string") return payload.proofRequest.nonce;
-  if (payload.request && typeof payload.request.nonce === "string") return payload.request.nonce;
-  if (payload.nonce && typeof payload.nonce.value === "string") return payload.nonce.value;
-  return null;
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+  const directNonce = readNonceString(payload.nonce);
+  if (directNonce) return directNonce;
+  if (!payload.proofRequest || typeof payload.proofRequest !== "object" || Array.isArray(payload.proofRequest)) {
+    return null;
+  }
+  return readNonceString(payload.proofRequest.nonce);
+}
+
+function readNonceString(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  if (value.length === 0 || value.trim() !== value) return null;
+  return value;
 }
 
 function safeJsonParse(raw: string): any {
@@ -501,6 +512,7 @@ function emptyResult(): LinkedBindingSyncResult {
   return {
     attempted: 0,
     verified: 0,
+    recoveryRequired: 0,
     skipped: 0,
     errors: [],
     diagnostics: [],

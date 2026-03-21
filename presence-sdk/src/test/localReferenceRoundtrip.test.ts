@@ -10,6 +10,7 @@ import {
   fileLinkageStorePath,
   createCompletionSessionResponse,
   createCompletionSuccessResponse,
+  createLinkedProofRequestResponse,
   createRecoveryResponse,
   createLinkedAccountReadinessResponse,
 } from "../index.js";
@@ -126,6 +127,7 @@ async function main() {
     createSessionPath: "/presence/link-sessions",
     completeSessionPath: "/presence/link-sessions/:sessionId/complete",
     sessionStatusPath: "/presence/link-sessions/:sessionId",
+    linkedNoncePath: "/presence/linked-accounts/:accountId/nonce",
     verifyLinkedAccountPath: "/presence/linked-accounts/:accountId/verify",
     linkedStatusPath: "/presence/linked-accounts/:accountId/status",
   } as const;
@@ -165,6 +167,32 @@ async function main() {
             });
         res.writeHead(payload.ok ? 200 : 400, { "content-type": "application/json" });
         res.end(JSON.stringify(payload));
+        return;
+      }
+
+      const linkedNonceMatch = url.pathname.match(/^\/presence\/linked-accounts\/([^/]+)\/nonce$/);
+      if (method === "POST" && linkedNonceMatch) {
+        const request = await presence.createLinkedProofRequest({
+          accountId: decodeURIComponent(linkedNonceMatch[1]),
+        });
+        if (!request.ok) {
+          res.writeHead(request.state === "missing_binding" ? 404 : 409, { "content-type": "application/json" });
+          res.end(JSON.stringify({
+            ok: false,
+            code: request.state === "missing_binding" ? "ERR_BINDING_NOT_FOUND" : "ERR_LINKED_PROOF_UNAVAILABLE",
+            message: request.reason,
+            state: request.state,
+            bindingId: request.binding?.bindingId,
+          }));
+          return;
+        }
+
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify(createLinkedProofRequestResponse({
+          binding: request.binding,
+          nonce: request.nonce,
+          contract: endpointContract,
+        })));
         return;
       }
 
@@ -267,7 +295,24 @@ async function main() {
     assert.equal(completed.ok, true);
     assert.equal(completed.binding.status, "linked");
 
-    const verifyNonce = presence.generateNonce().value;
+    const proofRequestRes = await fetch(`${baseUrl}/presence/linked-accounts/acct-local-http/nonce`, {
+      method: "POST",
+    });
+    assert.equal(proofRequestRes.status, 200);
+    const proofRequest = await proofRequestRes.json() as {
+      ok: true;
+      proofRequest: {
+        nonce: string;
+        bindingId: string;
+        endpoints: {
+          verify: { path: string };
+          status?: { path: string };
+        };
+      };
+    };
+    assert.equal(proofRequest.ok, true);
+
+    const verifyNonce = proofRequest.proofRequest.nonce;
     const verifyRes = await fetch(`${baseUrl}/presence/linked-accounts/acct-local-http/verify`, {
       method: "POST",
       headers: {

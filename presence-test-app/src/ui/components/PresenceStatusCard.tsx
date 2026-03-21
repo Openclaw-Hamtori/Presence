@@ -19,18 +19,28 @@ interface PresenceStatusCardProps {
 
 export function PresenceStatusCard({ presence, fetchNonce }: PresenceStatusCardProps) {
   const { phase, state, error } = presence;
+  const [actionError, setActionError] = React.useState<string | null>(null);
+  const visibleErrorMessage = actionError ?? error?.message ?? null;
 
   const handleSubmitProof = async () => {
+    setActionError(null);
+    presence.clearError();
     try {
       const nonce = await fetchNonce();
       await presence.prove(nonce);
-    } catch {}
+    } catch (caughtError) {
+      setActionError(toErrorMessage(caughtError));
+    }
   };
 
   const handleMeasure = async () => {
+    setActionError(null);
+    presence.clearError();
     try {
       await presence.measure();
-    } catch {}
+    } catch (caughtError) {
+      setActionError(toErrorMessage(caughtError));
+    }
   };
 
   const hasPass = !!state?.pass
@@ -103,10 +113,13 @@ export function PresenceStatusCard({ presence, fetchNonce }: PresenceStatusCardP
           </>
         )}
 
-        {phase === "error" && error && (
+        {visibleErrorMessage && (
           <>
-            <Text style={[styles.helper, styles.errorText]}>{error.message}</Text>
-            <TouchableOpacity onPress={presence.clearError}>
+            <Text style={[styles.helper, styles.errorText]}>{visibleErrorMessage}</Text>
+            <TouchableOpacity onPress={() => {
+              setActionError(null);
+              presence.clearError();
+            }}>
               <Text style={styles.dismissText}>Dismiss</Text>
             </TouchableOpacity>
           </>
@@ -228,3 +241,8 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
 });
+
+function toErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return String(error);
+}

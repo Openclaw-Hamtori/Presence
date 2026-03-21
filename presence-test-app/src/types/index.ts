@@ -66,7 +66,7 @@ export type PresenceStateStatus =
   | "uninitialized"
   | "ready"
   | "expired"
-  | "needs_renewal"
+  | "check_due"
   | "recovery_pending"
   | "not_ready";
 export type LinkFlow = "initial_link" | "reauth" | "relink" | "recovery";

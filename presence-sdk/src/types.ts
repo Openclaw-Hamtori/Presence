@@ -127,6 +127,32 @@ export interface PresenceClientConfig {
 
 export type PresenceVerifyResult = VerifierResult;
 export type LinkedVerificationResult = VerifierResult | LinkedVerificationSuccess | LinkedVerificationRecovery;
+export type LinkedProofRequestState =
+  | "linked"
+  | "missing_binding"
+  | "unlinked"
+  | "revoked"
+  | "recovery_pending";
+
+export interface LinkedProofRequestReady {
+  ok: true;
+  state: "linked";
+  serviceId: string;
+  accountId: string;
+  binding: ServiceBinding;
+  nonce: GeneratedNonce;
+}
+
+export interface LinkedProofRequestUnavailable {
+  ok: false;
+  state: Exclude<LinkedProofRequestState, "linked">;
+  serviceId: string;
+  accountId: string;
+  binding: ServiceBinding | null;
+  reason: string;
+}
+
+export type CreateLinkedProofRequestResult = LinkedProofRequestReady | LinkedProofRequestUnavailable;
 
 export type {
   LinkSessionStatus,

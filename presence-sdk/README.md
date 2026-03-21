@@ -25,6 +25,7 @@ This package now models Presence more like a **real linked auth product flow**.
 
 What exists now:
 - one-time initial **link session** creation
+- explicit **linked proof request** creation for already-linked accounts
 - persistent **service binding** records per service/account
 - persistent **linked device** records keyed by `iss`
 - **unlink**, **device revoke**, and **relink/recovery** primitives
@@ -81,6 +82,7 @@ import {
   PresenceClient,
   FileSystemLinkageStore,
   fileLinkageStorePath,
+  createLinkedProofRequestResponse,
 } from "presence-sdk";
 
 const presence = new PresenceClient({
@@ -118,6 +120,30 @@ if (linkResult.verification.verified) {
     bindingId: linkResult.binding?.bindingId,
     deviceIss: linkResult.binding?.deviceIss,
   });
+}
+
+const proofRequest = await presence.createLinkedProofRequest({
+  accountId: "user_123",
+});
+
+if (proofRequest.ok) {
+  res.json(
+    createLinkedProofRequestResponse({
+      binding: proofRequest.binding,
+      nonce: proofRequest.nonce,
+      contract: {
+        createSessionPath: "/presence/link-sessions",
+        completeSessionPath: "/presence/link-sessions/:sessionId/complete",
+        linkedNoncePath: "/presence/linked-accounts/:accountId/nonce",
+        verifyLinkedAccountPath: "/presence/linked-accounts/:accountId/verify",
+        linkedStatusPath: "/presence/linked-accounts/:accountId/status",
+      },
+    })
+  );
+} else if (proofRequest.state === "missing_binding") {
+  res.status(404).json({ ok: false, code: "ERR_BINDING_NOT_FOUND", message: proofRequest.reason });
+} else {
+  res.status(409).json({ ok: false, code: "ERR_LINKED_PROOF_UNAVAILABLE", state: proofRequest.state, message: proofRequest.reason });
 }
 ```
 
@@ -181,6 +207,21 @@ Possible outcomes:
 - success with updated snapshot
 - standard verifier failure
 - `ERR_BINDING_RECOVERY_REQUIRED` with `recoveryAction`
+
+### `createLinkedProofRequest({ serviceId?, accountId })`
+
+Looks up the active linked binding for an account and issues a fresh nonce for a
+service-driven PASS request.
+
+Recommended usage:
+- call this when your service needs human proof for a gated action
+- hand the returned nonce + verify endpoint metadata to product UI
+- have the app submit PASS to `verifyLinkedAccount()`
+
+Return shape:
+- `ok: true` with `binding` + fresh `nonce` when the account is linked and eligible
+- `ok: false, state: "missing_binding"` when nothing is linked for that account
+- `ok: false` with `state: "unlinked" | "revoked" | "recovery_pending"` when a binding exists but should not accept a fresh PASS request
 
 ### `getLinkedAccountReadiness({ serviceId?, accountId, now?, maxSnapshotAgeSeconds? })`
 
@@ -285,6 +326,7 @@ The SDK now includes response helpers for these shapes:
 - `createCompletionSuccessResponse()`
 - `createRecoveryResponse()`
 - `createAuditEventsResponse()`
+- `createLinkedProofRequestResponse()`
 - `createLinkedAccountReadinessResponse()`
 
 See `examples/backend-completion-reference.ts` for a practical handler layout.
@@ -306,11 +348,13 @@ Minimal reference model in this phase:
    - optional `nonce_url`, `verify_url`
 5. If the deeplink/session includes sync URLs like `nonce_url` or `verify_url`, mobile should validate them against `https://{service_domain}/.well-known/presence.json` before proof submission.
 6. Mobile produces proof and posts to `session.completion.completionApiUrl` or the standardized completion endpoint.
-7. After the first link, mobile can optionally catch up linked account state in background by calling:
-   - `linkedNonceApiUrl` to mint a nonce
-   - `verifyLinkedAccountApiUrl` to submit PASS proof
-7. Mobile persists failed PASS verify attempts locally and retries them on foreground/background wake.
-8. Service calls `completeLinkSession()`, `verifyLinkedAccount()`, or `getLinkedAccountReadiness()` and returns a normalized linked/recovery/readiness payload.
+7. Later, when the service needs PASS for a linked account, backend calls `createLinkedProofRequest()` and returns a normalized `/presence/linked-accounts/:accountId/nonce` response containing:
+   - fresh nonce
+   - linked binding id
+   - verify/status endpoint metadata
+8. Mobile submits PASS to `verifyLinkedAccountApiUrl` for that linked account.
+9. Mobile may still retry failed linked PASS submissions on foreground/background wake as best-effort catch-up.
+10. Service calls `completeLinkSession()`, `verifyLinkedAccount()`, or `getLinkedAccountReadiness()` and returns a normalized linked/recovery/readiness payload.
 
 This is enough to wire real product UX without building scanner/native camera stack yet.
 
@@ -357,9 +401,10 @@ cd ../presence-sdk && npm run build && npm test
 `npm test` now includes a local HTTP reference-server round-trip that exercises:
 - `POST /presence/link-sessions`
 - `POST /presence/link-sessions/:sessionId/complete`
+- `POST /presence/linked-accounts/:accountId/nonce`
 - `POST /presence/linked-accounts/:accountId/verify`
 
-So you can verify the end-to-end linkage flow locally: create session -> app proof -> complete -> binding saved -> verify linked account.
+So you can verify the end-to-end linkage flow locally: create session -> app proof -> complete -> binding saved -> request PASS now -> verify linked account.
 
 ---
 

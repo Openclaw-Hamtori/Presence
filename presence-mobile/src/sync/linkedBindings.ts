@@ -16,9 +16,19 @@ export interface LinkedBindingSyncError {
   message: string;
 }
 
+export type LinkedBindingProofSubmissionStatus = "verified" | "recovery_required" | "skipped";
+
+export interface LinkedBindingProofSubmissionResult {
+  bindingId: string;
+  status: LinkedBindingProofSubmissionStatus;
+  nonce?: string;
+  verifyResponse?: any;
+}
+
 export interface LinkedBindingSyncResult {
   attempted: number;
   verified: number;
+  recoveryRequired: number;
   skipped: number;
   errors: LinkedBindingSyncError[];
 }
@@ -47,7 +57,7 @@ export async function syncLinkedBindings(params: {
     result.attempted += 1;
     try {
       const outcome = await executeBindingSync(binding, measured, state);
-      applyOutcome(result, outcome);
+      applyOutcome(result, outcome.status);
       await removeLinkedBindingSyncJob(binding.bindingId);
     } catch (error) {
       const message = toErrorMessage(error);
@@ -102,7 +112,7 @@ export async function flushQueuedLinkedBindingSyncs(params: {
 
     try {
       const outcome = await executeBindingSync(binding, job.measurement, state);
-      applyOutcome(result, outcome);
+      applyOutcome(result, outcome.status);
       await removeLinkedBindingSyncJob(binding.bindingId);
     } catch (error) {
       const message = toErrorMessage(error);
@@ -123,6 +133,25 @@ export async function flushQueuedLinkedBindingSyncs(params: {
   return result;
 }
 
+export async function submitLinkedBindingProof(params: {
+  binding: ServiceBinding;
+  measurement?: MeasureResult | null;
+  nonce?: string;
+  state?: PresenceState | null;
+}): Promise<LinkedBindingProofSubmissionResult> {
+  const measurement = await getMeasurement(params.measurement);
+  if (!measurement) {
+    throw new Error("measurement unavailable");
+  }
+
+  return executeBindingSync(
+    params.binding,
+    measurement,
+    params.state ?? measurement.state ?? (await loadPresenceState()),
+    params.nonce
+  );
+}
+
 async function getMeasurement(measurement?: MeasureResult | null): Promise<MeasureResult | null> {
   if (measurement) return measurement;
   const result = await measure();
@@ -133,16 +162,23 @@ async function getMeasurement(measurement?: MeasureResult | null): Promise<Measu
 async function executeBindingSync(
   binding: ServiceBinding,
   measurement: MeasureResult,
-  stateHint?: PresenceState | null
-): Promise<"verified" | "skipped"> {
+  stateHint?: PresenceState | null,
+  providedNonce?: string
+): Promise<LinkedBindingProofSubmissionResult> {
   const bindingWithSync = binding.sync ? binding : { ...binding, sync: stateHint?.serviceBindings.find((item) => item.bindingId === binding.bindingId)?.sync };
 
   if (!measurement.pass) {
-    return "skipped";
+    return {
+      bindingId: bindingWithSync.bindingId,
+      status: "skipped",
+    };
   }
 
-  if (!bindingWithSync.sync?.nonceUrl || !bindingWithSync.sync?.verifyUrl) {
-    return "skipped";
+  if (!bindingWithSync.sync?.verifyUrl || (!providedNonce && !bindingWithSync.sync?.nonceUrl)) {
+    return {
+      bindingId: bindingWithSync.bindingId,
+      status: "skipped",
+    };
   }
 
   const trustValidation = await validateBindingSyncConfiguration({
@@ -153,15 +189,14 @@ async function executeBindingSync(
     throw trustValidation.error;
   }
 
-  const nonceResponse = await requestJson(bindingWithSync.sync.nonceUrl, {
+  const nonce = providedNonce ?? extractNonce(await requestJson(bindingWithSync.sync.nonceUrl!, {
     method: "POST",
     body: JSON.stringify({
       bindingId: bindingWithSync.bindingId,
       serviceId: bindingWithSync.serviceId,
       accountId: bindingWithSync.accountId,
     }),
-  });
-  const nonce = extractNonce(nonceResponse);
+  }));
   if (!nonce) {
     throw new Error("nonce endpoint returned no nonce");
   }
@@ -190,7 +225,12 @@ async function executeBindingSync(
       bindingWithSync.bindingId,
       verifyResponse.recovery?.reason ?? verifyResponse.message ?? "binding_mismatch"
     );
-    return "verified";
+    return {
+      bindingId: bindingWithSync.bindingId,
+      status: "recovery_required",
+      nonce,
+      verifyResponse,
+    };
   }
 
   if (!verifyResponse || verifyResponse.ok !== true) {
@@ -198,15 +238,24 @@ async function executeBindingSync(
   }
 
   await markBindingVerified(bindingWithSync.bindingId);
-  return "verified";
+  return {
+    bindingId: bindingWithSync.bindingId,
+    status: "verified",
+    nonce,
+    verifyResponse,
+  };
 }
 
 function applyOutcome(
   result: LinkedBindingSyncResult,
-  outcome: "verified" | "skipped"
+  outcome: LinkedBindingProofSubmissionStatus
 ): void {
   if (outcome === "verified") {
     result.verified += 1;
+    return;
+  }
+  if (outcome === "recovery_required") {
+    result.recoveryRequired += 1;
     return;
   }
   result.skipped += 1;
@@ -322,11 +371,19 @@ async function requestJson(
 }
 
 function extractNonce(payload: any): string | null {
-  if (!payload || typeof payload !== "object") return null;
-  if (typeof payload.nonce === "string") return payload.nonce;
-  if (typeof payload.value === "string") return payload.value;
-  if (payload.nonce && typeof payload.nonce.value === "string") return payload.nonce.value;
-  return null;
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+  const directNonce = readNonceString(payload.nonce);
+  if (directNonce) return directNonce;
+  if (!payload.proofRequest || typeof payload.proofRequest !== "object" || Array.isArray(payload.proofRequest)) {
+    return null;
+  }
+  return readNonceString(payload.proofRequest.nonce);
+}
+
+function readNonceString(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  if (value.length === 0 || value.trim() !== value) return null;
+  return value;
 }
 
 function safeJsonParse(raw: string): any {
@@ -353,6 +410,7 @@ function emptyResult(): LinkedBindingSyncResult {
   return {
     attempted: 0,
     verified: 0,
+    recoveryRequired: 0,
     skipped: 0,
     errors: [],
   };

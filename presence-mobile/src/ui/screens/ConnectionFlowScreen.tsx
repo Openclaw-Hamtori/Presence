@@ -184,12 +184,12 @@ export function ConnectionFlowScreen({
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scroll}>
-        <Text style={styles.title}>Link Or Prove With Presence</Text>
+        <Text style={styles.title}>Link Once, Then Submit PASS</Text>
         <Text style={styles.subtitle}>
-          Simulates the product flow: service creates a link or proof request, renders a QR/deeplink, app opens it, user submits PASS, and the service completes the request.
+          Simulates the product flow: service links Presence once, later asks for PASS when needed, and the app submits proof back to the service.
         </Text>
 
-        <Card title="1. Service creates a link or proof request">
+        <Card title="1. Service creates a link or PASS request">
           <PrimaryButton label="Create demo session" onPress={handleCreateSession} />
           {session && (
             <View style={styles.metaList}>

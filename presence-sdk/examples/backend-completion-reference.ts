@@ -6,7 +6,7 @@ import {
   createCompletionSuccessResponse,
   createRecoveryResponse,
   createAuditEventsResponse,
-  createLinkedNonceResponse,
+  createLinkedProofRequestResponse,
   createLinkedAccountReadinessResponse,
 } from "../src/index.js";
 
@@ -85,10 +85,29 @@ export async function verifyLinkedAccountHandler(req: { params: { accountId: str
   };
 }
 
-export async function issueLinkedNonceHandler(req: { params: { accountId: string } }) {
-  const nonce = presence.generateNonce();
-  return createLinkedNonceResponse(nonce);
+export async function createLinkedProofRequestHandler(req: { params: { accountId: string } }) {
+  const request = await presence.createLinkedProofRequest({
+    accountId: req.params.accountId,
+  });
+
+  if (!request.ok) {
+    return {
+      ok: false,
+      code: request.state === "missing_binding" ? "ERR_BINDING_NOT_FOUND" : "ERR_LINKED_PROOF_UNAVAILABLE",
+      message: request.reason,
+      state: request.state,
+      bindingId: request.binding?.bindingId,
+    };
+  }
+
+  return createLinkedProofRequestResponse({
+    binding: request.binding,
+    nonce: request.nonce,
+    contract: endpointContract,
+  });
 }
+
+export const issueLinkedNonceHandler = createLinkedProofRequestHandler;
 
 export async function getLinkedAccountStatusHandler(req: { params: { accountId: string } }) {
   const readiness = await presence.getLinkedAccountReadiness({

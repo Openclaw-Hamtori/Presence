@@ -98,13 +98,13 @@ export function computeStateStatus(state: PresenceState): PresenceStateStatus {
   if (state.serviceBindings.some((binding) => binding.status === "recovery_pending" || binding.status === "reauth_required")) {
     return "recovery_pending";
   }
-  if (remaining <= SCHEDULED_CHECK_LEAD_SECONDS) return "needs_renewal";
+  if (remaining <= SCHEDULED_CHECK_LEAD_SECONDS) return "check_due";
   return "ready";
 }
 
 export function isStateUsable(state: PresenceState): boolean {
   const status = computeStateStatus(state);
-  return status === "ready" || status === "needs_renewal" || status === "recovery_pending";
+  return status === "ready" || status === "check_due" || status === "recovery_pending";
 }
 
 export function createPresenceState(params: {
@@ -298,10 +298,10 @@ export function attachLinkSession(state: PresenceState, session: LinkSession): P
   return withComputedStatus({ ...state, activeLinkSession: session });
 }
 
-export function shouldRenew(state: PresenceState): boolean {
+export function isCheckDue(state: PresenceState): boolean {
   const now = Math.floor(Date.now() / 1000);
   const status = computeStateStatus(state);
-  if (status === "needs_renewal" || status === "expired") return true;
+  if (status === "check_due" || status === "expired") return true;
   if (status === "not_ready") {
     return (state.nextMeasurementAt ?? now) <= now;
   }

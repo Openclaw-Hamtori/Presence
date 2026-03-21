@@ -18,7 +18,7 @@ import {
   Linking,
 } from "react-native";
 import { usePresenceState } from "./src/ui/usePresenceState";
-import { usePresenceBackgroundSync } from "./src/ui/usePresenceRenewal";
+import { usePresenceBackgroundSync } from "./src/ui/usePresenceBackgroundSync";
 import {
   loadPresenceState,
   savePresenceState,
@@ -510,7 +510,9 @@ export default function App() {
     addLog(
       `   state: created=${refreshedState?.stateCreatedAt ?? '-'} validUntil=${refreshedState?.stateValidUntil ?? '-'} measured=${refreshedState?.lastMeasuredAt ?? '-'} phase=${refreshedState?.status ?? '-'}`
     );
-    addLog(`↻ Synced bindings — verified ${syncResult.verified}, skipped ${syncResult.skipped}, attempted ${syncResult.attempted}`);
+    addLog(
+      `↻ Synced bindings — verified ${syncResult.verified}, recovery ${syncResult.recoveryRequired}, skipped ${syncResult.skipped}, attempted ${syncResult.attempted}`
+    );
     if (measurement.pass && syncResult.attempted === 0 && (measurement.state?.serviceBindings.some(isActiveBinding) ?? false)) {
       addLog("   no linked binding selected for nonce/prove/verify");
     }
@@ -533,7 +535,7 @@ export default function App() {
 
     const success = result.measurement.pass && result.syncResult.errors.length === 0;
     addLog(
-      `↻ Scheduled sync finished — pass=${result.measurement.pass} attempted=${result.syncResult.attempted} verified=${result.syncResult.verified} errors=${result.syncResult.errors.length}`
+      `↻ Scheduled sync finished — pass=${result.measurement.pass} attempted=${result.syncResult.attempted} verified=${result.syncResult.verified} recovery=${result.syncResult.recoveryRequired} errors=${result.syncResult.errors.length}`
     );
     return success;
   }, [addLog, runMeasurementAndSync]);

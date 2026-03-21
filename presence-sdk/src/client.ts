@@ -22,6 +22,7 @@ import type {
   ServicePolicy,
   NonceIssuer,
   NonceStore,
+  CreateLinkedProofRequestResult,
   CreateLinkSessionOptions,
   CreateLinkSessionResult,
   CompleteLinkSessionResult,
@@ -243,18 +244,62 @@ export class PresenceClient {
   async createLinkedProofRequest(params: {
     serviceId?: string;
     accountId: string;
-  }): Promise<{ binding: ServiceBinding; nonce: GeneratedNonce } | null> {
+  }): Promise<CreateLinkedProofRequestResult> {
     const serviceId = params.serviceId ?? this.config.serviceId;
     if (!serviceId) {
       throw new Error("serviceId required for createLinkedProofRequest");
     }
 
     const binding = await this.linkageStore.getServiceBinding(serviceId, params.accountId);
-    if (!binding || binding.status !== "linked") {
-      return null;
+    if (!binding) {
+      return {
+        ok: false,
+        state: "missing_binding",
+        serviceId,
+        accountId: params.accountId,
+        binding: null,
+        reason: "no_linked_binding",
+      };
+    }
+
+    if (binding.status === "unlinked") {
+      return {
+        ok: false,
+        state: "unlinked",
+        serviceId,
+        accountId: params.accountId,
+        binding,
+        reason: binding.recoveryReason ?? "binding_unlinked",
+      };
+    }
+
+    if (binding.status === "revoked") {
+      return {
+        ok: false,
+        state: "revoked",
+        serviceId,
+        accountId: params.accountId,
+        binding,
+        reason: binding.recoveryReason ?? "device_revoked",
+      };
+    }
+
+    if (binding.status === "reauth_required" || binding.status === "recovery_pending") {
+      return {
+        ok: false,
+        state: "recovery_pending",
+        serviceId,
+        accountId: params.accountId,
+        binding,
+        reason: binding.recoveryReason ?? "binding_recovery_required",
+      };
     }
 
     return {
+      ok: true,
+      state: "linked",
+      serviceId,
+      accountId: params.accountId,
       binding,
       nonce: this.generateNonce(),
     };

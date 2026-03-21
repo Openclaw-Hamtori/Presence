@@ -31,6 +31,7 @@ export { evaluatePass } from "./health/pass";
 export { ensureDeviceKey, deleteDeviceKey, deriveIss } from "./crypto/index";
 export { usePresenceState } from "./ui/usePresenceState";
 export type { UsePresenceStateResult, PresenceHookPhase } from "./ui/usePresenceState";
+export { usePresenceBackgroundSync } from "./ui/usePresenceBackgroundSync";
 export {
   isBackgroundRefreshSupported,
   scheduleBackgroundRefresh,
@@ -43,9 +44,14 @@ export type { BackgroundRefreshDiagnostics } from "./backgroundRefresh";
 export { OnboardingScreen } from "./ui/screens/OnboardingScreen";
 export { ConnectionFlowScreen } from "./ui/screens/ConnectionFlowScreen";
 export { PresenceStatusCard } from "./ui/components/PresenceStatusCard";
-export { syncLinkedBindings, flushQueuedLinkedBindingSyncs } from "./sync/linkedBindings";
+export { syncLinkedBindings, flushQueuedLinkedBindingSyncs, submitLinkedBindingProof } from "./sync/linkedBindings";
 export { hasPendingLinkedBindingSyncJobs, clearLinkedBindingSyncQueue } from "./sync/queue";
-export type { LinkedBindingSyncError, LinkedBindingSyncResult } from "./sync/linkedBindings";
+export type {
+  LinkedBindingSyncError,
+  LinkedBindingSyncResult,
+  LinkedBindingProofSubmissionStatus,
+  LinkedBindingProofSubmissionResult,
+} from "./sync/linkedBindings";
 export type { LinkedBindingSyncJob, LinkedBindingSyncJobKind } from "./sync/queue";
 
 export type {

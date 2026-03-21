@@ -277,8 +277,8 @@ function buildAndroidBody(
     });
 
     const request = await client.createLinkedProofRequest({ accountId: "acct-proof" });
-    assert.ok(request);
-    if (!request) {
+    assert.equal(request.ok, true);
+    if (!request.ok) {
       throw new Error("expected linked proof request");
     }
 
@@ -301,6 +301,47 @@ function buildAndroidBody(
     assert.equal(response.proofRequest.endpoints.verify.path, "/presence/linked-accounts/acct-proof/verify");
     assert.equal(response.proofRequest.endpoints.status?.path, "/presence/linked-accounts/acct-proof/status");
     assert.equal(response.proofRequest.endpoints.unlink?.path, "/presence/linked-accounts/acct-proof/unlink");
+  });
+
+  await test("createLinkedProofRequest() reports missing bindings explicitly", async () => {
+    const client = new PresenceClient({ silent: true, linkageStore: new InMemoryLinkageStore(), serviceId: "svc" });
+
+    const request = await client.createLinkedProofRequest({ accountId: "acct-missing" });
+    assert.equal(request.ok, false);
+    if (request.ok) {
+      throw new Error("expected unavailable linked proof request");
+    }
+    assert.equal(request.state, "missing_binding");
+    assert.equal(request.binding, null);
+    assert.equal(request.reason, "no_linked_binding");
+  });
+
+  await test("createLinkedProofRequest() reports recovery state instead of null", async () => {
+    const store = new InMemoryLinkageStore();
+    const client = new PresenceClient({ silent: true, linkageStore: store, serviceId: "svc" });
+    const now = Math.floor(Date.now() / 1000);
+    await store.saveServiceBinding({
+      bindingId: "pbind_recovery",
+      serviceId: "svc",
+      accountId: "acct-recovery",
+      deviceIss: "presence:device:recovery",
+      createdAt: now,
+      updatedAt: now,
+      status: "recovery_pending",
+      lastLinkedAt: now,
+      lastVerifiedAt: now,
+      lastAttestedAt: now,
+      recoveryReason: "binding_mismatch",
+    });
+
+    const request = await client.createLinkedProofRequest({ accountId: "acct-recovery" });
+    assert.equal(request.ok, false);
+    if (request.ok) {
+      throw new Error("expected unavailable linked proof request");
+    }
+    assert.equal(request.state, "recovery_pending");
+    assert.equal(request.binding?.bindingId, "pbind_recovery");
+    assert.equal(request.reason, "binding_mismatch");
   });
 
   await test("completeLinkSession() persists Android platform metadata from parsed request", async () => {

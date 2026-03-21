@@ -35,7 +35,7 @@ export { ensureDeviceKey, deleteDeviceKey, deriveIss } from "./crypto/index";
 // ─── UI ───────────────────────────────────────────────────────────────────────
 export { usePresenceState } from "./ui/usePresenceState";
 export type { UsePresenceStateResult, PresenceHookPhase } from "./ui/usePresenceState";
-export { usePresenceBackgroundSync, usePresenceRenewal } from "./ui/usePresenceRenewal";
+export { usePresenceBackgroundSync } from "./ui/usePresenceBackgroundSync";
 export {
   isBackgroundRefreshSupported,
   scheduleBackgroundRefresh,

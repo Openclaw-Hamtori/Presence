@@ -19,6 +19,7 @@ Phase 4 extends the persistent linkage model on device with:
 - local recovery markers for binding mismatch or re-auth requirement
 - deeplink parsing / generation helpers for link completion
 - a reusable `ConnectionFlowScreen` that walks through service request -> QR/deeplink -> device proof submission -> server completion
+- direct `submitLinkedBindingProof()` support for linked-service PASS submission
 - richer `link_context` routing metadata for initial link, re-auth, relink, and recovery
 - explicit local-calendar-day PASS evaluation semantics for BPM + steps
 
@@ -118,6 +119,36 @@ Returned payload includes routing metadata:
 }
 ```
 
+## Linked-service proof submission
+
+After a service is already linked, the canonical app action is to submit PASS for
+that linked service, not to model a separate renewal product flow.
+
+```ts
+import { submitLinkedBindingProof } from "presence-mobile";
+
+const result = await submitLinkedBindingProof({
+  binding,
+});
+
+if (result.status === "verified") {
+  // service accepted PASS for this linked account
+}
+```
+
+If the service already supplied a nonce in its request, pass it through:
+
+```ts
+await submitLinkedBindingProof({
+  binding,
+  nonce: serviceNonce,
+});
+```
+
+The helper uses the existing `nonceUrl` + `verifyUrl` metadata on the binding.
+When a nonce is not supplied directly, it fetches one from the service first and
+then submits PASS to the verify endpoint.
+
 ---
 
 ## Deeplink / QR completion scaffolding
@@ -203,6 +234,9 @@ The test app includes an iOS `BGTaskScheduler` scaffold, but the reusable mobile
 Failed linked PASS verify attempts may be retried on the next foreground or background wake when the app has enough context to do so.
 A linked account stays linked even when the last PASS is no longer accepted by the service; the service simply asks for another PASS when needed.
 The main user-facing model is still: stay linked, then submit PASS when a service asks.
+
+If you do wire background catch-up into app code, prefer the public name
+`usePresenceBackgroundSync()` over older renewal-centric wording.
 
 Important public expectation-setting:
 - foreground and foreground-resume flows can be made highly reliable

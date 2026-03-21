@@ -18,7 +18,7 @@ import {
   markBindingForRecovery,
   markBindingLinked,
   unlinkServiceBinding,
-  shouldRenew,
+  isCheckDue,
 } from "./state/presenceState";
 import type {
   PresenceAttestation,
@@ -130,7 +130,7 @@ export async function measure(options: MeasureOptions = {}): Promise<Result<Meas
   const shouldPreserveValidity = !!existingState
     && existingState.pass
     && !forceRefresh
-    && !shouldRenew(existingState);
+    && !isCheckDue(existingState);
 
   if (existingState && shouldPreserveValidity) {
     state = updatePresenceSnapshot(existingState, {

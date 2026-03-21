@@ -119,7 +119,13 @@ async function main() {
     body: realAndroidProof,
   });
 
-  const reauthNonce = client.generateNonce().value;
+  const reauthRequest = await client.createLinkedProofRequest({
+    accountId: "acct-local-1",
+  });
+  if (!reauthRequest.ok) {
+    throw new Error(`expected linked proof request for acct-local-1, got ${reauthRequest.state}`);
+  }
+  const reauthNonce = reauthRequest.nonce.value;
   const linkedVerify = await client.verifyLinkedAccount(realAndroidProof, {
     accountId: "acct-local-1",
     nonce: reauthNonce,
@@ -138,7 +144,13 @@ async function main() {
     nonce: expectedNonce,
   });
 
-  const mismatchNonce = client.generateNonce().value;
+  const mismatchRequest = await client.createLinkedProofRequest({
+    accountId: "acct-local-1",
+  });
+  if (!mismatchRequest.ok) {
+    throw new Error(`expected mismatch proof request for acct-local-1, got ${mismatchRequest.state}`);
+  }
+  const mismatchNonce = mismatchRequest.nonce.value;
   const mismatch = await client.verifyLinkedAccount(realAndroidProof, {
     accountId: "acct-local-1",
     nonce: mismatchNonce,
