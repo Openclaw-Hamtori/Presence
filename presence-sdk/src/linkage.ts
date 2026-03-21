@@ -256,6 +256,8 @@ interface FileLinkageStoreData {
 }
 
 export class FileSystemLinkageStore implements LinkageStore {
+  private updateQueue: Promise<void> = Promise.resolve();
+
   constructor(private readonly filePath: string) {}
 
   async saveLinkSession(session: LinkSession): Promise<void> {
