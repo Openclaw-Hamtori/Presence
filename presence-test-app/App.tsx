@@ -1033,16 +1033,16 @@ export default function App() {
                       </View>
                     ))}
                   </ScrollView>
-                  <View pointerEvents="none" style={styles.bindingScrollRailDebug}>
+                  <View pointerEvents="none" style={styles.bindingScrollRail}>
                     <View
                       style={[
-                        styles.bindingScrollThumbDebug,
+                        styles.bindingScrollThumb,
                         serviceScrollTrackVisible
                           ? {
                               height: serviceScrollThumbHeight,
                               transform: [{ translateY: serviceScrollThumbTop }],
                             }
-                          : styles.bindingScrollThumbDebugStatic,
+                          : styles.bindingScrollThumbStatic,
                       ]}
                     />
                   </View>
@@ -1565,7 +1565,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: "rgba(220, 38, 38, 0.9)",
   },
-  bindingScrollThumbDebugStatic: {
+  bindingScrollThumbStatic: {
     height: 56,
   },
   bindingCard: {
