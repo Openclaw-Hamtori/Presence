@@ -11,6 +11,10 @@ import type {
   LinkSession,
   PresenceSnapshot,
 } from "../types/index";
+import {
+  normalizeLinkSessionStatus,
+  normalizePresenceSnapshotSource,
+} from "../types/index";
 
 const STORAGE_KEY = "@presence:state:v2";
 const LEGACY_STORAGE_KEY = "@presence:state:v1";
@@ -373,22 +377,42 @@ function withComputedStatus(state: PresenceState): PresenceState {
 
 function normalizeState(state: PresenceState): PresenceState {
   const now = Math.floor(Date.now() / 1000);
-  const serviceBindings = suppressShadowedLegacyUnsyncableBindings(state.serviceBindings);
+  const activeLinkSession = state.activeLinkSession
+    ? {
+        ...state.activeLinkSession,
+        status: normalizeLinkSessionStatus(state.activeLinkSession.status) ?? "pending",
+      }
+    : undefined;
+  const lastSnapshotSource = normalizePresenceSnapshotSource(state.lastSnapshot.source);
+  const normalizedBaseState = (
+    activeLinkSession === state.activeLinkSession
+    && lastSnapshotSource === state.lastSnapshot.source
+  )
+    ? state
+    : {
+        ...state,
+        activeLinkSession,
+        lastSnapshot: {
+          ...state.lastSnapshot,
+          source: lastSnapshotSource,
+        },
+      };
+  const serviceBindings = suppressShadowedLegacyUnsyncableBindings(normalizedBaseState.serviceBindings);
 
-  if (!state.activeLinkSession || state.activeLinkSession.expiresAt > now) {
-    return serviceBindings === state.serviceBindings
-      ? state
+  if (!normalizedBaseState.activeLinkSession || normalizedBaseState.activeLinkSession.expiresAt > now) {
+    return serviceBindings === normalizedBaseState.serviceBindings
+      ? normalizedBaseState
       : {
-          ...state,
+          ...normalizedBaseState,
           serviceBindings,
         };
   }
 
   return {
-    ...state,
+    ...normalizedBaseState,
     serviceBindings,
     activeLinkSession: {
-      ...state.activeLinkSession,
+      ...normalizedBaseState.activeLinkSession,
       status: "expired",
     },
   };

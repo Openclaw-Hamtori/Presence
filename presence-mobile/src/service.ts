@@ -25,8 +25,6 @@ import type {
   PresenceTransportPayload,
   PresenceState,
   Result,
-  LinkSession,
-  ServiceBinding,
   LinkFlow,
   LinkCompletionMethod,
   PresenceSignal,
@@ -62,16 +60,6 @@ export interface ProveOptions {
 
 export interface MeasureOptions {
   forceRefresh?: boolean;
-  /**
-   * Deprecated internal scheduler hint kept for compatibility.
-   * Presence no longer models renewal as a distinct product flow.
-   */
-  renewalAttempt?: boolean;
-  /**
-   * Deprecated internal scheduler hint kept for compatibility.
-   * Presence no longer models renewal as a distinct product flow.
-   */
-  persistRenewalLocally?: boolean;
 }
 
 export interface MeasureResult {

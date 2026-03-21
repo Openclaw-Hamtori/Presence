@@ -23,6 +23,15 @@
 - Backend/session completion metadata may start as backend-relative paths; mobile/test-app `PresenceBindingSync` only accepts public absolute URLs after the backend rewrites them.
 - Mobile UI is local UX only. Backend readiness and bindings remain authoritative.
 
+## Field aliasing
+- Mobile/test-app `activeLinkSession.status: "consumed"` is the same completed-session meaning as sdk `LinkSession.status: "consumed"`; older local state may still contain the legacy alias `"linked"`.
+- Mobile/test-app `PresenceSnapshot.source: "measurement" | "proof"` maps to sdk `PresenceSnapshot.source: "local_measurement" | "verified_proof"`.
+- Mobile/test-app `linkedDevice.linkedAt` maps to sdk `LinkedDevice.firstLinkedAt`.
+- Mobile/test-app `activeLinkSession.lastNonce` maps to sdk `LinkSession.issuedNonce`.
+- Mobile/test-app `activeLinkSession.createdAt` maps to sdk `LinkSession.requestedAt`.
+- Mobile/test-app `ServiceBinding.linkedAt` maps to sdk `ServiceBinding.lastLinkedAt`, with sdk `createdAt` used only as a fallback when hydrating older backend records.
+- `accountId` may be absent while mobile is holding pre-completion link context, but sdk-persisted `LinkSession` and `ServiceBinding` records require it.
+
 ## Intentional duplication today
 - `presence-test-app/src/crypto/index.ts` remains a diagnostic fork of [`presence-mobile/src/crypto/index.ts`](/Users/chaesung/Desktop/Presence_GPT/presence-mobile/src/crypto/index.ts) so the test app can log signature/base64 normalization details during device debugging.
 - `presence-test-app/src/health/healthkit.ts` remains a validation fork of [`presence-mobile/src/health/healthkit.ts`](/Users/chaesung/Desktop/Presence_GPT/presence-mobile/src/health/healthkit.ts) because the test app uses tuned query settings for compressed real-device checks.

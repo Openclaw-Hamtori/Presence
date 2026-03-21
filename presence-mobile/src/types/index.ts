@@ -79,6 +79,18 @@ export type PresenceStateStatus =
  */
 export type LinkFlow = "initial_link" | "reauth" | "relink" | "recovery";
 export type LinkCompletionMethod = "qr" | "deeplink" | "manual_code";
+/**
+ * Canonical local/mobile session status names.
+ * Backend/sdk uses `consumed` after completion; older mobile state may still
+ * contain the legacy `linked` alias, which should be normalized to `consumed`.
+ */
+export type LinkSessionStatus = "pending" | "consumed" | "expired" | "revoked" | "recovery_pending";
+/**
+ * Canonical local/mobile snapshot source names.
+ * Backend/sdk authoritative snapshots use `local_measurement` and
+ * `verified_proof`; app-local state stores those as `measurement` and `proof`.
+ */
+export type PresenceSnapshotSource = "measurement" | "proof";
 
 export interface LinkedDevice {
   iss: string;
@@ -92,7 +104,7 @@ export interface LinkSession {
   id: string;
   serviceId: string;
   accountId?: string;
-  status: "pending" | "linked" | "expired" | "revoked" | "recovery_pending";
+  status: LinkSessionStatus;
   createdAt: number;
   expiresAt: number;
   lastNonce?: string;
@@ -135,7 +147,7 @@ export interface PresenceSnapshot {
   stateCreatedAt: number;
   stateValidUntil: number;
   reason?: string;
-  source?: "measurement" | "proof";
+  source?: PresenceSnapshotSource;
 }
 
 export interface PresenceState {
@@ -218,4 +230,18 @@ export function ok<T>(value: T): Result<T> {
 
 export function err(code: PresenceMobileErrorCode, message: string, cause?: unknown): Result<never> {
   return { ok: false, error: new PresenceMobileError(code, message, cause) };
+}
+
+export function normalizeLinkSessionStatus(status?: LinkSessionStatus | "linked"): LinkSessionStatus | undefined {
+  if (!status) return undefined;
+  return status === "linked" ? "consumed" : status;
+}
+
+export function normalizePresenceSnapshotSource(
+  source?: PresenceSnapshotSource | "local_measurement" | "verified_proof"
+): PresenceSnapshotSource | undefined {
+  if (!source) return undefined;
+  if (source === "local_measurement") return "measurement";
+  if (source === "verified_proof") return "proof";
+  return source;
 }

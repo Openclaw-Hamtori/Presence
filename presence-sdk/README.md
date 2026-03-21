@@ -255,6 +255,7 @@ Return shape:
 - the normalized HTTP success shape is `{ ok: true, proofRequest: { flow: "reauth", bindingId, nonce, endpoints } }`
 
 `flow: "reauth"` is the stable wire label for this already-linked proof request. In product copy, describe it as "request PASS now" or "prove on demand" rather than a separate renewal mode.
+If you receive `recovery_pending`, `revoked`, or `unlinked`, stop the protected action and resume relink/recovery UX instead of issuing a substitute proof nonce. The canonical service handling and relink guidance live in `../docs/presence-integration-quickstart.md`.
 
 ### `getLinkedAccountReadiness({ serviceId?, accountId, now?, maxSnapshotAgeSeconds? })`
 
@@ -422,6 +423,8 @@ If you emit `service_domain`, `nonce_url`, or `verify_url` in deeplinks or sessi
 - `service_id` in the well-known JSON must match the emitted `service_id`
 - `allowed_url_prefixes` must cover the emitted `nonce_url` and `verify_url`
 - well-known responses should use cache headers that will not pin stale metadata during rollout or debugging
+
+`../docs/presence-integration-quickstart.md` includes the concrete `/.well-known/presence.json` contract and the cross-package field alias map used by mobile/test-app and sdk code.
 
 ---
 

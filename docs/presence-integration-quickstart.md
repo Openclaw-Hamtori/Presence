@@ -210,6 +210,44 @@ The canonical `POST /presence/linked-accounts/:accountId/nonce` success shape is
 That is the canonical "service-driven PASS request" contract. Use it instead of inventing a second renewal-specific flow.
 The stable wire label remains `flow: "reauth"` for this linked proof request shape; treat it as "service requested PASS now" in product/UI copy.
 
+### `/.well-known/presence.json` contract
+
+If you emit `service_domain` plus public `nonce_url` or `verify_url` metadata to mobile, publish:
+
+```text
+GET https://{service_domain}/.well-known/presence.json
+```
+
+Minimum contract:
+
+```json
+{
+  "version": "1",
+  "service_id": "discord-bot",
+  "allowed_url_prefixes": [
+    "https://presence.example.com/presence/linked-accounts/"
+  ]
+}
+```
+
+Backend rules:
+
+- `service_id` must exactly match the `service_id` you emit in deeplinks, QR payloads, and session metadata.
+- `allowed_url_prefixes` must cover every public absolute `nonce_url` and `verify_url` handed to mobile.
+- `nonce_url`, `verify_url`, and `status_url` must already be public absolute URLs before you expose them to mobile; backend-relative paths are rejected at the mobile boundary.
+- Mobile enforces the prefix check for `nonce_url` and `verify_url`; `status_url` still needs to be absolute and publicly reachable.
+- Use short-lived cache headers during rollout/debugging so stale trust metadata does not get pinned on device.
+
+### Recovery-required linked proof requests
+
+When `createLinkedProofRequest()` returns `ok: false` with `state: "recovery_pending" | "revoked" | "unlinked"`:
+
+- Do not mint or accept a replacement linked-proof nonce from a side path; the existing linked binding is blocked.
+- Return `409` with the normalized unavailable shape and stop the protected action.
+- For `recovery_pending`, resume the relink/recovery UX instead of prompting for another ordinary PASS request. Reuse an existing relink session if you already saved one from an earlier `ERR_BINDING_RECOVERY_REQUIRED`; otherwise mint a fresh relink session tied to `request.binding.bindingId` before reopening Presence.
+- For `revoked`, treat the device as no longer trusted and drive relink or support review, not a normal reauth retry.
+- For `unlinked`, require a new initial link before the next protected action.
+
 ---
 
 ## 3. What the app does during a linked PASS request
@@ -306,6 +344,19 @@ The service should store at minimum:
 - the linked device identity
 - the latest verified PASS snapshot
 - an audit trail
+
+## Cross-package field aliases
+
+When comparing mobile/test-app local state with backend/sdk records, these names refer to the same logical fields:
+
+- mobile/test-app `activeLinkSession.status: "consumed"` matches sdk `LinkSession.status: "consumed"`; legacy mobile state may still contain `"linked"` and should be treated as the same completed-session meaning.
+- mobile/test-app `PresenceSnapshot.source: "measurement" | "proof"` maps to sdk `PresenceSnapshot.source: "local_measurement" | "verified_proof"`.
+- mobile/test-app `linkedDevice.linkedAt` maps to sdk `LinkedDevice.firstLinkedAt`.
+- mobile/test-app `activeLinkSession.lastNonce` maps to sdk `LinkSession.issuedNonce`.
+- mobile/test-app `activeLinkSession.createdAt` maps to sdk `LinkSession.requestedAt`.
+- mobile/test-app `ServiceBinding.linkedDeviceIss` maps to sdk `ServiceBinding.deviceIss`.
+- mobile/test-app `ServiceBinding.linkedAt` maps to sdk `ServiceBinding.lastLinkedAt`; hydration may fall back to sdk `createdAt` when older records do not carry `lastLinkedAt`.
+- `accountId` can be absent in mobile pre-completion link context, but backend/sdk persisted `LinkSession` and `ServiceBinding` records require it.
 
 ---
 

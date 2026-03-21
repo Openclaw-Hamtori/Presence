@@ -15,6 +15,8 @@ import {
   createPresenceState,
   updatePresenceSnapshot,
   recordFailedMeasurement,
+  attachLinkSession,
+  addOrUpdateServiceBinding,
   markBindingForRecovery,
   markBindingLinked,
   unlinkServiceBinding,
@@ -60,16 +62,6 @@ export interface ProveOptions {
 
 export interface MeasureOptions {
   forceRefresh?: boolean;
-  /**
-   * Deprecated internal scheduler hint kept for compatibility.
-   * Presence no longer models renewal as a distinct product flow.
-   */
-  renewalAttempt?: boolean;
-  /**
-   * Deprecated internal scheduler hint kept for compatibility.
-   * Presence no longer models renewal as a distinct product flow.
-   */
-  persistRenewalLocally?: boolean;
 }
 
 export interface MeasureResult {
@@ -229,6 +221,55 @@ export async function proveMeasured(measurement: MeasureResult, options: ProveOp
   }
 
   const isNewState = measurement.isNewState;
+
+  if (linkSessionHint) {
+    state = attachLinkSession(state, {
+      id: linkSessionHint.id,
+      serviceId: linkSessionHint.serviceId,
+      accountId: linkSessionHint.accountId,
+      status: flow === "recovery" || flow === "relink" ? "recovery_pending" : "pending",
+      createdAt: Math.floor(Date.now() / 1000),
+      expiresAt: linkSessionHint.expiresAt ?? Math.floor(Date.now() / 1000) + 300,
+      lastNonce: nonce,
+      flow,
+      recoveryCode: linkSessionHint.recoveryCode,
+      completion: linkSessionHint.completion,
+    });
+  }
+
+  if (bindingHint) {
+    state = addOrUpdateServiceBinding(state, {
+      bindingId: bindingHint.bindingId,
+      serviceId: bindingHint.serviceId,
+      accountId: bindingHint.accountId,
+      linkedDeviceIss: measurement.iss,
+      linkedAt: state.linkedDevice.linkedAt,
+      lastVerifiedAt: Math.floor(Date.now() / 1000),
+      status: flow === "recovery" || flow === "relink" ? "recovery_pending" : "linked",
+      sync: bindingHint.sync ?? linkSessionHint?.completion?.sync,
+    }, {
+      allowLinkedRecoveryExit: flow === "reauth",
+    });
+  } else if (linkSessionHint?.accountId) {
+    state = addOrUpdateServiceBinding(state, {
+      bindingId: `local_${linkSessionHint.serviceId}_${linkSessionHint.accountId}`,
+      serviceId: linkSessionHint.serviceId,
+      accountId: linkSessionHint.accountId,
+      linkedDeviceIss: measurement.iss,
+      linkedAt: state.linkedDevice.linkedAt,
+      lastVerifiedAt: Math.floor(Date.now() / 1000),
+      status: flow === "recovery" || flow === "relink" ? "recovery_pending" : "linked",
+      sync: linkSessionHint.completion?.sync,
+    });
+  }
+
+  if (bindingHint && (flow === "recovery" || flow === "relink")) {
+    state = markBindingForRecovery(state, {
+      bindingId: bindingHint.bindingId,
+      recoveryReason: flow,
+      status: "recovery_pending",
+    });
+  }
 
   const attestResult = await performAppAttest(nonce);
   if (!attestResult.ok) return attestResult;
