@@ -976,52 +976,48 @@ export default function App() {
         </View>
 
         <Modal visible={showService} transparent animationType="fade" onRequestClose={() => setShowService(false)}>
-          <TouchableWithoutFeedback onPress={() => setShowService(false)}>
-            <View style={styles.modalBackdrop}>
-              <TouchableWithoutFeedback>
-                <View style={styles.modalCard}>
-                  <View style={styles.modalHeader}>
-                    <Text style={styles.sectionTitle}>Service</Text>
-                    <TouchableOpacity onPress={() => setShowService(false)} activeOpacity={0.85}>
-                      <Text style={styles.modalClose}>Close</Text>
-                    </TouchableOpacity>
-                  </View>
+          <View style={styles.modalBackdrop}>
+            <TouchableOpacity style={styles.modalBackdropPressable} onPress={() => setShowService(false)} activeOpacity={1} />
+            <View style={styles.modalCard}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.sectionTitle}>Service</Text>
+                <TouchableOpacity onPress={() => setShowService(false)} activeOpacity={0.85}>
+                  <Text style={styles.modalClose}>Close</Text>
+                </TouchableOpacity>
+              </View>
 
-                  {hydratingServiceBindings ? (
-                    <Text style={styles.modalMeta}>Syncing linked services…</Text>
-                  ) : serviceBindingsHydrationError ? (
-                    <Text style={styles.modalMeta}>Service sync fallback: {serviceBindingsHydrationError}</Text>
-                  ) : null}
+              {hydratingServiceBindings ? (
+                <Text style={styles.modalMeta}>Syncing linked services…</Text>
+              ) : serviceBindingsHydrationError ? (
+                <Text style={styles.modalMeta}>Service sync fallback: {serviceBindingsHydrationError}</Text>
+              ) : null}
 
-                  {sortedServiceBindings.length > 0 ? (
-                    <View style={styles.bindingViewport}>
-                      <ScrollView
-                        nestedScrollEnabled
-                        style={styles.bindingListScroll}
-                        contentContainerStyle={styles.bindingList}
-                        showsVerticalScrollIndicator
-                        keyboardShouldPersistTaps="handled"
-                        bounces={false}
-                      >
-                        {sortedServiceBindings.map((binding) => (
-                          <View key={binding.bindingId} style={styles.bindingCard}>
-                            <KeyValue label="service" value={binding.serviceId} />
-                            <KeyValue label="account" value={binding.accountId ?? "-"} />
-                            <KeyValue label="status" value={binding.status} />
-                          </View>
-                        ))}
-                      </ScrollView>
-                    </View>
-                  ) : (
-                    <View style={styles.emptyCard}>
-                      <Text style={styles.emptyTitle}>No linked services yet</Text>
-                      <Text style={styles.emptyBody}>Complete a /presence/link flow from your service to populate this list.</Text>
-                    </View>
-                  )}
+              {sortedServiceBindings.length > 0 ? (
+                <View style={styles.bindingViewport}>
+                  <ScrollView
+                    style={styles.bindingListScroll}
+                    contentContainerStyle={styles.bindingList}
+                    showsVerticalScrollIndicator
+                    keyboardShouldPersistTaps="handled"
+                    bounces={false}
+                  >
+                    {sortedServiceBindings.map((binding) => (
+                      <View key={binding.bindingId} style={styles.bindingCard}>
+                        <KeyValue label="service" value={binding.serviceId} />
+                        <KeyValue label="account" value={binding.accountId ?? "-"} />
+                        <KeyValue label="status" value={binding.status} />
+                      </View>
+                    ))}
+                  </ScrollView>
                 </View>
-              </TouchableWithoutFeedback>
+              ) : (
+                <View style={styles.emptyCard}>
+                  <Text style={styles.emptyTitle}>No linked services yet</Text>
+                  <Text style={styles.emptyBody}>Complete a /presence/link flow from your service to populate this list.</Text>
+                </View>
+              )}
             </View>
-          </TouchableWithoutFeedback>
+          </View>
         </Modal>
 
         <Modal visible={showConnection} transparent animationType="fade" onRequestClose={() => setShowConnection(false)}>
@@ -1754,6 +1750,9 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.18)",
     justifyContent: "flex-end",
+  },
+  modalBackdropPressable: {
+    ...StyleSheet.absoluteFillObject,
   },
   modalCard: {
     backgroundColor: "#FFFFFF",
