@@ -22,6 +22,7 @@ import { usePresenceRenewal } from "./src/ui/usePresenceRenewal";
 import {
   loadPresenceState,
   savePresenceState,
+  addOrUpdateServiceBinding,
   mergeAuthoritativeServiceBindings,
   isActiveBinding,
   hasRequiredBindingSyncMetadata,
@@ -167,6 +168,12 @@ interface CompletionSuccessResponse {
 type SeedConfirmedBindingResult =
   | { ok: true; seeded: boolean }
   | { ok: false; message: string };
+
+interface HydratedBindingCache {
+  deviceIss: string;
+  bindings: ServiceBinding[];
+  isAuthoritative: boolean;
+}
 
 async function fetchJson<T>(url: string): Promise<T> {
   const response = await fetch(url, {
@@ -416,13 +423,14 @@ export default function App() {
   const [scannerSupported, setScannerSupported] = useState(false);
   const [scannerBusy, setScannerBusy] = useState(false);
   const [, setLog] = useState<string[]>([`[${nowTime()}] App started — platform: ${Platform.OS}`]);
-  const [hydratedServiceBindings, setHydratedServiceBindings] = useState<ServiceBinding[]>([]);
+  const [hydratedServiceBindings, setHydratedServiceBindings] = useState<HydratedBindingCache | null>(null);
   const [hydratingServiceBindings, setHydratingServiceBindings] = useState(false);
   const [serviceBindingsHydrationError, setServiceBindingsHydrationError] = useState<string | null>(null);
   const serviceScrollRef = useRef<ScrollView | null>(null);
   const [serviceViewportHeight, setServiceViewportHeight] = useState(0);
   const [serviceContentHeight, setServiceContentHeight] = useState(0);
   const [serviceScrollOffset, setServiceScrollOffset] = useState(0);
+  const currentDeviceIss = presence.state?.linkedDevice?.iss;
 
   const addLog = useCallback((msg: string) => {
     const line = `[${nowTime()}] ${msg}`;
@@ -492,11 +500,18 @@ export default function App() {
 
   usePresenceRenewal(presence, runAutomaticRefresh);
 
+  const hydratedBindingsForCurrentDevice = useMemo(() => {
+    if (!currentDeviceIss || hydratedServiceBindings?.deviceIss !== currentDeviceIss) {
+      return [];
+    }
+    return hydratedServiceBindings.bindings;
+  }, [currentDeviceIss, hydratedServiceBindings]);
+
   const localBindingsForHydration = useMemo(
     () => suppressShadowedLegacyUnsyncableBindings(
-      mergeServiceBindings([...(presence.state?.serviceBindings ?? []), ...hydratedServiceBindings])
+      mergeServiceBindings([...(presence.state?.serviceBindings ?? []), ...hydratedBindingsForCurrentDevice])
     ),
-    [presence.state?.serviceBindings, hydratedServiceBindings]
+    [hydratedBindingsForCurrentDevice, presence.state?.serviceBindings]
   );
   const localBindingsForHydrationRef = useRef<ServiceBinding[]>(localBindingsForHydration);
 
@@ -510,13 +525,23 @@ export default function App() {
   ) => {
     const persisted = await loadPresenceState();
     if (persisted?.linkedDevice?.iss !== deviceIss) return;
-    const hasLocalBindingsForDevice = persisted.serviceBindings.some((binding) => binding.linkedDeviceIss === deviceIss);
-    if (recoveredBindings.length === 0 && hasLocalBindingsForDevice) return;
     const mergedState = mergeAuthoritativeServiceBindings(persisted, recoveredBindings);
     if (JSON.stringify(mergedState.serviceBindings) === JSON.stringify(persisted.serviceBindings)) {
       return;
     }
     await savePresenceState(mergedState);
+  }, []);
+
+  const persistSeededBinding = useCallback(async (binding: ServiceBinding) => {
+    const persisted = await loadPresenceState();
+    if (persisted?.linkedDevice?.iss !== binding.linkedDeviceIss) return;
+    const nextState = addOrUpdateServiceBinding(persisted, binding, {
+      allowLinkedRecoveryExit: binding.status === "linked",
+    });
+    if (JSON.stringify(nextState.serviceBindings) === JSON.stringify(persisted.serviceBindings)) {
+      return;
+    }
+    await savePresenceState(nextState);
   }, []);
 
   const seedConfirmedBinding = useCallback(async (
@@ -561,11 +586,18 @@ export default function App() {
       };
     }
 
-    setHydratedServiceBindings((current) => mergeServiceBindings([seededBinding, ...current]));
-    await persistAuthoritativeBindings(seededBinding.linkedDeviceIss, [seededBinding]);
+    setHydratedServiceBindings((current) => {
+      const currentBindings = current?.deviceIss === seededBinding.linkedDeviceIss ? current.bindings : [];
+      return {
+        deviceIss: seededBinding.linkedDeviceIss,
+        bindings: mergeServiceBindings([seededBinding, ...currentBindings]),
+        isAuthoritative: current?.deviceIss === seededBinding.linkedDeviceIss ? current.isAuthoritative : false,
+      };
+    });
+    await persistSeededBinding(seededBinding);
     addLog(`✅ completion seed persisted — binding=${seededBinding.bindingId} ${describeBindingSync(seededBinding.sync)}`);
     return { ok: true, seeded: true };
-  }, [addLog, persistAuthoritativeBindings]);
+  }, [addLog, persistSeededBinding]);
 
   const activateEnvelope = useCallback(async (
     parsed: LinkCompletionEnvelope,
@@ -636,7 +668,11 @@ export default function App() {
           localBindings,
           deviceIss
         );
-        setHydratedServiceBindings(recoveredBindings);
+        setHydratedServiceBindings({
+          deviceIss,
+          bindings: recoveredBindings,
+          isAuthoritative: true,
+        });
         await persistAuthoritativeBindings(deviceIss, recoveredBindings);
         addLog(`↻ Recovered ${recoveredBindings.length} bindings from device endpoint (${source})`);
         return;
@@ -675,12 +711,15 @@ export default function App() {
         deviceIss
       );
 
-      setHydratedServiceBindings(recoveredBindings);
+      setHydratedServiceBindings({
+        deviceIss,
+        bindings: recoveredBindings,
+        isAuthoritative: true,
+      });
       await persistAuthoritativeBindings(deviceIss, recoveredBindings);
       addLog(`↻ Recovered ${recoveredBindings.length} bindings via audit fallback (${source})`);
     } catch (error) {
       setServiceBindingsHydrationError(error instanceof Error ? error.message : String(error));
-      setHydratedServiceBindings([]);
     } finally {
       setHydratingServiceBindings(false);
     }
@@ -705,7 +744,26 @@ export default function App() {
   }, [hydrateAuthoritativeBindings, presence.state?.linkedDevice?.iss]);
 
   const proveOptions = useMemo(() => (openedEnvelope ? envelopeToProveOptions(openedEnvelope) : null), [openedEnvelope]);
-  const effectiveServiceBindings = localBindingsForHydration;
+  const effectiveServiceBindings = useMemo(() => {
+    if (
+      !presence.state
+      || !currentDeviceIss
+      || hydratedServiceBindings?.deviceIss !== currentDeviceIss
+      || !hydratedServiceBindings.isAuthoritative
+    ) {
+      return localBindingsForHydration;
+    }
+
+    return suppressShadowedLegacyUnsyncableBindings(
+      mergeAuthoritativeServiceBindings(
+        {
+          ...presence.state,
+          serviceBindings: localBindingsForHydration,
+        },
+        hydratedServiceBindings.bindings
+      ).serviceBindings
+    );
+  }, [currentDeviceIss, hydratedServiceBindings, localBindingsForHydration, presence.state]);
   const hasRecovery = effectiveServiceBindings.some((binding) => binding.status === "recovery_pending" || binding.status === "reauth_required");
   const productState = getProductState(presence.phase, presence.state?.pass, hasRecovery);
   const openedSessionAlreadyLinked = !!(
