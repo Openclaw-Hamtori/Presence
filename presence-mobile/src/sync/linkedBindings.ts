@@ -29,7 +29,10 @@ export async function syncLinkedBindings(params: {
   const measured = await getMeasurement(params.measurement);
   const state = measured?.state ?? (await loadPresenceState());
   const currentBindings = measured && state
-    ? state.serviceBindings.filter((binding) => isSyncableBinding(binding, measured.pass))
+    ? state.serviceBindings.filter((binding) => (
+      !isShadowedLegacyUnsyncableBinding(binding, state.serviceBindings)
+      && isSyncableBinding(binding, measured.pass)
+    ))
     : [];
 
   const result = await flushQueuedLinkedBindingSyncs({
@@ -76,6 +79,7 @@ export async function flushQueuedLinkedBindingSyncs(params: {
   const skipBindingIds = new Set(params.skipBindingIds ?? []);
   const state = await loadPresenceState();
   const bindings = new Map(state?.serviceBindings.map((binding) => [binding.bindingId, binding]) ?? []);
+  const stateBindings = state?.serviceBindings ?? [];
   const result = emptyResult();
 
   for (const job of jobs) {
@@ -83,8 +87,13 @@ export async function flushQueuedLinkedBindingSyncs(params: {
       continue;
     }
 
-    result.attempted += 1;
     const binding = resolveBinding(bindings.get(job.binding.bindingId), job.binding);
+    if (isShadowedLegacyUnsyncableBinding(binding, stateBindings)) {
+      await removeLinkedBindingSyncJob(job.binding.bindingId);
+      continue;
+    }
+
+    result.attempted += 1;
     if (!hasRemainingLinkedBindingSyncAttempts(job) || !isRetryableBinding(binding, job.measurement.pass)) {
       await removeLinkedBindingSyncJob(job.binding.bindingId);
       result.skipped += 1;
@@ -229,6 +238,42 @@ function isSyncableBinding(binding: ServiceBinding, pass: boolean): boolean {
   }
 
   return !!binding.sync.nonceUrl && !!binding.sync.verifyUrl;
+}
+
+function isShadowedLegacyUnsyncableBinding(
+  binding: ServiceBinding,
+  bindings: ServiceBinding[]
+): boolean {
+  if (!isBindingActiveForSync(binding) || hasCompleteBindingSyncMetadata(binding)) {
+    return false;
+  }
+
+  return bindings.some((candidate) => (
+    candidate.bindingId !== binding.bindingId
+    && isBindingActiveForSync(candidate)
+    && hasCompleteBindingSyncMetadata(candidate)
+    && sharesBindingShadowScope(candidate, binding)
+  ));
+}
+
+function isBindingActiveForSync(binding: ServiceBinding): boolean {
+  return binding.status !== "revoked" && binding.status !== "unlinked";
+}
+
+function hasCompleteBindingSyncMetadata(binding: ServiceBinding): boolean {
+  return !!binding.sync?.nonceUrl && !!binding.sync?.verifyUrl;
+}
+
+function sharesBindingShadowScope(a: ServiceBinding, b: ServiceBinding): boolean {
+  if (a.linkedDeviceIss !== b.linkedDeviceIss || a.serviceId !== b.serviceId) {
+    return false;
+  }
+
+  if (a.accountId && b.accountId) {
+    return a.accountId === b.accountId;
+  }
+
+  return true;
 }
 
 const REQUEST_TIMEOUT_MS = 10_000;

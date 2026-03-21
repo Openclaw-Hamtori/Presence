@@ -15,13 +15,21 @@ import type {
 const STORAGE_KEY = "@presence:state:v2";
 const LEGACY_STORAGE_KEY = "@presence:state:v1";
 const STATE_VALIDITY_SECONDS = 3 * 60;
-const RENEWAL_WINDOW_SECONDS = 30;
+const RENEWAL_WARNING_SECONDS = 60;
+const AUTOMATIC_RENEWAL_SECONDS = RENEWAL_WARNING_SECONDS;
 const FAILED_RETRY_SECONDS = 30 * 60;
 
 export async function loadPresenceState(): Promise<PresenceState | null> {
   try {
     const raw = await AsyncStorage.getItem(STORAGE_KEY);
-    if (raw) return withComputedStatus(JSON.parse(raw) as PresenceState);
+    if (raw) {
+      const parsed = JSON.parse(raw) as PresenceState;
+      const normalized = withComputedStatus(parsed);
+      if (JSON.stringify(normalized) !== JSON.stringify(parsed)) {
+        await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
+      }
+      return normalized;
+    }
 
     const legacyRaw = await AsyncStorage.getItem(LEGACY_STORAGE_KEY);
     if (!legacyRaw) return null;
@@ -94,7 +102,7 @@ export function computeStateStatus(state: PresenceState): PresenceStateStatus {
   if (state.serviceBindings.some((binding) => binding.status === "recovery_pending" || binding.status === "reauth_required")) {
     return "recovery_pending";
   }
-  if (remaining < RENEWAL_WINDOW_SECONDS) return "needs_renewal";
+  if (remaining <= RENEWAL_WARNING_SECONDS) return "needs_renewal";
   return "ready";
 }
 
@@ -213,6 +221,45 @@ export function updatePresenceSnapshot(
   });
 }
 
+export function rollPresenceStateForward(
+  state: PresenceState,
+  params: {
+    capturedAt: number;
+    signals: PresenceSignal[];
+    reason?: string;
+  }
+): PresenceState {
+  return updatePresenceSnapshot(state, {
+    pass: true,
+    signals: params.signals,
+    capturedAt: params.capturedAt,
+    reason: params.reason,
+    source: "measurement",
+    stateCreatedAt: params.capturedAt,
+    stateValidUntil: params.capturedAt + STATE_VALIDITY_SECONDS,
+  });
+}
+
+export function extendPresenceStateValidity(
+  state: PresenceState,
+  params: {
+    capturedAt: number;
+    signals: PresenceSignal[];
+    reason?: string;
+    source?: "measurement" | "proof";
+  }
+): PresenceState {
+  return updatePresenceSnapshot(state, {
+    pass: true,
+    signals: params.signals,
+    capturedAt: params.capturedAt,
+    reason: params.reason,
+    source: params.source ?? "measurement",
+    stateCreatedAt: state.stateCreatedAt,
+    stateValidUntil: params.capturedAt + STATE_VALIDITY_SECONDS,
+  });
+}
+
 export function addOrUpdateServiceBinding(
   state: PresenceState,
   binding: ServiceBinding,
@@ -220,7 +267,12 @@ export function addOrUpdateServiceBinding(
 ): PresenceState {
   const existingById = state.serviceBindings.find((item) => item.bindingId === binding.bindingId);
   const existingByLogicalKey = state.serviceBindings.find(
-    (item) => item.serviceId === binding.serviceId && item.accountId === binding.accountId && isActiveBinding(item)
+    (item) => (
+      item.linkedDeviceIss === binding.linkedDeviceIss
+      && item.serviceId === binding.serviceId
+      && item.accountId === binding.accountId
+      && isActiveBinding(item)
+    )
   );
   const existing = existingById ?? existingByLogicalKey;
 
@@ -229,6 +281,7 @@ export function addOrUpdateServiceBinding(
     if (item.bindingId === binding.bindingId) return false;
     if (
       isActiveBinding(item) &&
+      item.linkedDeviceIss === binding.linkedDeviceIss &&
       item.serviceId === binding.serviceId &&
       item.accountId === binding.accountId
     ) {
@@ -242,7 +295,7 @@ export function addOrUpdateServiceBinding(
     ...binding,
     bindingId: binding.bindingId,
     status: nextStatus,
-    sync: binding.sync ?? existing?.sync,
+    sync: mergeBindingSyncMetadata(existing?.sync, binding.sync),
     recoveryStartedAt: nextStatus === "recovery_pending" || nextStatus === "reauth_required"
       ? binding.recoveryStartedAt ?? existing?.recoveryStartedAt
       : undefined,
@@ -257,9 +310,33 @@ export function mergeAuthoritativeServiceBindings(
   state: PresenceState,
   bindings: ServiceBinding[]
 ): PresenceState {
-  return bindings.reduce((current, binding) => addOrUpdateServiceBinding(current, binding, {
-    allowLinkedRecoveryExit: binding.status === "linked",
-  }), state);
+  const authoritativeDeviceIss = state.linkedDevice.iss;
+  const existingById = new Map<string, ServiceBinding>(
+    state.serviceBindings
+      .filter((binding) => binding.linkedDeviceIss === authoritativeDeviceIss)
+      .map((binding) => [binding.bindingId, binding])
+  );
+  const existingByLogicalKey = new Map<string, ServiceBinding>(
+    state.serviceBindings
+      .filter((binding) => binding.linkedDeviceIss === authoritativeDeviceIss)
+      .map((binding) => [bindingLogicalKeyOf(binding), binding])
+  );
+
+  const retainedBindings = state.serviceBindings.filter((binding) => binding.linkedDeviceIss !== authoritativeDeviceIss);
+  const replacedState = withComputedStatus({
+    ...state,
+    serviceBindings: retainedBindings,
+  });
+
+  return bindings.reduce((current, binding) => {
+    const existing = existingById.get(binding.bindingId) ?? existingByLogicalKey.get(bindingLogicalKeyOf(binding));
+    return addOrUpdateServiceBinding(current, {
+      ...binding,
+      sync: mergeBindingSyncMetadata(existing?.sync, binding.sync),
+    }, {
+      allowLinkedRecoveryExit: binding.status === "linked",
+    });
+  }, replacedState);
 }
 
 export function markBindingForRecovery(
@@ -317,8 +394,11 @@ export function attachLinkSession(state: PresenceState, session: LinkSession): P
 
 export function shouldRenew(state: PresenceState): boolean {
   const now = Math.floor(Date.now() / 1000);
+  if (state.pass) {
+    const remaining = state.stateValidUntil - now;
+    return remaining > 0 && remaining <= AUTOMATIC_RENEWAL_SECONDS;
+  }
   const status = computeStateStatus(state);
-  if (status === "needs_renewal" || status === "expired") return true;
   if (status === "not_ready") {
     return (state.nextMeasurementAt ?? now) <= now;
   }
@@ -331,7 +411,7 @@ export function secondsUntilNextMeasurement(state: PresenceState): number {
     return Math.max(0, (state.nextMeasurementAt ?? now) - now);
   }
 
-  const renewalStart = state.stateValidUntil - RENEWAL_WINDOW_SECONDS;
+  const renewalStart = state.stateValidUntil - AUTOMATIC_RENEWAL_SECONDS;
   return Math.max(0, renewalStart - now);
 }
 
@@ -380,12 +460,20 @@ function withComputedStatus(state: PresenceState): PresenceState {
 
 function normalizeState(state: PresenceState): PresenceState {
   const now = Math.floor(Date.now() / 1000);
+  const serviceBindings = suppressShadowedLegacyUnsyncableBindings(state.serviceBindings);
+
   if (!state.activeLinkSession || state.activeLinkSession.expiresAt > now) {
-    return state;
+    return serviceBindings === state.serviceBindings
+      ? state
+      : {
+          ...state,
+          serviceBindings,
+        };
   }
 
   return {
     ...state,
+    serviceBindings,
     activeLinkSession: {
       ...state.activeLinkSession,
       status: "expired",
@@ -393,8 +481,55 @@ function normalizeState(state: PresenceState): PresenceState {
   };
 }
 
-function isActiveBinding(binding: ServiceBinding): boolean {
+export function isActiveBinding(binding: ServiceBinding): boolean {
   return binding.status !== "unlinked" && binding.status !== "revoked";
+}
+
+export function suppressShadowedLegacyUnsyncableBindings(bindings: ServiceBinding[]): ServiceBinding[] {
+  if (bindings.length < 2) return bindings;
+
+  const shadowedBindingIds = getShadowedLegacyUnsyncableBindingIds(bindings);
+  if (shadowedBindingIds.size === 0) {
+    return bindings;
+  }
+
+  return bindings.filter((binding) => !shadowedBindingIds.has(binding.bindingId));
+}
+
+export function getShadowedLegacyUnsyncableBindingIds(bindings: ServiceBinding[]): Set<string> {
+  const shadowedBindingIds = new Set<string>();
+
+  for (const binding of bindings) {
+    if (isShadowedLegacyUnsyncableBinding(binding, bindings)) {
+      shadowedBindingIds.add(binding.bindingId);
+    }
+  }
+
+  return shadowedBindingIds;
+}
+
+export function isShadowedLegacyUnsyncableBinding(
+  binding: ServiceBinding,
+  bindings: ServiceBinding[]
+): boolean {
+  if (!isActiveBinding(binding) || hasRequiredBindingSyncMetadata(binding.sync)) {
+    return false;
+  }
+
+  return bindings.some((candidate) => (
+    candidate.bindingId !== binding.bindingId
+    && isActiveBinding(candidate)
+    && hasRequiredBindingSyncMetadata(candidate.sync)
+    && sharesBindingShadowScope(candidate, binding)
+  ));
+}
+
+export function hasActiveServiceBindings(bindings: ServiceBinding[]): boolean {
+  return bindings.some((binding) => isActiveBinding(binding));
+}
+
+export function hasSyncableServiceBindings(bindings: ServiceBinding[]): boolean {
+  return bindings.some((binding) => isActiveBinding(binding) && hasRequiredBindingSyncMetadata(binding.sync));
 }
 
 function resolveBindingStatus(
@@ -413,6 +548,67 @@ function resolveBindingStatus(
   return incomingStatus;
 }
 
+function bindingLogicalKeyOf(binding: Pick<ServiceBinding, "linkedDeviceIss" | "serviceId" | "accountId">): string {
+  return `${binding.linkedDeviceIss}:${binding.serviceId}:${binding.accountId ?? "-"}`;
+}
+
+function sharesBindingShadowScope(a: ServiceBinding, b: ServiceBinding): boolean {
+  if (a.linkedDeviceIss !== b.linkedDeviceIss || a.serviceId !== b.serviceId) {
+    return false;
+  }
+
+  if (a.accountId && b.accountId) {
+    return a.accountId === b.accountId;
+  }
+
+  return true;
+}
+
+function normalizeOptionalSyncValue(value?: string): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+export function normalizeBindingSyncMetadata(
+  sync: ServiceBinding["sync"] | undefined | null
+): ServiceBinding["sync"] | undefined {
+  if (!sync) return undefined;
+
+  const normalized = {
+    serviceDomain: normalizeOptionalSyncValue(sync.serviceDomain),
+    nonceUrl: normalizeOptionalSyncValue(sync.nonceUrl),
+    verifyUrl: normalizeOptionalSyncValue(sync.verifyUrl),
+    statusUrl: normalizeOptionalSyncValue(sync.statusUrl),
+  };
+
+  return normalized.serviceDomain || normalized.nonceUrl || normalized.verifyUrl || normalized.statusUrl
+    ? normalized
+    : undefined;
+}
+
+export function hasRequiredBindingSyncMetadata(
+  sync: ServiceBinding["sync"] | undefined | null
+): boolean {
+  const normalized = normalizeBindingSyncMetadata(sync);
+  return !!normalized?.nonceUrl && !!normalized?.verifyUrl;
+}
+
+export function mergeBindingSyncMetadata(
+  existingSync: ServiceBinding["sync"] | undefined,
+  incomingSync: ServiceBinding["sync"] | undefined
+): ServiceBinding["sync"] | undefined {
+  const normalizedExisting = normalizeBindingSyncMetadata(existingSync);
+  const normalizedIncoming = normalizeBindingSyncMetadata(incomingSync);
+
+  if (!normalizedExisting) return normalizedIncoming;
+  if (!normalizedIncoming) return normalizedExisting;
+  return {
+    ...normalizedExisting,
+    ...normalizedIncoming,
+  };
+}
+
 function computeNextMeasurementAt(params: {
   capturedAt: number;
   pass: boolean;
@@ -422,7 +618,7 @@ function computeNextMeasurementAt(params: {
     return params.capturedAt + FAILED_RETRY_SECONDS;
   }
 
-  return Math.max(params.capturedAt, params.stateValidUntil - RENEWAL_WINDOW_SECONDS);
+  return Math.max(params.capturedAt, params.stateValidUntil - AUTOMATIC_RENEWAL_SECONDS);
 }
 
 function touchBindingsForMeasurement(

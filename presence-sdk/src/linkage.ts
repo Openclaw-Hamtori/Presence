@@ -1,5 +1,5 @@
-import { mkdir, readFile, writeFile } from "fs/promises";
-import { dirname, join } from "path";
+import { mkdir, open, readFile, rename, rm, stat, unlink } from "fs/promises";
+import { basename, dirname, join } from "path";
 import type { PresenceVerifyResult, VerifierSuccess } from "./types.js";
 
 export type LinkSessionStatus = "pending" | "consumed" | "expired" | "cancelled";
@@ -268,74 +268,155 @@ interface FileLinkageStoreData {
   auditEvents: LinkageAuditEvent[];
 }
 
+export class LinkageStoreCorruptionError extends Error {
+  constructor(
+    readonly filePath: string,
+    message: string
+  ) {
+    super(message);
+    this.name = "LinkageStoreCorruptionError";
+  }
+}
+
+const FILE_LOCK_RETRY_MS = 10;
+const FILE_LOCK_STALE_MS = 30_000;
+
+function cloneMetadata(metadata?: Record<string, string>): Record<string, string> | undefined {
+  return metadata ? { ...metadata } : undefined;
+}
+
+function cloneLinkCompletion(completion?: LinkCompletion): LinkCompletion | undefined {
+  return completion ? { ...completion } : undefined;
+}
+
+function clonePresenceSnapshot(snapshot?: PresenceSnapshot): PresenceSnapshot | undefined {
+  if (!snapshot) return undefined;
+  return {
+    ...snapshot,
+    signals: [...snapshot.signals],
+  };
+}
+
+function cloneLinkSession(session: LinkSession): LinkSession {
+  return {
+    ...session,
+    completion: cloneLinkCompletion(session.completion),
+    metadata: cloneMetadata(session.metadata),
+  };
+}
+
+function cloneLinkedDevice(device: LinkedDevice): LinkedDevice {
+  return {
+    ...device,
+    metadata: cloneMetadata(device.metadata),
+  };
+}
+
+function cloneServiceBinding(binding: ServiceBinding): ServiceBinding {
+  return {
+    ...binding,
+    lastSnapshot: clonePresenceSnapshot(binding.lastSnapshot),
+    metadata: cloneMetadata(binding.metadata),
+  };
+}
+
+function cloneAuditEvent(event: LinkageAuditEvent): LinkageAuditEvent {
+  return {
+    ...event,
+    metadata: cloneMetadata(event.metadata),
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function normalizeFileLinkageStoreData(parsed: unknown): FileLinkageStoreData {
+  if (!isRecord(parsed)) {
+    throw new Error("linkage store root must be a JSON object");
+  }
+
+  return {
+    sessions: isRecord(parsed.sessions) ? parsed.sessions as Record<string, LinkSession> : {},
+    bindings: isRecord(parsed.bindings) ? parsed.bindings as Record<string, ServiceBinding> : {},
+    devices: isRecord(parsed.devices) ? parsed.devices as Record<string, LinkedDevice> : {},
+    auditEvents: Array.isArray(parsed.auditEvents) ? parsed.auditEvents as LinkageAuditEvent[] : [],
+  };
+}
+
+function filterAuditEvents(
+  events: readonly LinkageAuditEvent[],
+  filter?: { serviceId?: string; accountId?: string; bindingId?: string }
+): LinkageAuditEvent[] {
+  return events.filter((event) => {
+    if (filter?.serviceId && event.serviceId !== filter.serviceId) return false;
+    if (filter?.accountId && event.accountId !== filter.accountId) return false;
+    if (filter?.bindingId && event.bindingId !== filter.bindingId) return false;
+    return true;
+  });
+}
+
 export class FileSystemLinkageStore implements LinkageStore {
-  private updateQueue: Promise<void> = Promise.resolve();
+  private static readonly pathQueues = new Map<string, Promise<void>>();
 
   constructor(private readonly filePath: string) {}
 
   async saveLinkSession(session: LinkSession): Promise<void> {
     await this.update((data) => {
-      data.sessions[session.id] = { ...session };
+      data.sessions[session.id] = cloneLinkSession(session);
     });
   }
 
   async getLinkSession(sessionId: string): Promise<LinkSession | null> {
     const data = await this.readData();
-    return data.sessions[sessionId] ?? null;
+    const session = data.sessions[sessionId];
+    return session ? cloneLinkSession(session) : null;
   }
 
   async saveServiceBinding(binding: ServiceBinding): Promise<void> {
     await this.update((data) => {
-      data.bindings[this.bindingKey(binding.serviceId, binding.accountId)] = { ...binding };
+      data.bindings[this.bindingKey(binding.serviceId, binding.accountId)] = cloneServiceBinding(binding);
     });
   }
 
   async getServiceBinding(serviceId: string, accountId: string): Promise<ServiceBinding | null> {
     const data = await this.readData();
-    return data.bindings[this.bindingKey(serviceId, accountId)] ?? null;
+    const binding = data.bindings[this.bindingKey(serviceId, accountId)];
+    return binding ? cloneServiceBinding(binding) : null;
   }
 
   async listBindingsForDevice(deviceIss: string): Promise<ServiceBinding[]> {
     const data = await this.readData();
-    return Object.values(data.bindings).filter((binding) => binding.deviceIss === deviceIss);
+    return Object.values(data.bindings)
+      .filter((binding) => binding.deviceIss === deviceIss)
+      .map((binding) => cloneServiceBinding(binding));
   }
 
   async getLinkedDevice(deviceIss: string): Promise<LinkedDevice | null> {
     const data = await this.readData();
-    return data.devices[deviceIss] ?? null;
+    const device = data.devices[deviceIss];
+    return device ? cloneLinkedDevice(device) : null;
   }
 
   async saveLinkedDevice(device: LinkedDevice): Promise<void> {
     await this.update((data) => {
-      data.devices[device.iss] = { ...device };
+      data.devices[device.iss] = cloneLinkedDevice(device);
     });
   }
 
   async appendAuditEvent(event: LinkageAuditEvent): Promise<void> {
     await this.update((data) => {
-      data.auditEvents.push({ ...event });
+      data.auditEvents.push(cloneAuditEvent(event));
     });
   }
 
   async listAuditEvents(filter?: { serviceId?: string; accountId?: string; bindingId?: string }): Promise<LinkageAuditEvent[]> {
     const data = await this.readData();
-    return data.auditEvents.filter((event) => {
-      if (filter?.serviceId && event.serviceId !== filter.serviceId) return false;
-      if (filter?.accountId && event.accountId !== filter.accountId) return false;
-      if (filter?.bindingId && event.bindingId !== filter.bindingId) return false;
-      return true;
-    });
+    return filterAuditEvents(data.auditEvents, filter).map((event) => cloneAuditEvent(event));
   }
 
   async mutate<T>(mutator: (store: LinkageStore) => Promise<T>): Promise<T> {
-    let result!: T;
-    const run = async () => {
-      result = await mutator(this);
-    };
-    const queued = this.updateQueue.then(run, run);
-    this.updateQueue = queued.then(() => undefined, () => undefined);
-    await queued;
-    return result;
+    return this.runExclusiveMutation(async (data) => mutator(this.createTransactionalStore(data)));
   }
 
   private bindingKey(serviceId: string, accountId: string): string {
@@ -343,29 +424,208 @@ export class FileSystemLinkageStore implements LinkageStore {
   }
 
   private async update(mutator: (data: FileLinkageStoreData) => void): Promise<void> {
-    const data = await this.readData();
-    mutator(data);
-    await this.writeData(data);
+    await this.runExclusiveMutation(async (data) => {
+      mutator(data);
+    });
   }
 
   private async readData(): Promise<FileLinkageStoreData> {
+    await this.waitForPendingLocalWrites();
+    return this.readDataFromDisk();
+  }
+
+  private async readDataFromDisk(): Promise<FileLinkageStoreData> {
     try {
       const raw = await readFile(this.filePath, "utf8");
-      const parsed = JSON.parse(raw) as FileLinkageStoreData;
-      return {
-        sessions: parsed.sessions ?? {},
-        bindings: parsed.bindings ?? {},
-        devices: parsed.devices ?? {},
-        auditEvents: parsed.auditEvents ?? [],
-      };
-    } catch {
-      return { sessions: {}, bindings: {}, devices: {}, auditEvents: [] };
+      try {
+        return normalizeFileLinkageStoreData(JSON.parse(raw));
+      } catch (error) {
+        throw new LinkageStoreCorruptionError(
+          this.filePath,
+          `invalid linkage store JSON at ${this.filePath}: ${(error as Error).message}`
+        );
+      }
+    } catch (error) {
+      if (this.isErrnoException(error, "ENOENT")) {
+        return { sessions: {}, bindings: {}, devices: {}, auditEvents: [] };
+      }
+      if (error instanceof LinkageStoreCorruptionError) {
+        throw error;
+      }
+      throw error;
     }
   }
 
   private async writeData(data: FileLinkageStoreData): Promise<void> {
     await mkdir(dirname(this.filePath), { recursive: true });
-    await writeFile(this.filePath, JSON.stringify(data, null, 2), "utf8");
+    const tempPath = this.tempFilePath();
+    const handle = await open(tempPath, "w");
+    try {
+      await handle.writeFile(JSON.stringify(data, null, 2), "utf8");
+      await handle.sync();
+    } catch (error) {
+      await handle.close().catch(() => undefined);
+      await rm(tempPath, { force: true }).catch(() => undefined);
+      throw error;
+    }
+
+    await handle.close();
+    await rename(tempPath, this.filePath);
+    await this.syncDirectory(dirname(this.filePath));
+  }
+
+  private async runExclusiveMutation<T>(mutator: (data: FileLinkageStoreData) => Promise<T>): Promise<T> {
+    return this.enqueueWrite(async () => {
+      const releaseLock = await this.acquireFileLock();
+      try {
+        const data = await this.readDataFromDisk();
+        const result = await mutator(data);
+        await this.writeData(data);
+        return result;
+      } finally {
+        await releaseLock();
+      }
+    });
+  }
+
+  private createTransactionalStore(data: FileLinkageStoreData): LinkageStore {
+    const store: LinkageStore = {
+      saveLinkSession: async (session) => {
+        data.sessions[session.id] = cloneLinkSession(session);
+      },
+      getLinkSession: async (sessionId) => {
+        const session = data.sessions[sessionId];
+        return session ? cloneLinkSession(session) : null;
+      },
+      saveServiceBinding: async (binding) => {
+        data.bindings[this.bindingKey(binding.serviceId, binding.accountId)] = cloneServiceBinding(binding);
+      },
+      getServiceBinding: async (serviceId, accountId) => {
+        const binding = data.bindings[this.bindingKey(serviceId, accountId)];
+        return binding ? cloneServiceBinding(binding) : null;
+      },
+      listBindingsForDevice: async (deviceIss) => Object.values(data.bindings)
+        .filter((binding) => binding.deviceIss === deviceIss)
+        .map((binding) => cloneServiceBinding(binding)),
+      getLinkedDevice: async (deviceIss) => {
+        const device = data.devices[deviceIss];
+        return device ? cloneLinkedDevice(device) : null;
+      },
+      saveLinkedDevice: async (device) => {
+        data.devices[device.iss] = cloneLinkedDevice(device);
+      },
+      appendAuditEvent: async (event) => {
+        data.auditEvents.push(cloneAuditEvent(event));
+      },
+      listAuditEvents: async (filter) => filterAuditEvents(data.auditEvents, filter).map((event) => cloneAuditEvent(event)),
+      mutate: async <T>(nestedMutator: (nestedStore: LinkageStore) => Promise<T>) => nestedMutator(store),
+    };
+
+    return store;
+  }
+
+  private async enqueueWrite<T>(task: () => Promise<T>): Promise<T> {
+    let result!: T;
+    const current = FileSystemLinkageStore.pathQueues.get(this.filePath) ?? Promise.resolve();
+    const run = async () => {
+      result = await task();
+    };
+    const queued = current.then(run, run);
+    const settled = queued.then(() => undefined, () => undefined);
+    FileSystemLinkageStore.pathQueues.set(this.filePath, settled);
+    try {
+      await queued;
+      return result;
+    } finally {
+      if (FileSystemLinkageStore.pathQueues.get(this.filePath) === settled) {
+        FileSystemLinkageStore.pathQueues.delete(this.filePath);
+      }
+    }
+  }
+
+  private async waitForPendingLocalWrites(): Promise<void> {
+    await (FileSystemLinkageStore.pathQueues.get(this.filePath) ?? Promise.resolve());
+  }
+
+  private async acquireFileLock(): Promise<() => Promise<void>> {
+    await mkdir(dirname(this.filePath), { recursive: true });
+    const lockPath = `${this.filePath}.lock`;
+    const startedAt = Date.now();
+
+    for (;;) {
+      try {
+        const handle = await open(lockPath, "wx");
+        await handle.writeFile(`${process.pid} ${Date.now()}\n`, "utf8");
+        return async () => {
+          try {
+            await handle.close();
+          } finally {
+            await unlink(lockPath).catch((error) => {
+              if (!this.isErrnoException(error, "ENOENT")) {
+                throw error;
+              }
+            });
+          }
+        };
+      } catch (error) {
+        if (!this.isErrnoException(error, "EEXIST")) {
+          throw error;
+        }
+
+        if (await this.isStaleLock(lockPath)) {
+          await unlink(lockPath).catch((unlinkError) => {
+            if (!this.isErrnoException(unlinkError, "ENOENT")) {
+              throw unlinkError;
+            }
+          });
+          continue;
+        }
+
+        if (Date.now() - startedAt > FILE_LOCK_STALE_MS * 2) {
+          throw new Error(`timed out acquiring linkage store lock for ${this.filePath}`);
+        }
+
+        await this.sleep(FILE_LOCK_RETRY_MS);
+      }
+    }
+  }
+
+  private async isStaleLock(lockPath: string): Promise<boolean> {
+    try {
+      const info = await stat(lockPath);
+      return Date.now() - info.mtimeMs > FILE_LOCK_STALE_MS;
+    } catch (error) {
+      if (this.isErrnoException(error, "ENOENT")) {
+        return false;
+      }
+      throw error;
+    }
+  }
+
+  private tempFilePath(): string {
+    const token = `${process.pid}.${Date.now()}.${Math.random().toString(16).slice(2)}`;
+    return join(dirname(this.filePath), `.${basename(this.filePath)}.${token}.tmp`);
+  }
+
+  private async syncDirectory(path: string): Promise<void> {
+    try {
+      const handle = await open(path, "r");
+      try {
+        await handle.sync();
+      } finally {
+        await handle.close();
+      }
+    } catch {
+      // Best-effort directory fsync; some filesystems do not support it.
+    }
+  }
+
+  private isErrnoException(error: unknown, code: string): boolean {
+    return typeof error === "object" && error !== null && "code" in error && (error as { code?: string }).code === code;
+  }
+
+  private async sleep(ms: number): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, ms));
   }
 }
 

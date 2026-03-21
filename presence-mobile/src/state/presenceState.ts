@@ -94,7 +94,7 @@ export function computeStateStatus(state: PresenceState): PresenceStateStatus {
   if (state.serviceBindings.some((binding) => binding.status === "recovery_pending" || binding.status === "reauth_required")) {
     return "recovery_pending";
   }
-  if (remaining < RENEWAL_WINDOW_SECONDS) return "needs_renewal";
+  if (remaining <= RENEWAL_WINDOW_SECONDS) return "needs_renewal";
   return "ready";
 }
 

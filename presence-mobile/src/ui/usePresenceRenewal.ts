@@ -37,6 +37,7 @@ import { hasPendingLinkedBindingSyncJobs } from "../sync/queue";
 type RenewalTask = () => Promise<boolean | void>;
 
 const BACKGROUND_TIMEOUT_MS = 25_000;
+const RENEWAL_RETRY_SECONDS = 5;
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   return new Promise<T>((resolve, reject) => {
@@ -87,18 +88,19 @@ export function usePresenceRenewal(
     const currentPresence = presenceRef.current;
     if (!currentPresence.state) return;
 
-    if (shouldRenew(currentPresence.state) || currentPresence.phase === "expired") {
-      return;
-    }
+    // Keep retrying while renewal is due or verify work is queued instead of
+    // relying on a single boundary timer.
+    const hasPendingSyncJobs = await hasPendingLinkedBindingSyncJobs();
+    const secondsUntil = currentPresence.phase === "expired"
+      || shouldRenew(currentPresence.state)
+      || hasPendingSyncJobs
+      ? RENEWAL_RETRY_SECONDS
+      : secondsUntilNextMeasurement(currentPresence.state);
+    const delaySeconds = secondsUntil > 0 ? secondsUntil : RENEWAL_RETRY_SECONDS;
 
-    const secondsUntil = secondsUntilNextMeasurement(currentPresence.state);
-    if (secondsUntil <= 0) {
-      return;
-    }
+    await scheduleBackgroundRefresh(Math.floor(Date.now() / 1000) + delaySeconds);
 
-    await scheduleBackgroundRefresh(Math.floor(Date.now() / 1000) + secondsUntil);
-
-    const delayMs = Math.min(secondsUntil * 1000, 24 * 60 * 60 * 1000);
+    const delayMs = Math.min(delaySeconds * 1000, 24 * 60 * 60 * 1000);
     timerRef.current = setTimeout(() => {
       void tryRenewRef.current("timer");
     }, delayMs);

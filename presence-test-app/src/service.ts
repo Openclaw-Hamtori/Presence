@@ -4,7 +4,7 @@
 
 import { readBiometricWindow, requestHealthKitPermissions, isHealthKitAvailable } from "./health/healthkit";
 import { evaluatePass } from "./health/pass";
-import { ensureDeviceKey, deriveIss, signAttestation, base64urlToUint8Array } from "./crypto/index";
+import { ensureDeviceKey, deriveIss, signAttestation } from "./crypto/index";
 import { performAppAttest } from "./attestation/appAttest";
 import { validateBindingSyncConfiguration } from "./linkTrust";
 import {
@@ -12,21 +12,19 @@ import {
   savePresenceState,
   createPresenceState,
   updatePresenceSnapshot,
+  extendPresenceStateValidity,
   recordFailedMeasurement,
-  attachLinkSession,
-  addOrUpdateServiceBinding,
+  hasSyncableServiceBindings,
   markBindingForRecovery,
   markBindingLinked,
   unlinkServiceBinding,
-  computeStateStatus,
+  shouldRenew,
 } from "./state/presenceState";
 import type {
   PresenceAttestation,
   PresenceTransportPayload,
   PresenceState,
   Result,
-  LinkSession,
-  ServiceBinding,
   LinkFlow,
   LinkCompletionMethod,
   PresenceSignal,
@@ -37,6 +35,7 @@ import { ok, err } from "./types/index";
 export interface ProveOptions {
   nonce: string;
   forceRefresh?: boolean;
+  persistLocalState?: boolean;
   flow?: LinkFlow;
   linkSession?: {
     id: string;
@@ -61,6 +60,8 @@ export interface ProveOptions {
 
 export interface MeasureOptions {
   forceRefresh?: boolean;
+  renewalAttempt?: boolean;
+  persistRenewalLocally?: boolean;
 }
 
 export interface MeasureResult {
@@ -72,6 +73,10 @@ export interface MeasureResult {
   capturedAt: number;
   iss: string;
   publicKeyBase64: string;
+  renewalOf?: {
+    stateCreatedAt: number;
+    stateValidUntil: number;
+  };
 }
 
 export interface ProveResult {
@@ -81,7 +86,11 @@ export interface ProveResult {
 }
 
 export async function measure(options: MeasureOptions = {}): Promise<Result<MeasureResult>> {
-  const { forceRefresh = false } = options;
+  const {
+    forceRefresh = false,
+    renewalAttempt = false,
+    persistRenewalLocally = renewalAttempt,
+  } = options;
 
   if (isHealthKitAvailable()) {
     const permissionResult = await requestHealthKitPermissions();
@@ -102,11 +111,34 @@ export async function measure(options: MeasureOptions = {}): Promise<Result<Meas
   const passResult = evaluatePass(biometricWindow);
   const capturedAt = Math.floor(Date.now() / 1000);
   let state = await loadPresenceState();
+  const existingState = state && state.iss === iss ? state : null;
+  const hasValidExistingPass = !!existingState
+    && existingState.pass
+    && existingState.stateValidUntil > capturedAt;
+  const renewalOf = existingState && hasValidExistingPass && renewalAttempt && shouldRenew(existingState)
+    ? {
+        stateCreatedAt: existingState.stateCreatedAt,
+        stateValidUntil: existingState.stateValidUntil,
+      }
+    : undefined;
   let isNewState = false;
 
   if (!passResult.pass) {
-    if (state && state.iss === iss) {
-      state = recordFailedMeasurement(state, {
+    if (existingState && renewalOf) {
+      return ok({
+        state: existingState,
+        isNewState: false,
+        pass: false,
+        signals: passResult.signals,
+        reason: passResult.reason,
+        capturedAt,
+        iss,
+        publicKeyBase64,
+      });
+    }
+
+    if (existingState) {
+      state = recordFailedMeasurement(existingState, {
         signals: passResult.signals,
         reason: passResult.reason,
         capturedAt,
@@ -126,15 +158,20 @@ export async function measure(options: MeasureOptions = {}): Promise<Result<Meas
     });
   }
 
-  const existingState = state && state.iss === iss ? state : null;
-  const currentStatus = existingState ? computeStateStatus(existingState) : null;
-  const shouldPreserveValidity = !!existingState
-    && existingState.pass
+  const shouldGateOnRemoteVerify = !!existingState
+    && hasValidExistingPass
     && !forceRefresh
-    && currentStatus !== "expired"
-    && currentStatus !== "needs_renewal";
+    && hasSyncableServiceBindings(existingState.serviceBindings);
 
-  if (existingState && shouldPreserveValidity) {
+  if (existingState && renewalOf && !shouldGateOnRemoteVerify && persistRenewalLocally) {
+    state = extendPresenceStateValidity(existingState, {
+      capturedAt,
+      signals: passResult.signals,
+      reason: passResult.reason,
+      source: "measurement",
+    });
+    isNewState = false;
+  } else if (existingState && hasValidExistingPass && !forceRefresh) {
     state = updatePresenceSnapshot(existingState, {
       pass: true,
       signals: passResult.signals,
@@ -169,11 +206,12 @@ export async function measure(options: MeasureOptions = {}): Promise<Result<Meas
     capturedAt,
     iss,
     publicKeyBase64,
+    renewalOf,
   });
 }
 
 export async function proveMeasured(measurement: MeasureResult, options: ProveOptions): Promise<Result<ProveResult>> {
-  const { nonce, linkSession: linkSessionHint, bindingHint } = options;
+  const { nonce, linkSession: linkSessionHint, bindingHint, persistLocalState = true } = options;
   const flow = options.flow ?? (linkSessionHint ? "initial_link" : bindingHint ? "reauth" : undefined);
 
   if (!nonce) return err("ERR_NONCE_MISSING", "nonce is required");
@@ -213,57 +251,21 @@ export async function proveMeasured(measurement: MeasureResult, options: ProveOp
   let state: PresenceState = measurement.state;
   const persistedState = await loadPresenceState();
   if (persistedState && persistedState.iss === measurement.iss) {
-    state = persistedState;
+    state = {
+      ...measurement.state,
+      serviceBindings: persistedState.serviceBindings,
+      linkedDevice: persistedState.linkedDevice,
+      activeLinkSession: persistedState.activeLinkSession,
+    };
   }
 
   const isNewState = measurement.isNewState;
-
-  if (linkSessionHint) {
-    state = attachLinkSession(state, {
-      id: linkSessionHint.id,
-      serviceId: linkSessionHint.serviceId,
-      accountId: linkSessionHint.accountId,
-      status: flow === "recovery" || flow === "relink" ? "recovery_pending" : "pending",
-      createdAt: Math.floor(Date.now() / 1000),
-      expiresAt: linkSessionHint.expiresAt ?? Math.floor(Date.now() / 1000) + 300,
-      lastNonce: nonce,
-      flow,
-      recoveryCode: linkSessionHint.recoveryCode,
-      completion: linkSessionHint.completion,
-    });
-  }
-
-  if (bindingHint) {
-    state = addOrUpdateServiceBinding(state, {
-      bindingId: bindingHint.bindingId,
-      serviceId: bindingHint.serviceId,
-      accountId: bindingHint.accountId,
-      linkedDeviceIss: measurement.iss,
-      linkedAt: state.linkedDevice.linkedAt,
-      lastVerifiedAt: Math.floor(Date.now() / 1000),
-      status: flow === "recovery" || flow === "relink" ? "recovery_pending" : "linked",
-      sync: bindingHint.sync ?? linkSessionHint?.completion?.sync,
-    }, {
-      allowLinkedRecoveryExit: flow === "reauth",
-    });
-  } else if (linkSessionHint?.accountId) {
-    state = addOrUpdateServiceBinding(state, {
-      bindingId: `local_${linkSessionHint.serviceId}_${linkSessionHint.accountId}`,
-      serviceId: linkSessionHint.serviceId,
-      accountId: linkSessionHint.accountId,
-      linkedDeviceIss: measurement.iss,
-      linkedAt: state.linkedDevice.linkedAt,
-      lastVerifiedAt: Math.floor(Date.now() / 1000),
-      status: flow === "recovery" || flow === "relink" ? "recovery_pending" : "linked",
-      sync: linkSessionHint.completion?.sync,
-    });
-  }
-
-  if (bindingHint && (flow === "recovery" || flow === "relink")) {
-    state = markBindingForRecovery(state, {
-      bindingId: bindingHint.bindingId,
-      recoveryReason: flow,
-      status: "recovery_pending",
+  if (measurement.renewalOf) {
+    state = extendPresenceStateValidity(state, {
+      capturedAt: measurement.capturedAt,
+      signals: measurement.signals,
+      reason: measurement.reason,
+      source: "proof",
     });
   }
 
@@ -300,10 +302,9 @@ export async function proveMeasured(measurement: MeasureResult, options: ProveOp
     stateCreatedAt: state.stateCreatedAt,
     stateValidUntil: state.stateValidUntil,
   });
-  await savePresenceState(state);
-
-  const signingPublicKeyBytes = base64urlToUint8Array(measurement.publicKeyBase64);
-  void signingPublicKeyBytes;
+  if (persistLocalState) {
+    await savePresenceState(state);
+  }
 
   return ok({
     payload: {
@@ -332,7 +333,11 @@ export async function proveMeasured(measurement: MeasureResult, options: ProveOp
 }
 
 export async function prove(options: ProveOptions): Promise<Result<ProveResult>> {
-  const measured = await measure({ forceRefresh: options.forceRefresh });
+  const measured = await measure({
+    forceRefresh: options.forceRefresh,
+    renewalAttempt: true,
+    persistRenewalLocally: false,
+  });
   if (!measured.ok) return measured;
   if (!measured.value.pass) {
     return err("ERR_PASS_FALSE", measured.value.reason);

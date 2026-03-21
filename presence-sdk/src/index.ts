@@ -14,6 +14,7 @@ export { parsePresenceRequest, ParseError } from "./transport.js";
 export {
   InMemoryLinkageStore,
   FileSystemLinkageStore,
+  LinkageStoreCorruptionError,
   createPresenceSnapshot,
   createAuditEvent,
   defaultLinkCompletion,

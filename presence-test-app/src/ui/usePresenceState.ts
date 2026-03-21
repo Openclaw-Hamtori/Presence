@@ -45,6 +45,8 @@ export interface UsePresenceStateResult {
   measure: (options?: MeasureOptions) => Promise<MeasureResult | null>;
   /** Call with service nonce or full prove options to generate proof */
   prove: (nonceOrOptions: string | ProveOptions) => Promise<PresenceTransportPayload | null>;
+  /** Reload state from persistence after external updates */
+  refresh: () => Promise<PresenceState | null>;
   /** Request HealthKit permissions */
   requestPermissions: () => Promise<boolean>;
   /** Reset error state */
@@ -131,6 +133,14 @@ export function usePresenceState(): UsePresenceStateResult {
     return true;
   }, []);
 
+  const refresh = useCallback(async (): Promise<PresenceState | null> => {
+    const persisted = await loadPresenceState();
+    setState(persisted);
+    setError(null);
+    setPhase(phaseFromState(persisted));
+    return persisted;
+  }, [phaseFromState]);
+
   // ── Measure ───────────────────────────────────────────────────────────────
   const runMeasure = useCallback(async (options: MeasureOptions = {}): Promise<MeasureResult | null> => {
     setPhase("measuring");
@@ -139,6 +149,15 @@ export function usePresenceState(): UsePresenceStateResult {
     const result = await measure(options);
 
     if (!result.ok) {
+      const preserveCurrentPass = !!state
+        && options.renewalAttempt === true
+        && state.pass
+        && computeStateStatus(state) !== "expired";
+      if (preserveCurrentPass) {
+        setPhase(phaseFromState(state, "ready"));
+        return null;
+      }
+
       setError(result.error);
       setPhase("error");
       return null;
@@ -146,15 +165,20 @@ export function usePresenceState(): UsePresenceStateResult {
 
     const persisted = await loadPresenceState();
     const nextState = persisted ?? result.value.state;
+    const preserveExistingPass = !!nextState
+      && options.renewalAttempt === true
+      && !result.value.pass
+      && nextState.pass
+      && computeStateStatus(nextState) !== "expired";
 
     setState(nextState);
-    if (!result.value.pass) {
+    if (!result.value.pass && !preserveExistingPass) {
       setError(new PresenceMobileErrorClass("ERR_PASS_FALSE", result.value.reason));
     }
-    setPhase(phaseFromState(nextState, result.value.pass ? "ready" : "not_ready"));
+    setPhase(phaseFromState(nextState, preserveExistingPass || result.value.pass ? "ready" : "not_ready"));
 
     return { ...result.value, state: nextState };
-  }, [phaseFromState]);
+  }, [phaseFromState, state]);
 
   // ── Prove ─────────────────────────────────────────────────────────────────
   const runProve = useCallback(async (nonceOrOptions: string | ProveOptions): Promise<PresenceTransportPayload | null> => {
@@ -201,6 +225,7 @@ export function usePresenceState(): UsePresenceStateResult {
     needsRenewal,
     measure: runMeasure,
     prove: runProve,
+    refresh,
     requestPermissions,
     clearError: () => {
       setError(null);

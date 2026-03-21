@@ -3,7 +3,7 @@
  */
 
 import { strict as assert } from "assert";
-import { existsSync, mkdtempSync, readFileSync } from "fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { generateKeyPairSync, createSign } from "crypto";
@@ -15,7 +15,7 @@ import {
 } from "presence-verifier";
 import { PresenceClient } from "../client.js";
 import { createCompletionSessionResponse, createRecoveryResponse } from "../api.js";
-import { InMemoryLinkageStore, FileSystemLinkageStore, fileLinkageStorePath } from "../linkage.js";
+import { InMemoryLinkageStore, FileSystemLinkageStore, LinkageStoreCorruptionError, fileLinkageStorePath } from "../linkage.js";
 import { parsePresenceRequest, ParseError } from "../transport.js";
 import { createNonce, generateNonce } from "../nonce.js";
 import type { PresenceAttestation, ManagedNonceStore } from "../types.js";
@@ -529,6 +529,156 @@ function buildAndroidBody(
     assert.equal(existsSync(storePath), true);
     const raw = JSON.parse(readFileSync(storePath, "utf8"));
     assert.ok(raw.bindings["svc:acct-5"]);
+  });
+
+  await test("FileSystemLinkageStore fails closed on corrupted JSON instead of rewriting an empty store", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "presence-sdk-"));
+    const storePath = fileLinkageStorePath(dir);
+    const now = Math.floor(Date.now() / 1000);
+    const corrupted = `${JSON.stringify({
+      sessions: {},
+      bindings: {
+        "svc:acct-corrupt": {
+          bindingId: "pbind_corrupt",
+          serviceId: "svc",
+          accountId: "acct-corrupt",
+          deviceIss: "presence:device:corrupt",
+          createdAt: now,
+          updatedAt: now,
+          status: "linked",
+          lastLinkedAt: now,
+          lastVerifiedAt: now,
+          lastAttestedAt: now,
+        },
+      },
+      devices: {
+        "presence:device:corrupt": {
+          iss: "presence:device:corrupt",
+          platform: "android",
+          firstLinkedAt: now,
+          lastVerifiedAt: now,
+          lastAttestedAt: now,
+          trustState: "active",
+        },
+      },
+      auditEvents: [],
+    }, null, 2)}774086508,`;
+    writeFileSync(storePath, corrupted, "utf8");
+
+    const store = new FileSystemLinkageStore(storePath);
+    await assert.rejects(
+      () => store.appendAuditEvent({
+        eventId: "paudit_corrupt",
+        type: "reauth_succeeded",
+        serviceId: "svc",
+        accountId: "acct-corrupt",
+        bindingId: "pbind_corrupt",
+        deviceIss: "presence:device:corrupt",
+        occurredAt: now,
+      }),
+      (error: unknown) => {
+        assert.ok(error instanceof LinkageStoreCorruptionError);
+        return true;
+      }
+    );
+    assert.equal(readFileSync(storePath, "utf8"), corrupted);
+  });
+
+  await test("FileSystemLinkageStore serializes cross-instance mutations against the same file", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "presence-sdk-"));
+    const storePath = fileLinkageStorePath(dir);
+    const slowStore = new FileSystemLinkageStore(storePath) as unknown as {
+      mutate<T>(mutator: (store: unknown) => Promise<T>): Promise<T>;
+      writeData(data: unknown): Promise<void>;
+    };
+    const fastStore = new FileSystemLinkageStore(storePath);
+    const originalWriteData = slowStore.writeData.bind(slowStore);
+    let releaseSlowWrite!: () => void;
+    let signalSlowWriteStarted!: () => void;
+    const slowWriteStarted = new Promise<void>((resolve) => {
+      signalSlowWriteStarted = resolve;
+    });
+    const slowWriteGate = new Promise<void>((resolve) => {
+      releaseSlowWrite = resolve;
+    });
+
+    slowStore.writeData = async (data) => {
+      signalSlowWriteStarted();
+      await slowWriteGate;
+      await originalWriteData(data);
+    };
+
+    const now = Math.floor(Date.now() / 1000);
+    const slowMutation = slowStore.mutate(async (store) => {
+      const tx = store as {
+        saveServiceBinding(binding: unknown): Promise<void>;
+        appendAuditEvent(event: unknown): Promise<void>;
+      };
+      await tx.saveServiceBinding({
+        bindingId: "pbind_serialized",
+        serviceId: "svc",
+        accountId: "acct-serialized",
+        deviceIss: "presence:device:serialized",
+        createdAt: now,
+        updatedAt: now,
+        status: "linked",
+        lastLinkedAt: now,
+        lastVerifiedAt: now,
+        lastAttestedAt: now,
+      });
+      await tx.appendAuditEvent({
+        eventId: "paudit_slow",
+        type: "link_completed",
+        serviceId: "svc",
+        accountId: "acct-serialized",
+        bindingId: "pbind_serialized",
+        deviceIss: "presence:device:serialized",
+        occurredAt: now,
+      });
+    });
+
+    await slowWriteStarted;
+
+    const fastMutation = fastStore.mutate(async (store) => {
+      const tx = store as {
+        saveLinkedDevice(device: unknown): Promise<void>;
+        saveLinkSession(session: unknown): Promise<void>;
+        appendAuditEvent(event: unknown): Promise<void>;
+      };
+      await tx.saveLinkedDevice({
+        iss: "presence:device:serialized",
+        platform: "android",
+        firstLinkedAt: now,
+        lastVerifiedAt: now,
+        lastAttestedAt: now,
+        trustState: "active",
+      });
+      await tx.saveLinkSession({
+        id: "plink_serialized",
+        serviceId: "svc",
+        accountId: "acct-serialized",
+        issuedNonce: "nonce_serialized",
+        requestedAt: now,
+        expiresAt: now + 300,
+        status: "pending",
+      });
+      await tx.appendAuditEvent({
+        eventId: "paudit_fast",
+        type: "link_started",
+        serviceId: "svc",
+        accountId: "acct-serialized",
+        occurredAt: now,
+      });
+    });
+
+    releaseSlowWrite();
+    await Promise.all([slowMutation, fastMutation]);
+
+    const raw = JSON.parse(readFileSync(storePath, "utf8"));
+    assert.ok(raw.sessions.plink_serialized);
+    assert.ok(raw.bindings["svc:acct-serialized"]);
+    assert.ok(raw.devices["presence:device:serialized"]);
+    assert.equal(raw.auditEvents.length, 2);
   });
 
   console.log(`\n  ${passed} passed, ${failed} failed\n`);

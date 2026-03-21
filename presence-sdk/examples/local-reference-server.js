@@ -1,6 +1,5 @@
 import { createServer } from "http";
-import { mkdtempSync } from "fs";
-import { tmpdir } from "os";
+import { mkdirSync } from "fs";
 import { join } from "path";
 import {
   PresenceClient,
@@ -121,10 +120,6 @@ async function main() {
           send(404, { ok: false, code: "ERR_SERVICE_DOMAIN_NOT_CONFIGURED" });
           return;
         }
-        // `allowed_url_prefixes` is matched as a prefix string by the mobile client.
-        // Keep the service path prefix stable and avoid adding an unnecessary trailing slash
-        // when your sync URLs look like `/presence/linked-accounts/...` or `/presence/link-sessions/...`.
-        // During rollout/debugging, returning no-store helps avoid stale trust metadata.
         res.writeHead(200, {
           "content-type": "application/json",
           "Cache-Control": "no-store, no-cache, max-age=0",
@@ -244,8 +239,41 @@ async function main() {
         return;
       }
 
-      const auditMatch = url.pathname === "/presence/audit-events";
-      if (method === "GET" && auditMatch) {
+      const unlinkMatch = url.pathname.match(/^\/presence\/linked-accounts\/([^/]+)\/unlink$/);
+      if (method === "POST" && unlinkMatch) {
+        const body = await readJson(req);
+        const result = await presence.unlinkAccount({
+          accountId: decodeURIComponent(unlinkMatch[1]),
+          reason: body.reason || "user_requested",
+        });
+        if (!result) {
+          send(404, {
+            ok: false,
+            code: "ERR_BINDING_NOT_FOUND",
+            message: "linked account not found",
+          });
+          return;
+        }
+        send(200, {
+          ok: true,
+          binding: result.binding,
+          auditEvent: result.auditEvent,
+        });
+        return;
+      }
+
+      const revokeMatch = url.pathname.match(/^\/presence\/devices\/([^/]+)\/revoke$/);
+      if (method === "POST" && revokeMatch) {
+        const body = await readJson(req);
+        const events = await presence.revokeDevice({
+          deviceIss: decodeURIComponent(revokeMatch[1]),
+          reason: body.reason || "manual_revoke",
+        });
+        send(200, { ok: true, events });
+        return;
+      }
+
+      if (method === "GET" && url.pathname === "/presence/audit-events") {
         const accountId = url.searchParams.get("accountId") || undefined;
         const events = await presence.listAuditEvents({ serviceId, accountId });
         send(200, createAuditEventsResponse(events));
@@ -266,3 +294,28 @@ async function main() {
             .filter((binding) => binding.serviceId === serviceId)
             .sort((a, b) => (b.lastVerifiedAt || b.lastLinkedAt || 0) - (a.lastVerifiedAt || a.lastLinkedAt || 0)),
         });
+        return;
+      }
+
+      send(404, { ok: false, code: "ERR_NOT_FOUND" });
+    } catch (error) {
+      send(500, {
+        ok: false,
+        code: "ERR_INTERNAL",
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
+
+  await new Promise((resolve) => server.listen(port, host, resolve));
+  console.log(`[presence-sdk] local reference server listening on ${publicBaseUrl}`);
+  console.log(`[presence-sdk] linkage store: ${storePath}`);
+  if (serviceDomain) {
+    console.log(`[presence-sdk] trust metadata: ${publicBaseUrl}/.well-known/presence.json`);
+  }
+}
+
+main().catch((error) => {
+  console.error("[presence-sdk] failed to start local reference server", error);
+  process.exitCode = 1;
+});

@@ -19,20 +19,24 @@ import {
 } from "react-native";
 import { usePresenceState } from "./src/ui/usePresenceState";
 import { usePresenceRenewal } from "./src/ui/usePresenceRenewal";
-import { clearPresenceState, loadPresenceState, savePresenceState, mergeAuthoritativeServiceBindings } from "./src/state/presenceState";
-import { uint8ArrayToBase64url } from "./src/crypto/index";
-import { readBiometricWindow } from "./src/health/healthkit";
+import {
+  loadPresenceState,
+  savePresenceState,
+  mergeAuthoritativeServiceBindings,
+  isActiveBinding,
+  hasRequiredBindingSyncMetadata,
+  mergeBindingSyncMetadata,
+  normalizeBindingSyncMetadata,
+  suppressShadowedLegacyUnsyncableBindings,
+} from "./src/state/presenceState";
 import { buildPresenceLinkUrl, parsePresenceLinkUrl } from "./src/deeplink";
 import type { LinkCompletionEnvelope } from "./src/deeplink";
-import { getBackgroundRefreshDiagnostics } from "./src/backgroundRefresh";
-import type { BackgroundRefreshDiagnostics } from "./src/backgroundRefresh";
 import { debugNormalizeServiceDomain, validateLinkCompletionEnvelope } from "./src/linkTrust";
-import type { LinkFlow, PresenceTransportPayload, ServiceBinding } from "./src/types/index";
+import type { ServiceBinding } from "./src/types/index";
 import type { ProveOptions } from "./src/service";
 import { isQrScannerSupported, scanQrCode } from "./src/qrScanner";
 import { getInitialPresenceLink, subscribeToPresenceLinks } from "./src/ui/connectionLinking";
-import { syncLinkedBindings } from "./src/sync/linkedBindings";
-import { loadLinkedBindingSyncJobs, clearLinkedBindingSyncQueue } from "./src/sync/queue";
+import { syncLinkedBindings, type LinkedBindingSyncError } from "./src/sync/linkedBindings";
 
 const C = {
   bg: "#FFFFFF",
@@ -52,15 +56,9 @@ const C = {
 } as const;
 
 const ORB_IMAGE = require("./src/ui/assets/presence-orb.png");
-const DEMO_SERVICE_DOMAIN = "demo.presence.local";
 
 const MONO_FONT = Platform.OS === "ios" ? "Menlo" : "monospace";
-
-function generateLocalNonce(): string {
-  const bytes = new Uint8Array(32);
-  for (let i = 0; i < 32; i += 1) bytes[i] = Math.floor(Math.random() * 256);
-  return uint8ArrayToBase64url(bytes);
-}
+const SYNC_LOG_CHUNK_SIZE = 4;
 
 function nowTime(): string {
   return new Date().toISOString().slice(11, 19);
@@ -72,21 +70,25 @@ function truncateJson(obj: unknown, maxLen = 1400): string {
   return `${full.slice(0, maxLen)}\n  …(truncated)`;
 }
 
-function formatEpoch(epoch?: number): string {
-  if (!epoch || epoch <= 0) return "none";
-  return new Date(epoch * 1000).toLocaleString();
+function formatGroupedLogEntries(label: string, values: string[], chunkSize = SYNC_LOG_CHUNK_SIZE): string[] {
+  if (values.length === 0) {
+    return [`${label}[0/0] -`];
+  }
+
+  const lines: string[] = [];
+  for (let index = 0; index < values.length; index += chunkSize) {
+    const chunk = values.slice(index, index + chunkSize);
+    lines.push(`${label}[${index + 1}-${index + chunk.length}/${values.length}] ${chunk.join(" | ")}`);
+  }
+  return lines;
 }
 
-function formatFinish(diagnostics: BackgroundRefreshDiagnostics | null): string {
-  if (!diagnostics?.lastFinishedAt || diagnostics.lastFinishedAt <= 0) {
-    return "none";
-  }
-  const suffix = diagnostics.lastFinishedSuccess == null
-    ? ""
-    : diagnostics.lastFinishedSuccess
-      ? " (success)"
-      : " (failed)";
-  return `${new Date(diagnostics.lastFinishedAt * 1000).toLocaleString()}${suffix}`;
+function formatSyncErrorEntries(errors: LinkedBindingSyncError[]): string[] {
+  return formatGroupedLogEntries(
+    "errors",
+    errors.map((error) => `${error.bindingId}=${error.message}`),
+    2
+  );
 }
 
 function buildCompletionUrl(envelope: LinkCompletionEnvelope | null): string | null {
@@ -94,10 +96,6 @@ function buildCompletionUrl(envelope: LinkCompletionEnvelope | null): string | n
   return envelope.statusUrl.endsWith("/complete")
     ? envelope.statusUrl
     : `${envelope.statusUrl.replace(/\/$/, "")}/complete`;
-}
-
-function randomId(prefix: string): string {
-  return `${prefix}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
 interface AuditEventRecord {
@@ -148,6 +146,28 @@ interface DeviceBindingsResponse {
   }>;
 }
 
+interface CompletionBindingRecord {
+  bindingId?: string;
+  serviceId?: string;
+  accountId?: string;
+  deviceIss?: string;
+  status?: string;
+  createdAt?: number;
+  updatedAt?: number;
+  lastLinkedAt?: number;
+  lastVerifiedAt?: number;
+}
+
+interface CompletionSuccessResponse {
+  ok: true;
+  state?: "linked";
+  binding?: CompletionBindingRecord;
+}
+
+type SeedConfirmedBindingResult =
+  | { ok: true; seeded: boolean }
+  | { ok: false; message: string };
+
 async function fetchJson<T>(url: string): Promise<T> {
   const response = await fetch(url, {
     method: "GET",
@@ -161,6 +181,29 @@ async function fetchJson<T>(url: string): Promise<T> {
   return parsed as T;
 }
 
+function bindingLogicalKeyOf(binding: Pick<ServiceBinding, "linkedDeviceIss" | "serviceId" | "accountId">): string {
+  return `${binding.linkedDeviceIss}:${binding.serviceId}:${binding.accountId ?? "-"}`;
+}
+
+function describeBindingSync(sync: ServiceBinding["sync"] | undefined): string {
+  const normalized = normalizeBindingSyncMetadata(sync);
+  return [
+    `sync=${normalized ? "present" : "missing"}`,
+    `service_domain=${normalized?.serviceDomain ? "present" : "missing"}`,
+    `nonce_url=${normalized?.nonceUrl ? "present" : "missing"}`,
+    `verify_url=${normalized?.verifyUrl ? "present" : "missing"}`,
+    `status_url=${normalized?.statusUrl ? "present" : "missing"}`,
+  ].join(" ");
+}
+
+function findMatchingBinding(
+  bindings: ServiceBinding[],
+  candidate: Pick<ServiceBinding, "bindingId" | "linkedDeviceIss" | "serviceId" | "accountId">
+): ServiceBinding | undefined {
+  return bindings.find((binding) => binding.bindingId === candidate.bindingId)
+    ?? bindings.find((binding) => bindingLogicalKeyOf(binding) === bindingLogicalKeyOf(candidate));
+}
+
 function mergeServiceBindings(bindings: ServiceBinding[]): ServiceBinding[] {
   const byKey = new Map<string, ServiceBinding>();
 
@@ -169,6 +212,9 @@ function mergeServiceBindings(bindings: ServiceBinding[]): ServiceBinding[] {
     const incomingTime = incoming.lastVerifiedAt ?? incoming.linkedAt ?? 0;
     const newerWins = incomingTime >= currentTime;
     const preferred = newerWins ? { ...current, ...incoming } : { ...incoming, ...current };
+    preferred.sync = newerWins
+      ? mergeBindingSyncMetadata(current.sync, incoming.sync)
+      : mergeBindingSyncMetadata(incoming.sync, current.sync);
 
     const currentLooksLocal = current.bindingId.startsWith("local_");
     const incomingLooksLocal = incoming.bindingId.startsWith("local_");
@@ -181,10 +227,8 @@ function mergeServiceBindings(bindings: ServiceBinding[]): ServiceBinding[] {
     return preferred;
   };
 
-  const logicalKeyOf = (binding: ServiceBinding) => `${binding.linkedDeviceIss}:${binding.serviceId}:${binding.accountId ?? "-"}`;
-
   for (const binding of bindings) {
-    const logicalKey = logicalKeyOf(binding);
+    const logicalKey = bindingLogicalKeyOf(binding);
     const existingLogical = byKey.get(logicalKey);
     if (existingLogical) {
       byKey.set(logicalKey, mergePair(existingLogical, binding));
@@ -196,7 +240,7 @@ function mergeServiceBindings(bindings: ServiceBinding[]): ServiceBinding[] {
     if (existingById) {
       const merged = mergePair(existingById, binding);
       byKey.delete(idKey);
-      byKey.set(logicalKeyOf(merged), merged);
+      byKey.set(bindingLogicalKeyOf(merged), merged);
       continue;
     }
 
@@ -206,22 +250,62 @@ function mergeServiceBindings(bindings: ServiceBinding[]): ServiceBinding[] {
   return [...byKey.values()];
 }
 
-function toServiceBindingFromStatus(response: LinkedAccountStatusResponse): ServiceBinding | null {
-  const binding = response.readiness?.binding;
-  if (!binding?.bindingId || !binding.serviceId || !binding.accountId || !binding.deviceIss) {
-    return null;
+function preserveLocalBindingSyncMetadata(
+  recoveredBindings: ServiceBinding[],
+  localBindings: ServiceBinding[],
+  deviceIss: string
+): ServiceBinding[] {
+  const localById = new Map<string, ServiceBinding>();
+  const localByLogicalKey = new Map<string, ServiceBinding>();
+
+  for (const binding of localBindings) {
+    if (binding.linkedDeviceIss !== deviceIss) continue;
+    localById.set(binding.bindingId, binding);
+    localByLogicalKey.set(bindingLogicalKeyOf(binding), binding);
   }
 
-  if (!binding.status) return null;
+  return recoveredBindings.map((binding) => {
+    const existing = localById.get(binding.bindingId) ?? localByLogicalKey.get(bindingLogicalKeyOf(binding));
+    if (!existing?.sync) {
+      return binding;
+    }
+
+    return {
+      ...binding,
+      sync: mergeBindingSyncMetadata(existing.sync, binding.sync),
+    };
+  });
+}
+
+function toServiceBindingFromRecord(
+  binding: CompletionBindingRecord | null | undefined,
+  sync?: ServiceBinding["sync"]
+): ServiceBinding | null {
+  if (!binding?.bindingId || !binding.serviceId || !binding.accountId || !binding.deviceIss || !binding.status) {
+    return null;
+  }
 
   return {
     bindingId: binding.bindingId,
     serviceId: binding.serviceId,
     accountId: binding.accountId,
     linkedDeviceIss: binding.deviceIss,
-    linkedAt: binding.lastLinkedAt ?? binding.createdAt ?? binding.updatedAt ?? response.readiness?.checkedAt ?? Math.floor(Date.now() / 1000),
+    linkedAt: binding.lastLinkedAt ?? binding.createdAt ?? binding.updatedAt ?? Math.floor(Date.now() / 1000),
     lastVerifiedAt: binding.lastVerifiedAt,
     status: binding.status as ServiceBinding["status"],
+    sync: normalizeBindingSyncMetadata(sync),
+  };
+}
+
+function toServiceBindingFromStatus(response: LinkedAccountStatusResponse): ServiceBinding | null {
+  const binding = toServiceBindingFromRecord(response.readiness?.binding, undefined);
+  if (!binding) {
+    return null;
+  }
+
+  return {
+    ...binding,
+    linkedAt: binding.linkedAt || response.readiness?.checkedAt || Math.floor(Date.now() / 1000),
   };
 }
 
@@ -237,26 +321,9 @@ function isHealthAccessRecoveryNeeded(code?: string, message?: string | null): b
   );
 }
 
-function createDemoEnvelope(flow: LinkFlow = "initial_link"): LinkCompletionEnvelope {
-  const serviceId = "presence-demo";
-  const bindingId = flow === "initial_link" ? undefined : randomId("pbind");
-  return {
-    sessionId: randomId("plink"),
-    serviceId,
-    serviceDomain: DEMO_SERVICE_DOMAIN,
-    accountId: "demo-user",
-    bindingId,
-    flow,
-    method: "deeplink",
-    nonce: generateLocalNonce(),
-    returnUrl: "presence://complete",
-
-    code: Math.random().toString(36).slice(2, 8).toUpperCase(),
-  };
-}
-
 function envelopeToProveOptions(envelope: LinkCompletionEnvelope): ProveOptions | null {
   if (!envelope.nonce) return null;
+  const envelopeSync = syncFromEnvelope(envelope);
   return {
     nonce: envelope.nonce,
     flow: envelope.flow ?? (envelope.bindingId ? "reauth" : "initial_link"),
@@ -269,12 +336,7 @@ function envelopeToProveOptions(envelope: LinkCompletionEnvelope): ProveOptions 
         method: envelope.method ?? "deeplink",
         returnUrl: envelope.returnUrl,
         fallbackCode: envelope.code,
-        sync: {
-          serviceDomain: envelope.serviceDomain,
-          nonceUrl: envelope.nonceUrl,
-          verifyUrl: envelope.verifyUrl,
-          statusUrl: envelope.statusUrl,
-        },
+        sync: envelopeSync,
       },
     },
     bindingHint: envelope.bindingId
@@ -282,15 +344,20 @@ function envelopeToProveOptions(envelope: LinkCompletionEnvelope): ProveOptions 
           bindingId: envelope.bindingId,
           serviceId: envelope.serviceId ?? "presence-demo",
           accountId: envelope.accountId,
-          sync: {
-            serviceDomain: envelope.serviceDomain,
-            nonceUrl: envelope.nonceUrl,
-            verifyUrl: envelope.verifyUrl,
-            statusUrl: envelope.statusUrl,
-          },
+          sync: envelopeSync,
         }
       : undefined,
   };
+}
+
+function syncFromEnvelope(envelope: LinkCompletionEnvelope | null): ServiceBinding["sync"] | undefined {
+  if (!envelope) return undefined;
+  return normalizeBindingSyncMetadata({
+    serviceDomain: envelope.serviceDomain,
+    nonceUrl: envelope.nonceUrl,
+    verifyUrl: envelope.verifyUrl,
+    statusUrl: envelope.statusUrl,
+  });
 }
 
 function getProductState(phase: string, pass: boolean | undefined, hasRecovery: boolean) {
@@ -338,149 +405,17 @@ function getProductState(phase: string, pass: boolean | undefined, hasRecovery: 
   };
 }
 
-function getBindingSummary(bindings: ServiceBinding[]) {
-  if (bindings.some((binding) => binding.status === "recovery_pending" || binding.status === "reauth_required")) {
-    return {
-      tone: C.warn,
-      title: "Recovery needed",
-      detail: "This account is linked to a different device or needs re-approval.",
-    };
-  }
-  if (bindings.some((binding) => binding.status === "linked")) {
-    return {
-      tone: C.success,
-      title: "Linked",
-      detail: "A service account is linked to this device.",
-    };
-  }
-  if (bindings.some((binding) => binding.status === "revoked" || binding.status === "unlinked")) {
-    return {
-      tone: C.warn,
-      title: "Unlinked",
-      detail: "Open a new link session from the service to reconnect.",
-    };
-  }
-  return {
-    tone: C.subtext,
-    title: "Not linked",
-    detail: "No service account is linked yet.",
-  };
-}
-
-function getConnectionStatus(params: {
-  openedEnvelope: LinkCompletionEnvelope | null;
-  lastPayload: PresenceTransportPayload | null;
-  bindings: ServiceBinding[];
-}) {
-  const { openedEnvelope, lastPayload, bindings } = params;
-  const activeBinding = openedEnvelope?.bindingId
-    ? bindings.find((binding) => binding.bindingId === openedEnvelope.bindingId)
-    : bindings.find((binding) => binding.serviceId === (openedEnvelope?.serviceId ?? ""));
-
-  if (activeBinding?.status === "recovery_pending" || activeBinding?.status === "reauth_required") {
-    return {
-      label: "Recovery needed",
-      tone: C.warn,
-      background: "#2a2418",
-      detail: "This account needs recovery or re-link approval.",
-    };
-  }
-
-  if (activeBinding?.status === "linked" && !openedEnvelope) {
-    return {
-      label: "Linked",
-      tone: C.success,
-      background: "#103028",
-      detail: "The binding is saved. You can now move to linked account verification.",
-    };
-  }
-
-  if (lastPayload?.link_context?.link_session_id && openedEnvelope?.sessionId === lastPayload.link_context.link_session_id) {
-    return {
-      label: "Approved",
-      tone: C.success,
-      background: "#103028",
-      detail: "A proof was created for this session. Only the server completion step remains.",
-    };
-  }
-
-  if (openedEnvelope) {
-    return {
-      label: "Ready to approve",
-      tone: C.accent,
-      background: C.accentSoft,
-      detail: "The session is loaded. Tap approve below to create a proof from this device.",
-    };
-  }
-
-  return {
-    label: "No session",
-    tone: C.subtext,
-    background: C.surfaceSoft,
-    detail: "Scan a QR code or open a link to see connection status here.",
-  };
-}
-
-function buildJourneySteps(params: {
-  openedEnvelope: LinkCompletionEnvelope | null;
-  lastPayload: PresenceTransportPayload | null;
-  bindings: ServiceBinding[];
-}) {
-  const { openedEnvelope, lastPayload, bindings } = params;
-  const activeBinding = openedEnvelope?.bindingId
-    ? bindings.find((binding) => binding.bindingId === openedEnvelope.bindingId)
-    : bindings.find((binding) => binding.serviceId === (openedEnvelope?.serviceId ?? ""));
-
-  const steps = [
-    {
-      key: "opened",
-      title: "1. Session loaded",
-      detail: openedEnvelope ? `session ${openedEnvelope.sessionId}` : "Waiting for a QR code or link",
-      state: openedEnvelope ? "done" : "current",
-    },
-    {
-      key: "approve",
-      title: "2. Ready to approve",
-      detail: openedEnvelope ? "Tap approve on this device" : "Approval becomes available after the session loads",
-      state: openedEnvelope ? (lastPayload ? "done" : "current") : "todo",
-    },
-    {
-      key: "proof",
-      title: "3. Proof created",
-      detail: lastPayload?.link_context?.link_session_id ? "Payload created with link_context" : "No proof has been created for the server yet",
-      state: lastPayload?.link_context?.link_session_id ? "done" : "todo",
-    },
-    {
-      key: "binding",
-      title: "4. Binding status",
-      detail: activeBinding?.status === "linked"
-        ? "Binding saved"
-        : activeBinding?.status === "recovery_pending" || activeBinding?.status === "reauth_required"
-          ? "Recovery needed"
-          : "Moves to linked after server completion",
-      state: activeBinding?.status === "linked" ? "done" : activeBinding ? "current" : "todo",
-    },
-  ] as const;
-
-  return steps;
-}
-
 export default function App() {
   const presence = usePresenceState();
-  const [lastPayload, setLastPayload] = useState<PresenceTransportPayload | null>(null);
   const [rawLink, setRawLink] = useState("");
   const [openedEnvelope, setOpenedEnvelope] = useState<LinkCompletionEnvelope | null>(null);
-  const demoFlow: LinkFlow = "initial_link";
   const [localError, setLocalError] = useState<string | null>(null);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [showConnection, setShowConnection] = useState(false);
   const [showService, setShowService] = useState(false);
-  const [showDevTools, setShowDevTools] = useState(false);
   const [scannerSupported, setScannerSupported] = useState(false);
   const [scannerBusy, setScannerBusy] = useState(false);
-  const [log, setLog] = useState<string[]>([`[${nowTime()}] App started — platform: ${Platform.OS}`]);
-  const [pendingSyncJobs, setPendingSyncJobs] = useState(0);
-  const [bgDiagnostics, setBgDiagnostics] = useState<BackgroundRefreshDiagnostics | null>(null);
+  const [, setLog] = useState<string[]>([`[${nowTime()}] App started — platform: ${Platform.OS}`]);
   const [hydratedServiceBindings, setHydratedServiceBindings] = useState<ServiceBinding[]>([]);
   const [hydratingServiceBindings, setHydratingServiceBindings] = useState(false);
   const [serviceBindingsHydrationError, setServiceBindingsHydrationError] = useState<string | null>(null);
@@ -490,45 +425,147 @@ export default function App() {
   const [serviceScrollOffset, setServiceScrollOffset] = useState(0);
 
   const addLog = useCallback((msg: string) => {
-    setLog((prev) => [`[${nowTime()}] ${msg}`, ...prev].slice(0, 40));
+    const line = `[${nowTime()}] ${msg}`;
+    console.log(`[PresenceApp] ${line}`);
+    setLog((prev) => [line, ...prev].slice(0, 40));
   }, []);
 
-  const refreshDiagnostics = useCallback(async () => {
-    const [jobs, diagnostics] = await Promise.all([
-      loadLinkedBindingSyncJobs(),
-      getBackgroundRefreshDiagnostics(),
-    ]);
-    setPendingSyncJobs(jobs.length);
-    setBgDiagnostics(diagnostics);
-  }, []);
-
-  const runAutomaticRefresh = useCallback(async () => {
-    const measurement = await presence.measure();
+  const runMeasurementAndSync = useCallback(async (source: "manual" | "scheduled") => {
+    const measurement = await presence.measure(
+      source === "scheduled"
+        ? { renewalAttempt: true }
+        : undefined
+    );
     if (!measurement) {
-      addLog("❌ Scheduled measurement failed");
-      await refreshDiagnostics();
-      return false;
+      addLog(source === "scheduled" ? "❌ Scheduled measurement failed" : "❌ Measurement failed");
+      return null;
     }
 
     addLog(
-      measurement.pass
-        ? "🔄 Background measurement refreshed PASS state"
-        : `⚠️ Background measurement reported NOT READY — ${measurement.reason}`
+      source === "scheduled"
+        ? (
+          measurement.pass
+            ? "🔄 Scheduled renewal measurement passed"
+            : `⚠️ Scheduled measurement reported NOT READY — ${measurement.reason}`
+        )
+        : (
+          measurement.pass
+            ? "✅ PASS measurement refreshed"
+            : `⚠️ NOT READY — ${measurement.reason}`
+        )
     );
 
     const syncResult = await syncLinkedBindings({ measurement });
-    if (syncResult.attempted > 0) {
-      addLog(`↻ Synced bindings — verified ${syncResult.verified}, skipped ${syncResult.skipped}`);
+    const refreshedState = source === "scheduled" || syncResult.attempted > 0 || syncResult.errors.length > 0
+      ? (await presence.refresh()) ?? measurement.state
+      : measurement.state;
+    addLog(
+      `   state: created=${refreshedState?.stateCreatedAt ?? '-'} validUntil=${refreshedState?.stateValidUntil ?? '-'} measured=${refreshedState?.lastMeasuredAt ?? '-'} phase=${refreshedState?.status ?? '-'}`
+    );
+    addLog(`↻ Synced bindings — verified ${syncResult.verified}, skipped ${syncResult.skipped}, attempted ${syncResult.attempted}`);
+    if (measurement.pass && syncResult.attempted === 0 && (measurement.state?.serviceBindings.some(isActiveBinding) ?? false)) {
+      addLog("   no linked binding selected for nonce/prove/verify");
     }
-    for (const syncError of syncResult.errors.slice(0, 3)) {
-      addLog(`❌ ${syncError.bindingId}: ${syncError.message}`);
+    for (const diagnosticLine of formatGroupedLogEntries("diagnostics", syncResult.diagnostics)) {
+      addLog(`   ${diagnosticLine}`);
+    }
+    for (const errorLine of formatSyncErrorEntries(syncResult.errors)) {
+      addLog(syncResult.errors.length > 0 ? `❌ ${errorLine}` : `   ${errorLine}`);
     }
 
-    await refreshDiagnostics();
-    return syncResult.errors.length === 0;
-  }, [addLog, presence, refreshDiagnostics]);
+    return { measurement, syncResult };
+  }, [addLog, presence]);
+
+  const runAutomaticRefresh = useCallback(async () => {
+    const result = await runMeasurementAndSync("scheduled");
+    if (!result) {
+      addLog("❌ Automatic refresh finished without a measurement result");
+      return false;
+    }
+
+    const success = result.measurement.pass && result.syncResult.errors.length === 0;
+    addLog(
+      `↻ Automatic refresh finished — pass=${result.measurement.pass} attempted=${result.syncResult.attempted} verified=${result.syncResult.verified} errors=${result.syncResult.errors.length}`
+    );
+    return success;
+  }, [addLog, runMeasurementAndSync]);
 
   usePresenceRenewal(presence, runAutomaticRefresh);
+
+  const localBindingsForHydration = useMemo(
+    () => suppressShadowedLegacyUnsyncableBindings(
+      mergeServiceBindings([...(presence.state?.serviceBindings ?? []), ...hydratedServiceBindings])
+    ),
+    [presence.state?.serviceBindings, hydratedServiceBindings]
+  );
+  const localBindingsForHydrationRef = useRef<ServiceBinding[]>(localBindingsForHydration);
+
+  useEffect(() => {
+    localBindingsForHydrationRef.current = localBindingsForHydration;
+  }, [localBindingsForHydration]);
+
+  const persistAuthoritativeBindings = useCallback(async (
+    deviceIss: string,
+    recoveredBindings: ServiceBinding[]
+  ) => {
+    const persisted = await loadPresenceState();
+    if (persisted?.linkedDevice?.iss !== deviceIss) return;
+    const hasLocalBindingsForDevice = persisted.serviceBindings.some((binding) => binding.linkedDeviceIss === deviceIss);
+    if (recoveredBindings.length === 0 && hasLocalBindingsForDevice) return;
+    const mergedState = mergeAuthoritativeServiceBindings(persisted, recoveredBindings);
+    if (JSON.stringify(mergedState.serviceBindings) === JSON.stringify(persisted.serviceBindings)) {
+      return;
+    }
+    await savePresenceState(mergedState);
+  }, []);
+
+  const seedConfirmedBinding = useCallback(async (
+    response: CompletionSuccessResponse | null,
+    envelope: LinkCompletionEnvelope | null
+  ): Promise<SeedConfirmedBindingResult> => {
+    const envelopeSync = syncFromEnvelope(envelope);
+    addLog(
+      `🔎 completion seed envelope session=${envelope?.sessionId ?? "-"} binding=${response?.binding?.bindingId ?? "-"} ${describeBindingSync(envelopeSync)}`
+    );
+
+    const confirmedBinding = toServiceBindingFromRecord(response?.binding, envelopeSync);
+    if (!confirmedBinding) {
+      addLog("ℹ️ completion seed skipped — response did not include a complete binding record");
+      return { ok: true, seeded: false };
+    }
+
+    const existingBinding = findMatchingBinding(localBindingsForHydrationRef.current, confirmedBinding);
+    const seededBinding: ServiceBinding = {
+      ...existingBinding,
+      ...confirmedBinding,
+      bindingId: confirmedBinding.bindingId,
+      sync: existingBinding
+        ? mergeBindingSyncMetadata(existingBinding.sync, confirmedBinding.sync)
+        : confirmedBinding.sync,
+    };
+    const existingHasRequiredSync = hasRequiredBindingSyncMetadata(existingBinding?.sync);
+    const seededHasRequiredSync = hasRequiredBindingSyncMetadata(seededBinding.sync);
+    const seedRequiresEnvelopeSync = !!envelopeSync && !existingHasRequiredSync;
+
+    addLog(
+      `🔎 completion seed boundary binding=${seededBinding.bindingId} require_envelope_sync=${seedRequiresEnvelopeSync ? "yes" : "no"}`
+    );
+    addLog(`   existing: ${describeBindingSync(existingBinding?.sync)}`);
+    addLog(`   envelope: ${describeBindingSync(confirmedBinding.sync)}`);
+    addLog(`   seeded: ${describeBindingSync(seededBinding.sync)}`);
+
+    if (seedRequiresEnvelopeSync && !seededHasRequiredSync) {
+      return {
+        ok: false,
+        message: "Server completion succeeded, but this link was missing sync metadata (nonce_url / verify_url), so the binding was not saved locally. Open a fresh Presence link from the service.",
+      };
+    }
+
+    setHydratedServiceBindings((current) => mergeServiceBindings([seededBinding, ...current]));
+    await persistAuthoritativeBindings(seededBinding.linkedDeviceIss, [seededBinding]);
+    addLog(`✅ completion seed persisted — binding=${seededBinding.bindingId} ${describeBindingSync(seededBinding.sync)}`);
+    return { ok: true, seeded: true };
+  }, [addLog, persistAuthoritativeBindings]);
 
   const activateEnvelope = useCallback(async (
     parsed: LinkCompletionEnvelope,
@@ -538,7 +575,11 @@ export default function App() {
     setRawLink(rawUrl ?? buildPresenceLinkUrl(parsed));
     setShowConnection(true);
     const normalizedServiceDomain = debugNormalizeServiceDomain(parsed.serviceDomain);
+    const envelopeSync = syncFromEnvelope(parsed);
     addLog(`🔎 ${source} parse session=${parsed.sessionId} service=${parsed.serviceId ?? "-"}`);
+    addLog(
+      `🔎 envelope boundary source=${source} flow=${parsed.flow ?? (parsed.bindingId ? "reauth" : "initial_link")} binding=${parsed.bindingId ?? "-"} ${describeBindingSync(envelopeSync)}`
+    );
     addLog(`🔎 service_domain raw=${JSON.stringify(parsed.serviceDomain ?? null)} normalized=${JSON.stringify(normalizedServiceDomain)}`);
     addLog(`🔎 nonce_url=${parsed.nonceUrl ?? "-"}`);
     addLog(`🔎 verify_url=${parsed.verifyUrl ?? "-"}`);
@@ -561,7 +602,6 @@ export default function App() {
   useEffect(() => {
     LogBox.ignoreAllLogs();
     isQrScannerSupported().then(setScannerSupported).catch(() => setScannerSupported(false));
-    void refreshDiagnostics();
 
     getInitialPresenceLink().then((initialEnvelope) => {
       if (initialEnvelope) {
@@ -572,19 +612,17 @@ export default function App() {
     return subscribeToPresenceLinks((envelope) => {
       void activateEnvelope(envelope, "system");
     });
-  }, [activateEnvelope, refreshDiagnostics]);
-
-  useEffect(() => {
-    void refreshDiagnostics();
-  }, [presence.state?.stateValidUntil, presence.state?.nextMeasurementAt, presence.phase, refreshDiagnostics]);
+  }, [activateEnvelope]);
 
   const hydrateAuthoritativeBindings = useCallback(async (deviceIss: string, source: string) => {
     setHydratingServiceBindings(true);
     setServiceBindingsHydrationError(null);
     try {
+      const localBindings = localBindingsForHydrationRef.current;
       try {
         const deviceBindings = await fetchJson<DeviceBindingsResponse>(`https://noctu.link/presence-demo/presence/devices/${encodeURIComponent(deviceIss)}/bindings`);
-        const recoveredBindings: ServiceBinding[] = deviceBindings.bindings
+        const recoveredBindings = preserveLocalBindingSyncMetadata(
+          deviceBindings.bindings
           .filter((binding) => binding.deviceIss === deviceIss)
           .map((binding) => ({
             bindingId: binding.bindingId,
@@ -594,12 +632,12 @@ export default function App() {
             linkedAt: binding.lastLinkedAt ?? binding.createdAt ?? binding.updatedAt ?? Math.floor(Date.now() / 1000),
             lastVerifiedAt: binding.lastVerifiedAt,
             status: binding.status,
-          }));
+          })),
+          localBindings,
+          deviceIss
+        );
         setHydratedServiceBindings(recoveredBindings);
-        const persisted = await loadPresenceState();
-        if (persisted?.linkedDevice?.iss === deviceIss) {
-          await savePresenceState(mergeAuthoritativeServiceBindings(persisted, recoveredBindings));
-        }
+        await persistAuthoritativeBindings(deviceIss, recoveredBindings);
         addLog(`↻ Recovered ${recoveredBindings.length} bindings from device endpoint (${source})`);
         return;
       } catch (deviceEndpointError) {
@@ -619,21 +657,26 @@ export default function App() {
         .sort((a, b) => b[1] - a[1])
         .map(([accountId]) => accountId);
 
-      const recoveredBindings = (
-        await Promise.all(
-          orderedAccountIds.map(async (accountId) => {
-            try {
-              const status = await fetchJson<LinkedAccountStatusResponse>(`https://noctu.link/presence-demo/presence/linked-accounts/${encodeURIComponent(accountId)}/status`);
-              const binding = toServiceBindingFromStatus(status);
-              return binding?.linkedDeviceIss === deviceIss ? binding : null;
-            } catch {
-              return null;
-            }
-          })
-        )
-      ).filter((binding): binding is ServiceBinding => !!binding);
+      const recoveredBindings = preserveLocalBindingSyncMetadata(
+        (
+          await Promise.all(
+            orderedAccountIds.map(async (accountId) => {
+              try {
+                const status = await fetchJson<LinkedAccountStatusResponse>(`https://noctu.link/presence-demo/presence/linked-accounts/${encodeURIComponent(accountId)}/status`);
+                const binding = toServiceBindingFromStatus(status);
+                return binding?.linkedDeviceIss === deviceIss ? binding : null;
+              } catch {
+                return null;
+              }
+            })
+          )
+        ).filter((binding): binding is ServiceBinding => !!binding),
+        localBindings,
+        deviceIss
+      );
 
       setHydratedServiceBindings(recoveredBindings);
+      await persistAuthoritativeBindings(deviceIss, recoveredBindings);
       addLog(`↻ Recovered ${recoveredBindings.length} bindings via audit fallback (${source})`);
     } catch (error) {
       setServiceBindingsHydrationError(error instanceof Error ? error.message : String(error));
@@ -641,7 +684,7 @@ export default function App() {
     } finally {
       setHydratingServiceBindings(false);
     }
-  }, [addLog]);
+  }, [addLog, persistAuthoritativeBindings]);
 
   useEffect(() => {
     if (!showService) return;
@@ -661,15 +704,10 @@ export default function App() {
     void hydrateAuthoritativeBindings(deviceIss, "presence_state_change");
   }, [hydrateAuthoritativeBindings, presence.state?.linkedDevice?.iss]);
 
-  const parsedFromEditor = useMemo(() => parsePresenceLinkUrl(rawLink), [rawLink]);
   const proveOptions = useMemo(() => (openedEnvelope ? envelopeToProveOptions(openedEnvelope) : null), [openedEnvelope]);
-  const effectiveServiceBindings = useMemo(
-    () => mergeServiceBindings([...(presence.state?.serviceBindings ?? []), ...hydratedServiceBindings]),
-    [presence.state?.serviceBindings, hydratedServiceBindings]
-  );
+  const effectiveServiceBindings = localBindingsForHydration;
   const hasRecovery = effectiveServiceBindings.some((binding) => binding.status === "recovery_pending" || binding.status === "reauth_required");
   const productState = getProductState(presence.phase, presence.state?.pass, hasRecovery);
-  const activeSession = openedEnvelope;
   const openedSessionAlreadyLinked = !!(
     openedEnvelope?.serviceId
     && openedEnvelope?.accountId
@@ -679,29 +717,14 @@ export default function App() {
       && binding.status === "linked"
     ))
   );
-  const stateMeta = [
-    presence.timeRemaining ? `Valid for ${presence.timeRemaining}` : null,
-    presence.state?.lastSignals?.length ? `Signals ${presence.state.lastSignals.join(", ")}` : null,
-    effectiveServiceBindings.length ? `Bindings ${effectiveServiceBindings.length}` : null,
-    presence.state?.nextMeasurementAt ? `Next check ${new Date(presence.state.nextMeasurementAt * 1000).toLocaleTimeString()}` : null,
-    pendingSyncJobs > 0 ? `Retries ${pendingSyncJobs}` : null,
-  ].filter(Boolean) as string[];
-  const sortedServiceBindings = [...effectiveServiceBindings].sort((a, b) => {
-    const statusRank = (status: string) => {
-      if (status === "linked") return 0;
-      if (status === "recovery_pending" || status === "reauth_required") return 1;
-      if (status === "pending") return 2;
-      if (status === "expired") return 3;
-      if (status === "revoked" || status === "unlinked") return 4;
-      return 5;
-    };
-
-    const timeA = a.lastVerifiedAt ?? a.linkedAt ?? 0;
-    const timeB = b.lastVerifiedAt ?? b.linkedAt ?? 0;
-    const byStatus = statusRank(a.status) - statusRank(b.status);
-    if (byStatus !== 0) return byStatus;
-    return timeB - timeA;
-  });
+  const recentServiceBindings = [...effectiveServiceBindings]
+    .filter((binding) => isActiveBinding(binding))
+    .sort((a, b) => {
+      const timeA = a.lastVerifiedAt ?? a.linkedAt ?? 0;
+      const timeB = b.lastVerifiedAt ?? b.linkedAt ?? 0;
+      return timeB - timeA;
+    })
+    .slice(0, 10);
   const serviceScrollTrackVisible = serviceContentHeight > serviceViewportHeight + 8;
   const serviceScrollThumbHeight = serviceScrollTrackVisible
     ? Math.max(36, (serviceViewportHeight * serviceViewportHeight) / Math.max(serviceContentHeight, 1))
@@ -711,41 +734,12 @@ export default function App() {
   const serviceScrollThumbTop = serviceScrollTrackVisible && serviceScrollMaxOffset > 0
     ? (serviceScrollOffset / serviceScrollMaxOffset) * serviceScrollThumbTravel
     : 0;
-  const bindingSummary = getBindingSummary(sortedServiceBindings);
   const displayedErrorCode = presence.error?.code ?? "PRESENCE";
   const displayedErrorMessage = localError ?? presence.error?.message ?? null;
   const showHealthAccessRecovery = isHealthAccessRecoveryNeeded(displayedErrorCode, displayedErrorMessage);
-  const connectionStatus = getConnectionStatus({
-    openedEnvelope,
-    lastPayload,
-    bindings: presence.state?.serviceBindings ?? [],
-  });
-  const journeySteps = buildJourneySteps({
-    openedEnvelope,
-    lastPayload,
-    bindings: presence.state?.serviceBindings ?? [],
-  });
-
-  const handlePermissions = async () => {
-    addLog("→ requestPermissions()");
-    const granted = await presence.requestPermissions();
-    addLog(granted ? "✅ HealthKit permission granted" : "❌ Permission denied or error");
-    if (!granted && presence.error) addLog(`   ${presence.error.code}: ${presence.error.message}`);
-  };
-
-  const handleGenerateSession = () => {
-    const envelope = createDemoEnvelope(demoFlow);
-    setRawLink(buildPresenceLinkUrl(envelope));
-    setOpenedEnvelope(null);
-    setLastPayload(null);
-    setLocalError(null);
-    addLog(`🧾 Service created ${demoFlow} session ${envelope.sessionId}`);
-    addLog("↗ Open the link to connect this session on the current device");
-  };
 
   const clearConnectSession = useCallback(() => {
     setOpenedEnvelope(null);
-    setLastPayload(null);
     setRawLink("");
     setConnectionError(null);
     setShowConnection(false);
@@ -798,6 +792,7 @@ export default function App() {
       return;
     }
 
+    const currentEnvelope = openedEnvelope;
     if (openedSessionAlreadyLinked) {
       addLog("↩ Approve ignored — service/account is already linked in the current app state");
       return;
@@ -808,21 +803,18 @@ export default function App() {
     if (!payload) {
       setLocalError(presence.error?.message ?? "Could not create the proof.");
       addLog(`❌ ${presence.error?.code ?? "unknown"} — ${presence.error?.message ?? ""}`);
-      await refreshDiagnostics();
       return;
     }
 
-    setLastPayload(payload);
     setLocalError(null);
     addLog("✅ Proof generated with link_context");
     addLog(`   link_session_id: ${payload.link_context?.link_session_id ?? "n/a"}`);
     addLog(`   binding_id: ${payload.link_context?.binding_id ?? "server-created"}`);
 
-    const completionUrl = buildCompletionUrl(openedEnvelope);
+    const completionUrl = buildCompletionUrl(currentEnvelope);
     if (!completionUrl) {
       clearConnectSession();
       addLog("↗ No completion URL available; proof is ready but server completion was skipped");
-      await refreshDiagnostics();
       return;
     }
 
@@ -850,83 +842,43 @@ export default function App() {
           : raw || `HTTP ${response.status}`;
         setLocalError(`Server completion failed: ${message}`);
         addLog(`❌ completion ${response.status} — ${truncateJson(parsed || raw, 600)}`);
-        await refreshDiagnostics();
+        return;
+      }
+
+      const seedResult = await seedConfirmedBinding(parsed as CompletionSuccessResponse, currentEnvelope);
+      if (!seedResult.ok) {
+        setLocalError(seedResult.message);
+        addLog(`❌ completion seed rejected — ${seedResult.message}`);
+        addLog(`   response: ${truncateJson(parsed, 500)}`);
         return;
       }
 
       clearConnectSession();
-      addLog(`✅ completion ${response.status} — binding saved on server`);
+      addLog(`✅ completion ${response.status} — binding saved on server${seedResult.seeded ? " and seeded locally" : ""}`);
       addLog(`   response: ${truncateJson(parsed, 500)}`);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setLocalError(`Could not reach the completion endpoint: ${message}`);
       addLog(`❌ completion network error — ${message}`);
-      await refreshDiagnostics();
       return;
     }
-
-    await refreshDiagnostics();
   };
 
   const handleMeasure = async () => {
     addLog("→ measure() — rolling 72h window");
-    const measurement = await presence.measure();
-    if (!measurement) {
+    const result = await runMeasurementAndSync("manual");
+    if (!result) {
       setLocalError(presence.error?.message ?? "Could not complete the measurement.");
       addLog(`❌ ${presence.error?.code ?? "unknown"} — ${presence.error?.message ?? ""}`);
       return;
     }
 
-    if (measurement.pass) {
+    if (result.measurement.pass) {
       setLocalError(null);
-      addLog("✅ PASS measurement refreshed");
-      await refreshDiagnostics();
       return;
     }
 
-    setLocalError(measurement.reason);
-    addLog(`⚠️ NOT READY — ${measurement.reason}`);
-    await syncLinkedBindings({ measurement });
-    await refreshDiagnostics();
-  };
-
-  const handleReset = async () => {
-    addLog("→ clearPresenceState()");
-    await clearPresenceState();
-    await clearLinkedBindingSyncQueue();
-    presence.clearError();
-    setLastPayload(null);
-    setOpenedEnvelope(null);
-    setRawLink("");
-    setLocalError(null);
-    setShowConnection(false);
-    addLog("✅ State cleared — re-launch to re-onboard");
-    await refreshDiagnostics();
-  };
-
-  const handleDiagnose = async () => {
-    addLog("→ readBiometricWindow() [diagnostic]");
-    const result = await readBiometricWindow();
-    if (!result.ok) {
-      addLog(`❌ ${result.error.code}: ${result.error.message}`);
-      return;
-    }
-    const w = result.value;
-    const totalDuration = w.bpmSamples.reduce((s, r) => s + (r.durationSeconds ?? 0), 0);
-    const dayMap: Record<string, { count: number; bucketSet: Set<number> }> = {};
-    for (const s of w.bpmSamples) {
-      const date = new Date(s.timestamp * 1000);
-      const dayKey = `${date.getFullYear()}-${`${date.getMonth() + 1}`.padStart(2, "0")}-${`${date.getDate()}`.padStart(2, "0")}`;
-      if (!dayMap[dayKey]) dayMap[dayKey] = { count: 0, bucketSet: new Set<number>() };
-      dayMap[dayKey].count += 1;
-      dayMap[dayKey].bucketSet.add(Math.floor(s.timestamp / 600));
-    }
-    addLog(`   samples: ${w.bpmSamples.length} totalDur: ${totalDuration}s`);
-    addLog(`   days with HR: ${Object.keys(dayMap).length}`);
-    for (const [dayKey, value] of Object.entries(dayMap)) {
-      const steps = w.stepsByDay[dayKey] ?? 0;
-      addLog(`   ${dayKey}: ${value.count} samples, ${value.bucketSet.size} x 10m buckets, ${steps} steps`);
-    }
+    setLocalError(result.measurement.reason);
   };
 
   return (
@@ -1006,7 +958,7 @@ export default function App() {
                 <Text style={styles.modalMeta}>Service sync fallback: {serviceBindingsHydrationError}</Text>
               ) : null}
 
-              {sortedServiceBindings.length > 0 ? (
+              {recentServiceBindings.length > 0 ? (
                 <View
                   style={styles.bindingViewport}
                   onLayout={(event) => setServiceViewportHeight(event.nativeEvent.layout.height)}
@@ -1021,27 +973,30 @@ export default function App() {
                     onContentSizeChange={(_, height) => setServiceContentHeight(height)}
                     onScroll={(event) => setServiceScrollOffset(event.nativeEvent.contentOffset.y)}
                   >
-                    {sortedServiceBindings.map((binding) => (
+                    {recentServiceBindings.map((binding) => (
                       <View key={binding.bindingId} style={styles.bindingCard}>
                         <KeyValue label="service" value={binding.serviceId} />
                         <KeyValue label="account" value={binding.accountId ?? "-"} />
-                        <KeyValue label="status" value={binding.status} />
+                        <KeyValue
+                          label="connected"
+                          value={new Date((binding.lastVerifiedAt ?? binding.linkedAt ?? 0) * 1000).toLocaleString()}
+                        />
                       </View>
                     ))}
                   </ScrollView>
-                  <View pointerEvents="none" style={styles.bindingScrollRail}>
-                    <View
-                      style={[
-                        styles.bindingScrollThumb,
-                        serviceScrollTrackVisible
-                          ? {
-                              height: serviceScrollThumbHeight,
-                              transform: [{ translateY: serviceScrollThumbTop }],
-                            }
-                          : styles.bindingScrollThumbStatic,
-                      ]}
-                    />
-                  </View>
+                  {serviceScrollTrackVisible ? (
+                    <View pointerEvents="none" style={styles.bindingScrollRail}>
+                      <View
+                        style={[
+                          styles.bindingScrollThumb,
+                          {
+                            height: serviceScrollThumbHeight,
+                            transform: [{ translateY: serviceScrollThumbTop }],
+                          },
+                        ]}
+                      />
+                    </View>
+                  ) : null}
                 </View>
               ) : (
                 <View style={styles.emptyCard}>
@@ -1135,7 +1090,6 @@ export default function App() {
                         style={styles.ghostButton}
                         onPress={() => {
                           setOpenedEnvelope(null);
-                          setLastPayload(null);
                           setLocalError(null);
                           setRawLink("");
                         }}

@@ -19,6 +19,7 @@
 import { useEffect, useRef, useCallback } from "react";
 import { AppState, AppStateStatus } from "react-native";
 import {
+  hasSyncableServiceBindings,
   secondsUntilNextMeasurement,
   shouldRenew,
 } from "../state/presenceState";
@@ -39,6 +40,7 @@ import { hasPendingLinkedBindingSyncJobs } from "../sync/queue";
 type RenewalTask = () => Promise<boolean | void>;
 
 const BACKGROUND_TIMEOUT_MS = 25_000;
+const RENEWAL_RETRY_SECONDS = 5;
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   return new Promise<T>((resolve, reject) => {
@@ -91,18 +93,22 @@ export function usePresenceRenewal(
     const currentPresence = presenceRef.current;
     if (!currentPresence.state) return;
 
-    if (shouldRenew(currentPresence.state) || currentPresence.phase === "expired") {
+    const hasPendingSyncJobs = await hasPendingLinkedBindingSyncJobs();
+    const canRetryExpiredSync = currentPresence.phase === "expired"
+      && hasSyncableServiceBindings(currentPresence.state.serviceBindings);
+
+    if (currentPresence.phase === "expired" && !canRetryExpiredSync && !hasPendingSyncJobs) {
       return;
     }
 
-    const secondsUntil = secondsUntilNextMeasurement(currentPresence.state);
-    if (secondsUntil <= 0) {
-      return;
-    }
+    const secondsUntil = hasPendingSyncJobs || canRetryExpiredSync
+      ? RENEWAL_RETRY_SECONDS
+      : secondsUntilNextMeasurement(currentPresence.state);
+    const delaySeconds = secondsUntil > 0 ? secondsUntil : RENEWAL_RETRY_SECONDS;
 
-    await scheduleBackgroundRefresh(Math.floor(Date.now() / 1000) + secondsUntil);
+    await scheduleBackgroundRefresh(Math.floor(Date.now() / 1000) + delaySeconds);
 
-    const delayMs = Math.min(secondsUntil * 1000, 24 * 60 * 60 * 1000);
+    const delayMs = Math.min(delaySeconds * 1000, 24 * 60 * 60 * 1000);
     timerRef.current = setTimeout(() => {
       void tryRenewRef.current("timer");
     }, delayMs);
@@ -119,8 +125,11 @@ export function usePresenceRenewal(
       return;
     }
 
+    const canRetryExpiredSync = !!currentPresence.state
+      && currentPresence.phase === "expired"
+      && hasSyncableServiceBindings(currentPresence.state.serviceBindings);
     const needsMeasurementSync = !!currentPresence.state
-      && (shouldRenew(currentPresence.state) || currentPresence.phase === "expired");
+      && (shouldRenew(currentPresence.state) || canRetryExpiredSync);
     const initialPendingSyncs = await hasPendingLinkedBindingSyncJobs();
 
     if (!needsMeasurementSync && !initialPendingSyncs) {
@@ -139,13 +148,14 @@ export function usePresenceRenewal(
         success = result !== false;
       }
 
-      const shouldFlushQueuedSyncs = needsMeasurementSync
-        ? false
-        : initialPendingSyncs;
+      const shouldFlushQueuedSyncs = initialPendingSyncs || needsMeasurementSync;
 
       if (shouldFlushQueuedSyncs) {
         const result = await withTimeout(flushQueuedLinkedBindingSyncs(), BACKGROUND_TIMEOUT_MS);
         success = success && result.errors.length === 0;
+        if (result.attempted > 0) {
+          await presenceRef.current.refresh();
+        }
       }
     } catch {
       success = false;
