@@ -978,36 +978,44 @@ export default function App() {
         <Modal visible={showService} transparent animationType="fade" onRequestClose={() => setShowService(false)}>
           <TouchableWithoutFeedback onPress={() => setShowService(false)}>
             <View style={styles.modalBackdrop}>
-              <View style={styles.modalCard} onStartShouldSetResponder={() => true}>
-                <View style={styles.modalHeader}>
-                  <Text style={styles.sectionTitle}>Service</Text>
-                  <TouchableOpacity onPress={() => setShowService(false)} activeOpacity={0.85}>
-                    <Text style={styles.modalClose}>Close</Text>
-                  </TouchableOpacity>
-                </View>
-
-                {hydratingServiceBindings ? (
-                  <Text style={styles.modalMeta}>Syncing linked services…</Text>
-                ) : serviceBindingsHydrationError ? (
-                  <Text style={styles.modalMeta}>Service sync fallback: {serviceBindingsHydrationError}</Text>
-                ) : null}
-
-                {sortedServiceBindings.length > 0 ? (
-                  <ScrollView style={styles.bindingListScroll} contentContainerStyle={styles.bindingList} showsVerticalScrollIndicator>
-                    {sortedServiceBindings.map((binding) => (
-                      <View key={binding.bindingId} style={styles.bindingCard}>
-                        <KeyValue label="service" value={binding.serviceId} />
-                        <KeyValue label="account" value={binding.accountId ?? "-"} />
-                        <KeyValue label="status" value={binding.status} />
-                      </View>
-                    ))}
-                  </ScrollView>
-                ) : (
-                  <View style={styles.bindingBanner}>
-                    <Text style={[styles.bindingTitle, { color: bindingSummary.tone }]}>-</Text>
+              <TouchableWithoutFeedback>
+                <View style={styles.modalCardLarge}>
+                  <View style={styles.modalHeader}>
+                    <Text style={styles.sectionTitle}>Service</Text>
+                    <TouchableOpacity onPress={() => setShowService(false)} activeOpacity={0.85}>
+                      <Text style={styles.modalClose}>Close</Text>
+                    </TouchableOpacity>
                   </View>
-                )}
-              </View>
+
+                  {hydratingServiceBindings ? (
+                    <Text style={styles.modalMeta}>Syncing linked services…</Text>
+                  ) : serviceBindingsHydrationError ? (
+                    <Text style={styles.modalMeta}>Service sync fallback: {serviceBindingsHydrationError}</Text>
+                  ) : null}
+
+                  {sortedServiceBindings.length > 0 ? (
+                    <ScrollView
+                      style={styles.bindingListScroll}
+                      contentContainerStyle={styles.bindingList}
+                      showsVerticalScrollIndicator
+                      keyboardShouldPersistTaps="handled"
+                    >
+                      {sortedServiceBindings.map((binding) => (
+                        <View key={binding.bindingId} style={styles.bindingCard}>
+                          <KeyValue label="service" value={binding.serviceId} />
+                          <KeyValue label="account" value={binding.accountId ?? "-"} />
+                          <KeyValue label="status" value={binding.status} />
+                        </View>
+                      ))}
+                    </ScrollView>
+                  ) : (
+                    <View style={styles.emptyCard}>
+                      <Text style={styles.emptyTitle}>No linked services yet</Text>
+                      <Text style={styles.emptyBody}>Complete a /presence/link flow from your service to populate this list.</Text>
+                    </View>
+                  )}
+                </View>
+              </TouchableWithoutFeedback>
             </View>
           </TouchableWithoutFeedback>
         </Modal>
@@ -1475,8 +1483,7 @@ const styles = StyleSheet.create({
     lineHeight: 19,
   },
   bindingListScroll: {
-    maxHeight: 360,
-    minHeight: 220,
+    flexGrow: 0,
   },
   bindingList: {
     paddingHorizontal: 18,
@@ -1490,12 +1497,24 @@ const styles = StyleSheet.create({
     backgroundColor: C.surfaceSoft,
     overflow: "hidden",
   },
+  emptyCard: {
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: C.border,
+    backgroundColor: C.surfaceSoft,
+    paddingHorizontal: 18,
+    paddingVertical: 16,
+    gap: 6,
+  },
+  emptyTitle: {
+    color: C.text,
+    fontSize: 15,
+    fontWeight: "700",
+  },
   emptyBody: {
     color: C.subtext,
     fontSize: 13,
     lineHeight: 19,
-    paddingHorizontal: 18,
-    paddingBottom: 18,
   },
   connectionOptions: {
     paddingHorizontal: 18,
