@@ -979,7 +979,7 @@ export default function App() {
           <TouchableWithoutFeedback onPress={() => setShowService(false)}>
             <View style={styles.modalBackdrop}>
               <TouchableWithoutFeedback>
-                <View style={styles.modalCardLarge}>
+                <View style={styles.modalCard}>
                   <View style={styles.modalHeader}>
                     <Text style={styles.sectionTitle}>Service</Text>
                     <TouchableOpacity onPress={() => setShowService(false)} activeOpacity={0.85}>
@@ -994,20 +994,24 @@ export default function App() {
                   ) : null}
 
                   {sortedServiceBindings.length > 0 ? (
-                    <ScrollView
-                      style={styles.bindingListScroll}
-                      contentContainerStyle={styles.bindingList}
-                      showsVerticalScrollIndicator
-                      keyboardShouldPersistTaps="handled"
-                    >
-                      {sortedServiceBindings.map((binding) => (
-                        <View key={binding.bindingId} style={styles.bindingCard}>
-                          <KeyValue label="service" value={binding.serviceId} />
-                          <KeyValue label="account" value={binding.accountId ?? "-"} />
-                          <KeyValue label="status" value={binding.status} />
-                        </View>
-                      ))}
-                    </ScrollView>
+                    <View style={styles.bindingViewport}>
+                      <ScrollView
+                        nestedScrollEnabled
+                        style={styles.bindingListScroll}
+                        contentContainerStyle={styles.bindingList}
+                        showsVerticalScrollIndicator
+                        keyboardShouldPersistTaps="handled"
+                        bounces={false}
+                      >
+                        {sortedServiceBindings.map((binding) => (
+                          <View key={binding.bindingId} style={styles.bindingCard}>
+                            <KeyValue label="service" value={binding.serviceId} />
+                            <KeyValue label="account" value={binding.accountId ?? "-"} />
+                            <KeyValue label="status" value={binding.status} />
+                          </View>
+                        ))}
+                      </ScrollView>
+                    </View>
                   ) : (
                     <View style={styles.emptyCard}>
                       <Text style={styles.emptyTitle}>No linked services yet</Text>
@@ -1482,8 +1486,12 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 19,
   },
+  bindingViewport: {
+    height: 360,
+    overflow: "hidden",
+  },
   bindingListScroll: {
-    flexGrow: 0,
+    flex: 1,
   },
   bindingList: {
     paddingHorizontal: 18,
