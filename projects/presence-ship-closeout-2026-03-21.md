@@ -68,6 +68,12 @@ Observed good state after repeated renewals:
 - `reauth_succeeded` audit events accumulated
 - store counts remained stable (`bindings: 1`, `devices: 1`)
 
+Additional late-stage verification also passed:
+- backend-side unlink moved readiness to `unlinked`
+- the app stopped showing the stale service card after authoritative hydration
+- a fresh relink created a new binding and restored `ready`
+- subsequent renewal on the new binding again updated server truth correctly
+
 This is the main reason today counts as a meaningful stabilization milestone rather than another partial app-only fix.
 
 ## Practical conclusion

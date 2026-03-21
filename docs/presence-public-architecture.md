@@ -115,6 +115,14 @@ Recommended rule:
 5. Backend verifies and updates the latest snapshot
 6. Service readiness remains `ready` only while the verified snapshot remains fresh enough
 
+### Unlink / relink
+
+1. A service/backend can unlink a linked account binding
+2. The backend marks that binding as `unlinked` and records an audit event
+3. Backend readiness for that account is no longer `ready`
+4. Once the app performs authoritative hydration again, stale local service cards should disappear rather than surviving as cached linked entries
+5. A future connection should create a new linked binding and restore readiness through a fresh proof
+
 ---
 
 ## What “PASS is sent to the server” actually means

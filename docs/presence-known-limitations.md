@@ -63,7 +63,19 @@ Implications:
 
 ---
 
-## 6. Public docs should avoid over-claiming
+## 6. Unlink semantics should be documented clearly
+
+Presence service bindings are not necessarily hard-deleted immediately from backend history.
+A service may represent unlink as a binding that remains in history with `status: "unlinked"`.
+
+Implications:
+- readiness should treat `unlinked` as not connected
+- app UI should stop showing the service as an active connected card after authoritative hydration
+- public docs should distinguish current active connection state from historical binding records
+
+---
+
+## 7. Public docs should avoid over-claiming
 
 Avoid claims like:
 - "Presence always renews in the background"
