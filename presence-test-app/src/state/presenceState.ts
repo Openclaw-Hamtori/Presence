@@ -93,9 +93,8 @@ export async function clearPresenceState(): Promise<void> {
 }
 
 /**
- * Internal scheduler status. Product-facing UI should generally collapse
- * `ready`/`needs_renewal` into PASS and `not_ready`/`expired` into FAIL,
- * while handling recovery separately.
+ * Internal timing status. Product-facing UI should generally collapse raw
+ * scheduler states into PASS / FAIL while handling recovery separately.
  */
 export function computeStateStatus(state: PresenceState): PresenceStateStatus {
   const now = Math.floor(Date.now() / 1000);
@@ -419,28 +418,6 @@ export function secondsUntilNextMeasurement(state: PresenceState): number {
   return Math.max(0, scheduledCheckStart - now);
 }
 
-export function secondsUntilRenewalWindow(state: PresenceState): number {
-  return secondsUntilNextMeasurement(state);
-}
-
-/**
- * Retained for debug/scheduler surfaces. Product UI should prefer PASS / FAIL
- * messaging instead of time-based copy.
- */
-export function formatTimeRemaining(state: PresenceState): string {
-  const now = Math.floor(Date.now() / 1000);
-  if (!state.pass) {
-    if (state.nextMeasurementAt && state.nextMeasurementAt > now) {
-      return `Next local check in ${formatDuration(state.nextMeasurementAt - now)}`;
-    }
-    return "PASS unavailable";
-  }
-  const remaining = state.stateValidUntil - now;
-
-  if (remaining <= 0) return "PASS unavailable";
-  return formatDuration(remaining);
-}
-
 export function recordFailedMeasurement(
   state: PresenceState,
   params: {
@@ -642,17 +619,4 @@ function touchBindingsForMeasurement(
     lastFailedAt: params.failureReason ? params.capturedAt : undefined,
     lastFailureReason: params.failureReason,
   }));
-}
-
-function formatDuration(seconds: number): string {
-  const totalSeconds = Math.max(0, Math.floor(seconds));
-  const days = Math.floor(totalSeconds / 86400);
-  const hours = Math.floor((totalSeconds % 86400) / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const secs = totalSeconds % 60;
-
-  if (days > 0) return `${days}d ${hours}h ${minutes}m ${secs}s`;
-  if (hours > 0) return `${hours}h ${minutes}m ${secs}s`;
-  if (minutes > 0) return `${minutes}m ${secs}s`;
-  return `${secs}s`;
 }

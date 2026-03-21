@@ -18,11 +18,7 @@ export {
   loadPresenceState,
   savePresenceState,
   clearPresenceState,
-  computeStateStatus,
   isStateUsable,
-  shouldRenew,
-  formatTimeRemaining,
-  secondsUntilNextMeasurement,
 } from "./state/presenceState";
 
 // ─── Health ───────────────────────────────────────────────────────────────────
@@ -39,7 +35,6 @@ export { ensureDeviceKey, deleteDeviceKey, deriveIss } from "./crypto/index";
 // ─── UI ───────────────────────────────────────────────────────────────────────
 export { usePresenceState } from "./ui/usePresenceState";
 export type { UsePresenceStateResult, PresenceHookPhase } from "./ui/usePresenceState";
-export { usePresenceRenewal } from "./ui/usePresenceRenewal";
 export {
   isBackgroundRefreshSupported,
   scheduleBackgroundRefresh,
@@ -62,7 +57,6 @@ export type {
   PresenceAttestation,
   PresenceSignal,
   PresenceState,
-  PresenceStateStatus,
   PresenceBindingSync,
   PresenceTransportPayload,
   PresenceMobileErrorCode,

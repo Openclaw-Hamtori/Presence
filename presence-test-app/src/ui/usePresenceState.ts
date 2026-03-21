@@ -4,22 +4,20 @@
  * React hook that manages Presence state lifecycle:
  *   - Load persisted state on mount
  *   - Expose prove() with loading/error states
- *   - Keep scheduler status available without making it the product-facing model
+ *   - Keep internal timing logic out of the product-facing model
  *   - Drive onboarding flow
  */
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { prove, measure } from "../service";
 import type { ProveOptions, MeasureOptions, MeasureResult } from "../service";
 import {
   loadPresenceState,
   computeStateStatus,
-  formatTimeRemaining,
 } from "../state/presenceState";
 import { requestHealthKitPermissions, isHealthKitAvailable } from "../health/healthkit";
 import type {
   PresenceState,
-  PresenceStateStatus,
   PresenceTransportPayload,
   PresenceMobileError,
 } from "../types/index";
@@ -42,12 +40,6 @@ export interface UsePresenceStateResult {
   phase: PresenceHookPhase;
   state: PresenceState | null;
   error: PresenceMobileError | null;
-  /** Raw scheduler/debug status. Product UI should usually collapse this into PASS / FAIL. */
-  stateStatus: PresenceStateStatus | null;
-  /** Scheduling/debug metadata, not primary product copy. */
-  timeRemaining: string | null;
-  /** Scheduler hint for background work, not primary product copy. */
-  needsRenewal: boolean;
   /** Read 72h health data and update local PASS/FAIL state */
   measure: (options?: MeasureOptions) => Promise<MeasureResult | null>;
   /** Call with service nonce or full prove options to generate proof */
@@ -66,7 +58,6 @@ export function usePresenceState(): UsePresenceStateResult {
   const [phase, setPhase] = useState<PresenceHookPhase>("loading");
   const [state, setState] = useState<PresenceState | null>(null);
   const [error, setError] = useState<PresenceMobileError | null>(null);
-  const [clockTick, setClockTick] = useState(0);
 
   const phaseFromState = useCallback(
     (nextState: PresenceState | null, fallback: PresenceHookPhase = "uninitialized"): PresenceHookPhase => {
@@ -104,7 +95,6 @@ export function usePresenceState(): UsePresenceStateResult {
     }
 
     const syncPhase = () => {
-      setClockTick((tick) => tick + 1);
       setPhase((current) => {
         if (current === "loading" || current === "measuring" || current === "proving" || current === "error") {
           return current;
@@ -215,21 +205,10 @@ export function usePresenceState(): UsePresenceStateResult {
     return result.value.payload;
   }, [phaseFromState]);
 
-  // ── Derived values ────────────────────────────────────────────────────────
-  const stateStatus = state ? computeStateStatus(state) : null;
-  const timeRemaining = useMemo(() => {
-    void clockTick;
-    return state ? formatTimeRemaining(state) : null;
-  }, [state, clockTick]);
-  const needsRenewal = stateStatus === "needs_renewal";
-
   return {
     phase,
     state,
     error,
-    stateStatus,
-    timeRemaining,
-    needsRenewal,
     measure: runMeasure,
     prove: runProve,
     refresh,

@@ -56,7 +56,7 @@ npm install
 
 Use it when you need to:
 - create account link sessions
-- verify fresh proofs for already-linked accounts
+- verify PASS proofs for already-linked accounts
 - persist binding/device state
 - compute server-side readiness for access decisions
 - expose a practical backend API surface for mobile + service integration
@@ -127,7 +127,7 @@ if (linkResult.verification.verified) {
 
 Presence works as a split system:
 
-- **Presence app** measures health signals and produces fresh proof material
+- **Presence app** measures health signals and produces proof material
 - **presence-verifier** verifies proof correctness
 - **presence-sdk** manages linkage, readiness, audit, and persistence on the backend
 - **your service backend** uses the SDK's outputs as authoritative account state
@@ -175,7 +175,7 @@ Verifies the mobile payload using the session nonce and persists linked entities
 
 ### `verifyLinkedAccount(body, { serviceId?, accountId, nonce })`
 
-Verifies a fresh proof against an already-linked account.
+Verifies a PASS proof against an already-linked account.
 
 Possible outcomes:
 - success with updated snapshot
@@ -188,13 +188,13 @@ Returns the service-side linked account readiness decision that should gate acce
 
 Recommended usage:
 - treat `ready: true` as the only pass condition
-- treat `state: "stale"` as an expired-but-still-grace-period snapshot
-- treat `state: "not_ready"` as a snapshot where no usable fresh PASS remains after grace
+- treat `state: "stale"` as a recently verified PASS that fell out of the ordinary ready state but may still be covered by a short service grace policy
+- treat `state: "not_ready"` as a state where no backend-accepted PASS is currently available
 - treat `state: "recovery_pending"` as an explicit mismatch/recovery condition that should block access until resolved
 
 Important clarification:
 - a linked binding existing is **not** the same thing as the account being currently ready
-- the linked account becomes ready only when the backend has a sufficiently fresh verified PASS snapshot
+- the linked account becomes ready only when the backend has a verified PASS snapshot that satisfies current policy
 - if app-local state and backend readiness disagree, backend readiness should win
 
 ### `unlinkAccount({ serviceId?, accountId, reason? })`
@@ -306,9 +306,9 @@ Minimal reference model in this phase:
    - optional `nonce_url`, `verify_url`
 5. If the deeplink/session includes sync URLs like `nonce_url` or `verify_url`, mobile should validate them against `https://{service_domain}/.well-known/presence.json` before proof submission.
 6. Mobile produces proof and posts to `session.completion.completionApiUrl` or the standardized completion endpoint.
-7. After the first link, mobile can optionally catch up linked proof state in background by calling:
-   - `linkedNonceApiUrl` to mint a fresh nonce
-   - `verifyLinkedAccountApiUrl` to submit a fresh PASS proof
+7. After the first link, mobile can optionally catch up linked account state in background by calling:
+   - `linkedNonceApiUrl` to mint a nonce
+   - `verifyLinkedAccountApiUrl` to submit PASS proof
 7. Mobile persists failed PASS verify attempts locally and retries them on foreground/background wake.
 8. Service calls `completeLinkSession()`, `verifyLinkedAccount()`, or `getLinkedAccountReadiness()` and returns a normalized linked/recovery/readiness payload.
 
@@ -328,9 +328,9 @@ That means a Presence integration should be designed around:
 - strong foreground correctness
 - strong foreground-resume recovery
 - best-effort background catch-up where platform conditions allow it
-- explicit backend freshness checks
+- explicit backend readiness checks
 
-Do not assume that a background-capable mobile app implies guaranteed periodic proof refresh at exact deadlines.
+Do not assume that a background-capable mobile app will keep PASS ready on a fixed schedule without a user request or foreground recovery.
 
 ---
 
@@ -342,7 +342,7 @@ Do not assume that a background-capable mobile app implies guaranteed periodic p
 - [ ] Always send explicit top-level `platform`
 - [ ] Set `iosAppId` and/or `androidPackageName`
 - [ ] Complete platform attestation integration in `presence-verifier`
-- [ ] Enforce `getLinkedAccountReadiness()` or equivalent freshness gating before granting access
+- [ ] Enforce `getLinkedAccountReadiness()` or equivalent readiness gating before granting access
 - [ ] Add user-facing notification UX around revoke / relink
 
 ---
@@ -370,6 +370,6 @@ ost-only
 - [ ] `https://{service_domain}/.well-known/presence.json` is publicly reachable over HTTPS
 - [ ] `service_id` in the well-known JSON matches the link session `service_id`
 - [ ] `allowed_url_prefixes` actually covers emitted `nonce_url` and `verify_url`
-- [ ] well-known responses use cache headers that won't pin stale metadata during rollout/debugging
+- [ ] well-known responses use cache headers that won't pin outdated metadata during rollout/debugging
 
 ---

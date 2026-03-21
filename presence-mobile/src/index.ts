@@ -10,11 +10,7 @@ export {
   loadPresenceState,
   savePresenceState,
   clearPresenceState,
-  computeStateStatus,
   isStateUsable,
-  shouldRenew,
-  formatTimeRemaining,
-  secondsUntilNextMeasurement,
   updatePresenceSnapshot,
   addOrUpdateServiceBinding,
   attachLinkSession,
@@ -35,7 +31,6 @@ export { evaluatePass } from "./health/pass";
 export { ensureDeviceKey, deleteDeviceKey, deriveIss } from "./crypto/index";
 export { usePresenceState } from "./ui/usePresenceState";
 export type { UsePresenceStateResult, PresenceHookPhase } from "./ui/usePresenceState";
-export { usePresenceRenewal } from "./ui/usePresenceRenewal";
 export {
   isBackgroundRefreshSupported,
   scheduleBackgroundRefresh,
@@ -57,7 +52,6 @@ export type {
   PresenceAttestation,
   PresenceSignal,
   PresenceState,
-  PresenceStateStatus,
   LinkedDevice,
   LinkSession,
   ServiceBinding,

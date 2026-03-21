@@ -63,7 +63,7 @@ presence-mobile/src/
 2. Mobile app enters one of four flows: `initial_link`, `reauth`, `relink`, or `recovery`.
 3. Device evaluates PASS, produces fresh App Attest evidence, and returns proof.
 4. On the first successful verification, the service stores the binding and the connection becomes active until revoked/unlinked.
-5. Later auth checks reuse that binding, and the device produces a **fresh proof** only when the service asks.
+5. Later auth checks reuse that binding, and the device submits PASS only when the service asks.
 6. If the service detects a mismatch, local state can be marked `recovery_pending` until relink completes.
 
 ---
@@ -201,8 +201,8 @@ Raw sample duration may still be preserved as source metadata, but it no longer 
 Background work is still best-effort, but it is no longer the product centerpiece.
 The test app includes an iOS `BGTaskScheduler` scaffold, but the reusable mobile package is not yet a production-hardened background runtime.
 Failed linked PASS verify attempts may be retried on the next foreground or background wake when the app has enough context to do so.
-A linked account stays linked even when a specific PASS snapshot expires.
-The main user-facing model is still: stay linked, then submit fresh proof when a service asks.
+A linked account stays linked even when the last PASS is no longer accepted by the service; the service simply asks for another PASS when needed.
+The main user-facing model is still: stay linked, then submit PASS when a service asks.
 
 Important public expectation-setting:
 - foreground and foreground-resume flows can be made highly reliable

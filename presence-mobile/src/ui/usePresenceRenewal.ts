@@ -19,6 +19,7 @@
 import { useEffect, useRef, useCallback } from "react";
 import { AppState, AppStateStatus } from "react-native";
 import {
+  computeStateStatus,
   secondsUntilNextMeasurement,
   shouldRenew,
 } from "../state/presenceState";
@@ -87,11 +88,12 @@ export function usePresenceRenewal(
 
     const currentPresence = presenceRef.current;
     if (!currentPresence.state) return;
+    const currentStatus = computeStateStatus(currentPresence.state);
 
     // Keep retrying while a scheduled check is due or verify work is queued
     // instead of relying on a single boundary timer.
     const hasPendingSyncJobs = await hasPendingLinkedBindingSyncJobs();
-    const secondsUntil = currentPresence.stateStatus === "expired"
+    const secondsUntil = currentStatus === "expired"
       || shouldRenew(currentPresence.state)
       || hasPendingSyncJobs
       ? SCHEDULE_RETRY_SECONDS
@@ -117,8 +119,9 @@ export function usePresenceRenewal(
       return;
     }
 
+    const currentStatus = currentPresence.state ? computeStateStatus(currentPresence.state) : null;
     const needsMeasurementSync = !!currentPresence.state
-      && (shouldRenew(currentPresence.state) || currentPresence.stateStatus === "expired");
+      && (shouldRenew(currentPresence.state) || currentStatus === "expired");
     const initialPendingSyncs = await hasPendingLinkedBindingSyncJobs();
 
     if (!needsMeasurementSync && !initialPendingSyncs) {

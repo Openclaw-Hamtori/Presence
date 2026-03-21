@@ -19,6 +19,7 @@
 import { useEffect, useRef, useCallback } from "react";
 import { AppState, AppStateStatus } from "react-native";
 import {
+  computeStateStatus,
   hasSyncableServiceBindings,
   secondsUntilNextMeasurement,
   shouldRenew,
@@ -92,12 +93,13 @@ export function usePresenceRenewal(
 
     const currentPresence = presenceRef.current;
     if (!currentPresence.state) return;
+    const currentStatus = computeStateStatus(currentPresence.state);
 
     const hasPendingSyncJobs = await hasPendingLinkedBindingSyncJobs();
-    const canRetryExpiredSync = currentPresence.stateStatus === "expired"
+    const canRetryExpiredSync = currentStatus === "expired"
       && hasSyncableServiceBindings(currentPresence.state.serviceBindings);
 
-    if (currentPresence.stateStatus === "expired" && !canRetryExpiredSync && !hasPendingSyncJobs) {
+    if (currentStatus === "expired" && !canRetryExpiredSync && !hasPendingSyncJobs) {
       return;
     }
 
@@ -125,8 +127,9 @@ export function usePresenceRenewal(
       return;
     }
 
+    const currentStatus = currentPresence.state ? computeStateStatus(currentPresence.state) : null;
     const canRetryExpiredSync = !!currentPresence.state
-      && currentPresence.stateStatus === "expired"
+      && currentStatus === "expired"
       && hasSyncableServiceBindings(currentPresence.state.serviceBindings);
     const needsMeasurementSync = !!currentPresence.state
       && (shouldRenew(currentPresence.state) || canRetryExpiredSync);

@@ -11,7 +11,7 @@ You need three moving parts:
 1. **Presence mobile app**
    - reads on-device health signals
    - evaluates PASS / FAIL locally
-   - produces fresh proof material
+   - produces proof material
 
 2. **presence-sdk** on your backend
    - creates link sessions
@@ -36,7 +36,7 @@ A Presence integration is not:
 It is a linked identity system with **on-demand proof submission**.
 
 The service should trust:
-- fresh verified proofs
+- verified PASS proofs
 - stored linkage state
 - server readiness
 
@@ -82,13 +82,13 @@ Recommended rule:
 
 ## Minimal proof-on-demand flow
 
-After linking, the service can request a fresh proof whenever a human check is needed.
+After linking, the service can request proof whenever a human check is needed.
 
 Typical path:
 1. backend decides a proof is required for an action or session
 2. backend issues linked-account nonce
 3. app is opened via deeplink / QR / explicit action
-4. app generates a fresh proof
+4. app generates proof
 5. app submits proof to verify endpoint
 6. backend verifies and updates authoritative snapshot
 7. service allows or denies the gated action based on the result
@@ -122,7 +122,7 @@ At minimum, store:
 This is what lets the service answer:
 - is this account linked?
 - is it ready right now?
-- when was it last freshly verified?
+- when did the service last verify PASS for it?
 
 ---
 
@@ -132,7 +132,7 @@ Treat backend readiness as the authority.
 
 Examples:
 - `ready` -> allow
-- `stale` -> expired or grace-period handling, depending on product policy
+- `stale` -> outside the ordinary ready state; product policy may still apply a short grace rule
 - `not_ready` -> block
 - `missing_binding` -> block / relink
 - recovery-related states -> block until recovery completes

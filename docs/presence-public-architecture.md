@@ -31,7 +31,7 @@ The simplest current product description is:
 The app is responsible for:
 - reading health data on device
 - evaluating PASS / FAIL locally
-- generating fresh proof material
+- generating proof material
 - calling service sync endpoints for linked accounts
 - maintaining local UX state
 
@@ -81,7 +81,7 @@ If app-local state and server state disagree, the server wins.
 
 Presence must distinguish between:
 - a mobile UI saying “PASS”
-- a server having a fresh verified PASS snapshot for a linked account
+- a server having a verified PASS snapshot for a linked account that still satisfies backend policy
 
 Those are not the same thing.
 
@@ -114,7 +114,7 @@ Recommended rule:
 
 1. A linked service decides a human check is required
 2. Service issues a nonce for the linked account
-3. App opens the request and creates a fresh proof
+3. App opens the request and creates proof
 4. App submits proof to the verify endpoint
 5. Backend verifies and updates the latest snapshot
 6. Service allows or denies the action based on authoritative readiness
@@ -124,8 +124,8 @@ Recommended rule:
 1. A service/backend can unlink a linked account binding
 2. The backend marks that binding as `unlinked` and records an audit event
 3. Backend readiness for that account is no longer `ready`
-4. Once the app performs authoritative hydration again, stale local service cards should disappear rather than surviving as cached linked entries
-5. A future connection should create a new linked binding and restore readiness through a fresh proof
+4. Once the app performs authoritative hydration again, outdated local service cards should disappear rather than surviving as cached linked entries
+5. A future connection should create a new linked binding and restore readiness through proof submission
 
 ---
 
@@ -142,7 +142,7 @@ The actual shape is:
 So the service trusts:
 - verified proof
 - linked binding/device state
-- server-side freshness logic
+- server-side readiness logic
 
 not merely the client UI state.
 
@@ -161,7 +161,7 @@ Typical states include:
 
 Important distinction:
 - **binding exists** does not automatically mean **account is currently ready**
-- readiness depends on the latest verified snapshot and its freshness
+- readiness depends on the latest verified PASS snapshot and current backend policy
 
 ---
 
@@ -214,7 +214,7 @@ If you are integrating Presence into a service, the practical rule is:
 
 A precise public description is:
 
-> Presence is a linked proof system where the mobile app produces fresh health-derived proofs, the verifier checks them, and the service backend stores authoritative readiness state for linked accounts.
+> Presence is a linked proof system where the mobile app produces health-derived proofs, the verifier checks them, and the service backend stores authoritative readiness state for linked accounts.
 
 That is much more accurate than saying:
 - “the app itself decides access”
