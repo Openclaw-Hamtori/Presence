@@ -31,6 +31,7 @@ import type {
   BindingMutationResult,
   LinkageAuditEvent,
   LinkageStore,
+  ServiceBinding,
 } from "./types.js";
 import {
   InMemoryLinkageStore,
@@ -237,6 +238,26 @@ export class PresenceClient {
 
   async createRelinkSession(options: CreateLinkSessionOptions): Promise<CreateLinkSessionResult> {
     return this.createLinkSession({ ...options, relinkOfBindingId: options.relinkOfBindingId });
+  }
+
+  async createLinkedProofRequest(params: {
+    serviceId?: string;
+    accountId: string;
+  }): Promise<{ binding: ServiceBinding; nonce: GeneratedNonce } | null> {
+    const serviceId = params.serviceId ?? this.config.serviceId;
+    if (!serviceId) {
+      throw new Error("serviceId required for createLinkedProofRequest");
+    }
+
+    const binding = await this.linkageStore.getServiceBinding(serviceId, params.accountId);
+    if (!binding || binding.status !== "linked") {
+      return null;
+    }
+
+    return {
+      binding,
+      nonce: this.generateNonce(),
+    };
   }
 
   async completeLinkSession(params: { sessionId: string; body: unknown }): Promise<CompleteLinkSessionResult> {

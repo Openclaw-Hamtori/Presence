@@ -1,7 +1,7 @@
 /**
- * presence-mobile — usePresenceRenewal Hook
+ * presence-mobile — usePresenceBackgroundSync Hook
  *
- * Schedules background Presence measurement / sync.
+ * Schedules best-effort background Presence measurement / linked proof catch-up.
  *
  * Strategy:
  *   - On app foreground: check if state needs a scheduled measurement
@@ -13,7 +13,7 @@
  *
  * Usage:
  *   const presence = usePresenceState();
- *   usePresenceRenewal(presence, runScheduledSync);  // mount once at app root
+ *   usePresenceBackgroundSync(presence, runScheduledSync);  // mount once at app root
  */
 
 import { useEffect, useRef, useCallback } from "react";
@@ -64,7 +64,7 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
-export function usePresenceRenewal(
+export function usePresenceBackgroundSync(
   presence: UsePresenceStateResult,
   runScheduledTask: ScheduledTask
 ): void {
@@ -230,3 +230,5 @@ export function usePresenceRenewal(
     return clearTimer;
   }, [presence.state?.stateValidUntil, presence.state?.nextMeasurementAt, scheduleRenewal, clearTimer, presence.state]);
 }
+
+export const usePresenceRenewal = usePresenceBackgroundSync;

@@ -12,9 +12,7 @@ import {
   savePresenceState,
   createPresenceState,
   updatePresenceSnapshot,
-  extendPresenceStateValidity,
   recordFailedMeasurement,
-  hasSyncableServiceBindings,
   markBindingForRecovery,
   markBindingLinked,
   unlinkServiceBinding,
@@ -60,7 +58,15 @@ export interface ProveOptions {
 
 export interface MeasureOptions {
   forceRefresh?: boolean;
+  /**
+   * Deprecated internal scheduler hint kept for compatibility.
+   * Presence no longer models renewal as a distinct product flow.
+   */
   renewalAttempt?: boolean;
+  /**
+   * Deprecated internal scheduler hint kept for compatibility.
+   * Presence no longer models renewal as a distinct product flow.
+   */
   persistRenewalLocally?: boolean;
 }
 
@@ -73,10 +79,6 @@ export interface MeasureResult {
   capturedAt: number;
   iss: string;
   publicKeyBase64: string;
-  renewalOf?: {
-    stateCreatedAt: number;
-    stateValidUntil: number;
-  };
 }
 
 export interface ProveResult {
@@ -86,11 +88,7 @@ export interface ProveResult {
 }
 
 export async function measure(options: MeasureOptions = {}): Promise<Result<MeasureResult>> {
-  const {
-    forceRefresh = false,
-    renewalAttempt = false,
-    persistRenewalLocally = renewalAttempt,
-  } = options;
+  const { forceRefresh = false } = options;
 
   if (isHealthKitAvailable()) {
     const permissionResult = await requestHealthKitPermissions();
@@ -112,31 +110,9 @@ export async function measure(options: MeasureOptions = {}): Promise<Result<Meas
   const capturedAt = Math.floor(Date.now() / 1000);
   let state = await loadPresenceState();
   const existingState = state && state.iss === iss ? state : null;
-  const hasValidExistingPass = !!existingState
-    && existingState.pass
-    && existingState.stateValidUntil > capturedAt;
-  const renewalOf = existingState && hasValidExistingPass && renewalAttempt && shouldRenew(existingState)
-    ? {
-        stateCreatedAt: existingState.stateCreatedAt,
-        stateValidUntil: existingState.stateValidUntil,
-      }
-    : undefined;
   let isNewState = false;
 
   if (!passResult.pass) {
-    if (existingState && renewalOf) {
-      return ok({
-        state: existingState,
-        isNewState: false,
-        pass: false,
-        signals: passResult.signals,
-        reason: passResult.reason,
-        capturedAt,
-        iss,
-        publicKeyBase64,
-      });
-    }
-
     if (existingState) {
       state = recordFailedMeasurement(existingState, {
         signals: passResult.signals,
@@ -158,20 +134,12 @@ export async function measure(options: MeasureOptions = {}): Promise<Result<Meas
     });
   }
 
-  const shouldGateOnRemoteVerify = !!existingState
-    && hasValidExistingPass
+  const shouldPreserveValidity = !!existingState
+    && existingState.pass
     && !forceRefresh
-    && hasSyncableServiceBindings(existingState.serviceBindings);
+    && !shouldRenew(existingState);
 
-  if (existingState && renewalOf && !shouldGateOnRemoteVerify && persistRenewalLocally) {
-    state = extendPresenceStateValidity(existingState, {
-      capturedAt,
-      signals: passResult.signals,
-      reason: passResult.reason,
-      source: "measurement",
-    });
-    isNewState = false;
-  } else if (existingState && hasValidExistingPass && !forceRefresh) {
+  if (existingState && shouldPreserveValidity) {
     state = updatePresenceSnapshot(existingState, {
       pass: true,
       signals: passResult.signals,
@@ -206,7 +174,6 @@ export async function measure(options: MeasureOptions = {}): Promise<Result<Meas
     capturedAt,
     iss,
     publicKeyBase64,
-    renewalOf,
   });
 }
 
@@ -260,14 +227,6 @@ export async function proveMeasured(measurement: MeasureResult, options: ProveOp
   }
 
   const isNewState = measurement.isNewState;
-  if (measurement.renewalOf) {
-    state = extendPresenceStateValidity(state, {
-      capturedAt: measurement.capturedAt,
-      signals: measurement.signals,
-      reason: measurement.reason,
-      source: "proof",
-    });
-  }
 
   const attestResult = await performAppAttest(nonce);
   if (!attestResult.ok) return attestResult;
@@ -333,11 +292,7 @@ export async function proveMeasured(measurement: MeasureResult, options: ProveOp
 }
 
 export async function prove(options: ProveOptions): Promise<Result<ProveResult>> {
-  const measured = await measure({
-    forceRefresh: options.forceRefresh,
-    renewalAttempt: true,
-    persistRenewalLocally: false,
-  });
+  const measured = await measure({ forceRefresh: options.forceRefresh });
   if (!measured.ok) return measured;
   if (!measured.value.pass) {
     return err("ERR_PASS_FALSE", measured.value.reason);

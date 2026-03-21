@@ -45,6 +45,8 @@ import type {
   PresenceAdminBindingsResponse,
   PresenceAuditEventsResponse,
   PresenceLinkedNonceResponse,
+  PresenceLinkedProofRequestDescriptor,
+  PresenceLinkedProofRequestResponse,
   PresenceLinkedAccountReadinessResponse,
 } from "./api.js";
 import type { RedisLikeClient } from "./redis.js";
@@ -159,6 +161,8 @@ export type {
   PresenceAdminBindingsResponse,
   PresenceAuditEventsResponse,
   PresenceLinkedNonceResponse,
+  PresenceLinkedProofRequestDescriptor,
+  PresenceLinkedProofRequestResponse,
   PresenceLinkedAccountReadinessResponse,
   RedisLikeClient,
 };

@@ -18,7 +18,7 @@ import {
   Linking,
 } from "react-native";
 import { usePresenceState } from "./src/ui/usePresenceState";
-import { usePresenceRenewal } from "./src/ui/usePresenceRenewal";
+import { usePresenceBackgroundSync } from "./src/ui/usePresenceRenewal";
 import {
   loadPresenceState,
   savePresenceState,
@@ -483,11 +483,7 @@ export default function App() {
   }, []);
 
   const runMeasurementAndSync = useCallback(async (source: "manual" | "scheduled") => {
-    const measurement = await presence.measure(
-      source === "scheduled"
-        ? { renewalAttempt: true }
-        : undefined
-    );
+    const measurement = await presence.measure();
     if (!measurement) {
       addLog(source === "scheduled" ? "❌ Scheduled measurement failed" : "❌ Measurement failed");
       return null;
@@ -542,7 +538,7 @@ export default function App() {
     return success;
   }, [addLog, runMeasurementAndSync]);
 
-  usePresenceRenewal(presence, runScheduledSync);
+  usePresenceBackgroundSync(presence, runScheduledSync);
 
   const hydratedBindingsForCurrentDevice = useMemo(() => {
     if (!currentDeviceIss || hydratedServiceBindings?.deviceIss !== currentDeviceIss) {
@@ -1017,12 +1013,6 @@ export default function App() {
               : null}
             <Image source={ORB_IMAGE} style={styles.heroImage} resizeMode="contain" />
           </TouchableOpacity>
-        </View>
-
-        <View style={styles.heroCopy}>
-          <Text style={styles.heroTitle}>{productState.heading}</Text>
-          <Text style={styles.heroBody}>{productState.detail}</Text>
-          <Text style={styles.heroHint}>{productState.action}</Text>
         </View>
 
         {(localError || presence.error) && (

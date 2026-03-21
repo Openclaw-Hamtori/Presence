@@ -39,7 +39,7 @@ export function PresenceStatusCard({ presence, fetchNonce }: PresenceStatusCardP
     && phase !== "recovery_pending";
   const statusLabel = hasPass ? "PASS" : "FAIL";
   const topRightText = phase === "proving"
-    ? "Submitting proof"
+    ? "Submitting PASS"
     : phase === "measuring"
       ? "Checking device"
       : hasPass
@@ -84,7 +84,7 @@ export function PresenceStatusCard({ presence, fetchNonce }: PresenceStatusCardP
             </Text>
             {phase !== "proving" && (
               <TouchableOpacity style={styles.primaryButton} onPress={handleSubmitProof}>
-                <Text style={styles.primaryButtonText}>Submit proof</Text>
+                <Text style={styles.primaryButtonText}>Submit PASS</Text>
               </TouchableOpacity>
             )}
           </>

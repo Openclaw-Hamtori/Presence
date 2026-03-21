@@ -144,15 +144,6 @@ export function usePresenceState(): UsePresenceStateResult {
     const result = await measure(options);
 
     if (!result.ok) {
-      const preserveCurrentPass = !!state
-        && options.renewalAttempt === true
-        && state.pass
-        && computeStateStatus(state) !== "expired";
-      if (preserveCurrentPass) {
-        setPhase(phaseFromState(state, "ready"));
-        return null;
-      }
-
       setError(result.error);
       setPhase("error");
       return null;
@@ -160,20 +151,15 @@ export function usePresenceState(): UsePresenceStateResult {
 
     const persisted = await loadPresenceState();
     const nextState = persisted ?? result.value.state;
-    const preserveExistingPass = !!nextState
-      && options.renewalAttempt === true
-      && !result.value.pass
-      && nextState.pass
-      && computeStateStatus(nextState) !== "expired";
 
     setState(nextState);
-    if (!result.value.pass && !preserveExistingPass) {
+    if (!result.value.pass) {
       setError(new PresenceMobileErrorClass("ERR_PASS_FALSE", result.value.reason));
     }
-    setPhase(phaseFromState(nextState, preserveExistingPass || result.value.pass ? "ready" : "not_ready"));
+    setPhase(phaseFromState(nextState, result.value.pass ? "ready" : "not_ready"));
 
     return { ...result.value, state: nextState };
-  }, [phaseFromState, state]);
+  }, [phaseFromState]);
 
   // ── Prove ─────────────────────────────────────────────────────────────────
   const runProve = useCallback(async (nonceOrOptions: string | ProveOptions): Promise<PresenceTransportPayload | null> => {

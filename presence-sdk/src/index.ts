@@ -28,6 +28,8 @@ export {
   createCompletionSuccessResponse,
   createAuditEventsResponse,
   createLinkedNonceResponse,
+  createLinkedProofRequestDescriptor,
+  createLinkedProofRequestResponse,
   createLinkedAccountReadinessResponse,
 } from "./api.js";
 
@@ -78,6 +80,8 @@ export type {
   PresenceAdminBindingsResponse,
   PresenceAuditEventsResponse,
   PresenceLinkedNonceResponse,
+  PresenceLinkedProofRequestDescriptor,
+  PresenceLinkedProofRequestResponse,
   PresenceLinkedAccountReadinessResponse,
   RedisLikeClient,
 } from "./types.js";

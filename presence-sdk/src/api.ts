@@ -93,6 +93,26 @@ export interface PresenceLinkedNonceResponse {
   expiresAt: number;
 }
 
+export interface PresenceLinkedProofRequestDescriptor {
+  flow: "reauth";
+  serviceId: string;
+  accountId: string;
+  bindingId: string;
+  nonce: string;
+  issuedAt: number;
+  expiresAt: number;
+  endpoints: {
+    verify: CompletionEndpointDescriptor;
+    status?: CompletionEndpointDescriptor;
+    unlink?: CompletionEndpointDescriptor;
+  };
+}
+
+export interface PresenceLinkedProofRequestResponse {
+  ok: true;
+  proofRequest: PresenceLinkedProofRequestDescriptor;
+}
+
 export interface PresenceLinkedAccountReadinessResponse {
   ok: true;
   readiness: LinkedAccountReadiness;
@@ -105,6 +125,11 @@ function completionEndpointPath(completion?: LinkCompletion, sessionId?: string)
 
 function completionStatusEndpointPath(completion?: LinkCompletion, sessionId?: string): string | undefined {
   return completion?.sessionStatusUrl ?? (sessionId ? `/presence/link-sessions/${encodeURIComponent(sessionId)}` : undefined);
+}
+
+function accountEndpointPath(path: string | undefined, accountId: string, fallback: string): string {
+  if (!path) return fallback;
+  return path.replace(/:accountId\b/g, encodeURIComponent(accountId));
 }
 
 export function createCompletionDescriptor(params: {
@@ -206,6 +231,67 @@ export function createLinkedNonceResponse(params: {
     nonce: params.value,
     issuedAt: params.issuedAt,
     expiresAt: params.expiresAt,
+  };
+}
+
+export function createLinkedProofRequestDescriptor(params: {
+  binding: ServiceBinding;
+  nonce: {
+    value: string;
+    issuedAt: number;
+    expiresAt: number;
+  };
+  contract: PresenceCompletionEndpointContract;
+}): PresenceLinkedProofRequestDescriptor {
+  const { binding, nonce, contract } = params;
+  const verifyPath = accountEndpointPath(
+    contract.verifyLinkedAccountPath,
+    binding.accountId,
+    `/presence/linked-accounts/${encodeURIComponent(binding.accountId)}/verify`
+  );
+  const statusPath = contract.linkedStatusPath
+    ? accountEndpointPath(
+        contract.linkedStatusPath,
+        binding.accountId,
+        `/presence/linked-accounts/${encodeURIComponent(binding.accountId)}/status`
+      )
+    : undefined;
+  const unlinkPath = contract.unlinkAccountPath
+    ? accountEndpointPath(
+        contract.unlinkAccountPath,
+        binding.accountId,
+        `/presence/linked-accounts/${encodeURIComponent(binding.accountId)}/unlink`
+      )
+    : undefined;
+
+  return {
+    flow: "reauth",
+    serviceId: binding.serviceId,
+    accountId: binding.accountId,
+    bindingId: binding.bindingId,
+    nonce: nonce.value,
+    issuedAt: nonce.issuedAt,
+    expiresAt: nonce.expiresAt,
+    endpoints: {
+      verify: { method: "POST", path: verifyPath },
+      status: statusPath ? { method: "GET", path: statusPath } : undefined,
+      unlink: unlinkPath ? { method: "POST", path: unlinkPath } : undefined,
+    },
+  };
+}
+
+export function createLinkedProofRequestResponse(params: {
+  binding: ServiceBinding;
+  nonce: {
+    value: string;
+    issuedAt: number;
+    expiresAt: number;
+  };
+  contract: PresenceCompletionEndpointContract;
+}): PresenceLinkedProofRequestResponse {
+  return {
+    ok: true,
+    proofRequest: createLinkedProofRequestDescriptor(params),
   };
 }
 

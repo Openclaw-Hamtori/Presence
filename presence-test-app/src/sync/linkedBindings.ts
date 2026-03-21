@@ -22,6 +22,15 @@ export interface LinkedBindingSyncError {
   message: string;
 }
 
+export type LinkedBindingProofSubmissionStatus = "verified" | "recovery_required" | "skipped";
+
+export interface LinkedBindingProofSubmissionResult {
+  bindingId: string;
+  status: LinkedBindingProofSubmissionStatus;
+  nonce?: string;
+  verifyResponse?: any;
+}
+
 export interface LinkedBindingSyncResult {
   attempted: number;
   verified: number;
@@ -68,8 +77,8 @@ export async function syncLinkedBindings(params: {
     try {
       result.diagnostics.push(`attempt:${binding.bindingId}:start`);
       const outcome = await executeBindingSync(binding, measured, state, result.diagnostics);
-      result.diagnostics.push(`attempt:${binding.bindingId}:${outcome}`);
-      applyOutcome(result, outcome);
+      result.diagnostics.push(`attempt:${binding.bindingId}:${outcome.status}`);
+      applyOutcome(result, outcome.status);
       await removeLinkedBindingSyncJob(binding.bindingId);
     } catch (error) {
       const message = toErrorMessage(error);
@@ -125,8 +134,8 @@ export async function flushQueuedLinkedBindingSyncs(params: {
     try {
       result.diagnostics.push(`attempt:${binding.bindingId}:queued`);
       const outcome = await executeBindingSync(binding, job.measurement, state, result.diagnostics);
-      result.diagnostics.push(`attempt:${binding.bindingId}:${outcome}`);
-      applyOutcome(result, outcome);
+      result.diagnostics.push(`attempt:${binding.bindingId}:${outcome.status}`);
+      applyOutcome(result, outcome.status);
       await removeLinkedBindingSyncJob(binding.bindingId);
     } catch (error) {
       const message = toErrorMessage(error);
@@ -147,6 +156,27 @@ export async function flushQueuedLinkedBindingSyncs(params: {
   return result;
 }
 
+export async function submitLinkedBindingProof(params: {
+  binding: ServiceBinding;
+  measurement?: MeasureResult | null;
+  nonce?: string;
+  state?: PresenceState | null;
+  diagnostics?: string[];
+}): Promise<LinkedBindingProofSubmissionResult> {
+  const measurement = await getMeasurement(params.measurement);
+  if (!measurement) {
+    throw new Error("measurement unavailable");
+  }
+
+  return executeBindingSync(
+    params.binding,
+    measurement,
+    params.state ?? measurement.state ?? (await loadPresenceState()),
+    params.diagnostics,
+    params.nonce
+  );
+}
+
 async function getMeasurement(measurement?: MeasureResult | null): Promise<MeasureResult | null> {
   if (measurement) return measurement;
   const result = await measure();
@@ -158,8 +188,9 @@ async function executeBindingSync(
   binding: ServiceBinding,
   measurement: MeasureResult,
   stateHint?: PresenceState | null,
-  diagnostics?: string[]
-): Promise<"verified" | "skipped"> {
+  diagnostics?: string[],
+  providedNonce?: string
+): Promise<LinkedBindingProofSubmissionResult> {
   const bindingWithSync = binding.sync ? binding : { ...binding, sync: stateHint?.serviceBindings.find((item) => item.bindingId === binding.bindingId)?.sync };
   pushBindingDiagnostic(
     diagnostics,
@@ -170,11 +201,14 @@ async function executeBindingSync(
 
   if (!measurement.pass) {
     pushBindingDiagnostic(diagnostics, bindingWithSync.bindingId, "skipped", "pass=false");
-    return "skipped";
+    return {
+      bindingId: bindingWithSync.bindingId,
+      status: "skipped",
+    };
   }
 
-  if (!bindingWithSync.sync?.nonceUrl || !bindingWithSync.sync?.verifyUrl) {
-    const error = new Error(`sync_endpoints_missing nonce=${!!bindingWithSync.sync?.nonceUrl} verify=${!!bindingWithSync.sync?.verifyUrl}`);
+  if (!bindingWithSync.sync?.verifyUrl || (!providedNonce && !bindingWithSync.sync?.nonceUrl)) {
+    const error = new Error(`sync_endpoints_missing nonce=${!!(providedNonce || bindingWithSync.sync?.nonceUrl)} verify=${!!bindingWithSync.sync?.verifyUrl}`);
     pushBindingDiagnostic(diagnostics, bindingWithSync.bindingId, "trust_error", error.message);
     throw error;
   }
@@ -194,20 +228,24 @@ async function executeBindingSync(
   }
   pushBindingDiagnostic(diagnostics, bindingWithSync.bindingId, "trust_validation_passed");
 
-  let nonce: string;
+  let resolvedNonce = providedNonce ?? "";
   try {
-    pushBindingDiagnostic(diagnostics, bindingWithSync.bindingId, "nonce_request", bindingWithSync.sync.nonceUrl);
-    const nonceResponse = await requestJson(bindingWithSync.sync.nonceUrl, {
-      method: "POST",
-      body: JSON.stringify({
-        bindingId: bindingWithSync.bindingId,
-        serviceId: bindingWithSync.serviceId,
-        accountId: bindingWithSync.accountId,
-      }),
-    });
-    nonce = extractNonce(nonceResponse) ?? "";
-    if (!nonce) {
-      throw new Error("nonce endpoint returned no nonce");
+    if (!resolvedNonce) {
+      pushBindingDiagnostic(diagnostics, bindingWithSync.bindingId, "nonce_request", bindingWithSync.sync.nonceUrl);
+      const nonceResponse = await requestJson(bindingWithSync.sync.nonceUrl!, {
+        method: "POST",
+        body: JSON.stringify({
+          bindingId: bindingWithSync.bindingId,
+          serviceId: bindingWithSync.serviceId,
+          accountId: bindingWithSync.accountId,
+        }),
+      });
+      resolvedNonce = extractNonce(nonceResponse) ?? "";
+      if (!resolvedNonce) {
+        throw new Error("nonce endpoint returned no nonce");
+      }
+    } else {
+      pushBindingDiagnostic(diagnostics, bindingWithSync.bindingId, "nonce_supplied");
     }
   } catch (error) {
     pushBindingDiagnostic(diagnostics, bindingWithSync.bindingId, "nonce_error", toErrorMessage(error));
@@ -216,7 +254,7 @@ async function executeBindingSync(
   pushBindingDiagnostic(diagnostics, bindingWithSync.bindingId, "nonce_received");
 
   const proof = await proveMeasured(measurement, {
-    nonce,
+    nonce: resolvedNonce,
     persistLocalState: false,
     bindingHint: {
       bindingId: bindingWithSync.bindingId,
@@ -234,7 +272,7 @@ async function executeBindingSync(
     pushBindingDiagnostic(diagnostics, bindingWithSync.bindingId, "verify_call", bindingWithSync.sync.verifyUrl);
     verifyResponse = await requestJson(bindingWithSync.sync.verifyUrl, {
       method: "POST",
-      headers: { "x-presence-nonce": nonce },
+      headers: { "x-presence-nonce": resolvedNonce },
       body: JSON.stringify(proof.value.payload),
     });
   } catch (error) {
@@ -248,7 +286,12 @@ async function executeBindingSync(
       verifyResponse.recovery?.reason ?? verifyResponse.message ?? "binding_mismatch"
     );
     pushBindingDiagnostic(diagnostics, bindingWithSync.bindingId, "verify_recovery_required");
-    return "verified";
+    return {
+      bindingId: bindingWithSync.bindingId,
+      status: "recovery_required",
+      nonce: resolvedNonce,
+      verifyResponse,
+    };
   }
 
   if (!verifyResponse || verifyResponse.ok !== true) {
@@ -260,7 +303,12 @@ async function executeBindingSync(
   await savePresenceState(proof.value.state);
   await markBindingVerified(bindingWithSync.bindingId);
   pushBindingDiagnostic(diagnostics, bindingWithSync.bindingId, "verify_ok");
-  return "verified";
+  return {
+    bindingId: bindingWithSync.bindingId,
+    status: "verified",
+    nonce: resolvedNonce,
+    verifyResponse,
+  };
 }
 
 function pushBindingDiagnostic(
@@ -274,9 +322,9 @@ function pushBindingDiagnostic(
 
 function applyOutcome(
   result: LinkedBindingSyncResult,
-  outcome: "verified" | "skipped"
+  outcome: LinkedBindingProofSubmissionStatus
 ): void {
-  if (outcome === "verified") {
+  if (outcome === "verified" || outcome === "recovery_required") {
     result.verified += 1;
     return;
   }
@@ -423,6 +471,8 @@ function extractNonce(payload: any): string | null {
   if (!payload || typeof payload !== "object") return null;
   if (typeof payload.nonce === "string") return payload.nonce;
   if (typeof payload.value === "string") return payload.value;
+  if (payload.proofRequest && typeof payload.proofRequest.nonce === "string") return payload.proofRequest.nonce;
+  if (payload.request && typeof payload.request.nonce === "string") return payload.request.nonce;
   if (payload.nonce && typeof payload.nonce.value === "string") return payload.nonce.value;
   return null;
 }

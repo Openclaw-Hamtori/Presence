@@ -35,6 +35,7 @@ export { ensureDeviceKey, deleteDeviceKey, deriveIss } from "./crypto/index";
 // ─── UI ───────────────────────────────────────────────────────────────────────
 export { usePresenceState } from "./ui/usePresenceState";
 export type { UsePresenceStateResult, PresenceHookPhase } from "./ui/usePresenceState";
+export { usePresenceBackgroundSync, usePresenceRenewal } from "./ui/usePresenceRenewal";
 export {
   isBackgroundRefreshSupported,
   scheduleBackgroundRefresh,
@@ -47,9 +48,14 @@ export type { BackgroundRefreshDiagnostics } from "./backgroundRefresh";
 export { OnboardingScreen } from "./ui/screens/OnboardingScreen";
 export { PresenceStatusCard } from "./ui/components/PresenceStatusCard";
 export { isQrScannerSupported, scanQrCode } from "./qrScanner";
-export { syncLinkedBindings, flushQueuedLinkedBindingSyncs } from "./sync/linkedBindings";
+export { syncLinkedBindings, flushQueuedLinkedBindingSyncs, submitLinkedBindingProof } from "./sync/linkedBindings";
 export { hasPendingLinkedBindingSyncJobs, clearLinkedBindingSyncQueue } from "./sync/queue";
-export type { LinkedBindingSyncError, LinkedBindingSyncResult } from "./sync/linkedBindings";
+export type {
+  LinkedBindingSyncError,
+  LinkedBindingSyncResult,
+  LinkedBindingProofSubmissionStatus,
+  LinkedBindingProofSubmissionResult,
+} from "./sync/linkedBindings";
 export type { LinkedBindingSyncJob, LinkedBindingSyncJobKind } from "./sync/queue";
 
 // ─── Types ────────────────────────────────────────────────────────────────────

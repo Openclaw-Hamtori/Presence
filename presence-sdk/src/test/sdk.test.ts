@@ -14,7 +14,7 @@ import {
   InMemoryNonceStore,
 } from "presence-verifier";
 import { PresenceClient } from "../client.js";
-import { createCompletionSessionResponse, createRecoveryResponse } from "../api.js";
+import { createCompletionSessionResponse, createLinkedProofRequestResponse, createRecoveryResponse } from "../api.js";
 import { InMemoryLinkageStore, FileSystemLinkageStore, LinkageStoreCorruptionError, fileLinkageStorePath } from "../linkage.js";
 import { parsePresenceRequest, ParseError } from "../transport.js";
 import { createNonce, generateNonce } from "../nonce.js";
@@ -257,6 +257,50 @@ function buildAndroidBody(
 
     assert.equal(response.completion.endpoints.complete.path, `/custom/sessions/${session.id}/complete`);
     assert.equal(response.completion.endpoints.status?.path, `/custom/sessions/${session.id}`);
+  });
+
+  await test("createLinkedProofRequest() returns active binding + nonce and formats proof-request response", async () => {
+    const store = new InMemoryLinkageStore();
+    const client = new PresenceClient({ silent: true, linkageStore: store, serviceId: "svc" });
+    const now = Math.floor(Date.now() / 1000);
+    await store.saveServiceBinding({
+      bindingId: "pbind_proof",
+      serviceId: "svc",
+      accountId: "acct-proof",
+      deviceIss: "presence:device:proof",
+      createdAt: now,
+      updatedAt: now,
+      status: "linked",
+      lastLinkedAt: now,
+      lastVerifiedAt: now,
+      lastAttestedAt: now,
+    });
+
+    const request = await client.createLinkedProofRequest({ accountId: "acct-proof" });
+    assert.ok(request);
+    if (!request) {
+      throw new Error("expected linked proof request");
+    }
+
+    const response = createLinkedProofRequestResponse({
+      binding: request.binding,
+      nonce: request.nonce,
+      contract: {
+        createSessionPath: "/presence/link-sessions",
+        completeSessionPath: "/presence/link-sessions/:sessionId/complete",
+        linkedNoncePath: "/presence/linked-accounts/:accountId/nonce",
+        verifyLinkedAccountPath: "/presence/linked-accounts/:accountId/verify",
+        linkedStatusPath: "/presence/linked-accounts/:accountId/status",
+        unlinkAccountPath: "/presence/linked-accounts/:accountId/unlink",
+      },
+    });
+
+    assert.equal(response.proofRequest.flow, "reauth");
+    assert.equal(response.proofRequest.bindingId, "pbind_proof");
+    assert.equal(response.proofRequest.nonce, request.nonce.value);
+    assert.equal(response.proofRequest.endpoints.verify.path, "/presence/linked-accounts/acct-proof/verify");
+    assert.equal(response.proofRequest.endpoints.status?.path, "/presence/linked-accounts/acct-proof/status");
+    assert.equal(response.proofRequest.endpoints.unlink?.path, "/presence/linked-accounts/acct-proof/unlink");
   });
 
   await test("completeLinkSession() persists Android platform metadata from parsed request", async () => {
