@@ -204,6 +204,17 @@ Failed linked PASS verify attempts may be retried on the next foreground or back
 A linked account stays linked even when a specific PASS snapshot expires.
 The next successful auth still requires fresh PASS state + fresh attestation.
 
+Important public expectation-setting:
+- foreground and foreground-resume flows can be made highly reliable
+- background renewal may succeed opportunistically
+- exact periodic execution is not guaranteed by iOS
+- force-quit survival should not be treated as guaranteed behavior
+
+So product design should prefer:
+- strong resume recovery
+- explicit backend freshness checks
+- honest background-lifecycle documentation
+
 ---
 
 ## Installation

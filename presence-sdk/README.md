@@ -8,6 +8,8 @@ Wraps `presence-verifier` with:
 - service policy wiring
 - persistent linkage lifecycle for linked Presence accounts
 - unlink / revoke / relink / recovery primitives
+- readiness decisions for linked accounts
+- audit trail and persistence adapters for server-side authoritative truth
 - reference pluggable stores, including a filesystem-backed example
 
 Based on:
@@ -45,6 +47,30 @@ Still intentionally out of scope:
 ```bash
 npm install
 ```
+
+---
+
+## What this package is for
+
+`presence-sdk` is the **service/backend integration layer** for Presence.
+
+Use it when you need to:
+- create account link sessions
+- verify fresh proofs for already-linked accounts
+- persist binding/device state
+- compute server-side readiness for access decisions
+- expose a practical backend API surface for mobile + service integration
+
+Do **not** think of it as a stand-alone verifier or a mobile client package.
+Its role is to sit between:
+- the Presence app that produces proofs
+- the verifier that validates them
+- the service backend that stores authoritative truth
+
+If you are trying to understand the full product split, also read:
+- `../docs/presence-public-architecture.md`
+- `../presence-mobile/README.md`
+- `../presence-verifier/README.md`
 
 ---
 
@@ -94,6 +120,20 @@ if (linkResult.verification.verified) {
   });
 }
 ```
+
+---
+
+## Public integration model
+
+Presence works as a split system:
+
+- **Presence app** measures health signals and produces fresh proof material
+- **presence-verifier** verifies proof correctness
+- **presence-sdk** manages linkage, readiness, audit, and persistence on the backend
+- **your service backend** uses the SDK's outputs as authoritative account state
+
+That means the final service decision should not be based on app-local UI alone.
+The recommended authority is the backend state maintained through `presence-sdk`.
 
 ---
 
@@ -152,6 +192,11 @@ Recommended usage:
 - treat `state: "not_ready"` as a snapshot where no usable fresh PASS remains after grace
 - treat `state: "recovery_pending"` as an explicit mismatch/recovery condition that should block access until resolved
 
+Important clarification:
+- a linked binding existing is **not** the same thing as the account being currently ready
+- the linked account becomes ready only when the backend has a sufficiently fresh verified PASS snapshot
+- if app-local state and backend readiness disagree, backend readiness should win
+
 ### `unlinkAccount({ serviceId?, accountId, reason? })`
 
 Marks the binding as `unlinked` and records an audit event.
@@ -189,6 +234,17 @@ Included adapters:
 
 `FileSystemLinkageStore` is not meant as a final production DB, but it demonstrates the persistence contract and recovery/audit shapes without staying in-memory.
 `RedisLinkageStore` is still intentionally simple, but it shows how Presence linkage can move to a real multi-instance backend without tying the SDK to one Redis package.
+
+### Current filesystem-store guarantees
+
+The filesystem-backed store now explicitly aims to protect **authoritative server truth** better than a naive JSON file write path.
+It now:
+- rejects corrupted JSON rather than silently treating it as an empty store
+- writes through a temp file + sync + rename path
+- serializes mutations per store path
+- keeps `mutate()` operations within one staged persistence boundary
+
+That makes it much safer as a reference store than a simple read/modify/write example, but it is still a file-backed reference adapter rather than a final production database.
 
 ---
 
@@ -257,6 +313,24 @@ Minimal reference model in this phase:
 8. Service calls `completeLinkSession()`, `verifyLinkedAccount()`, or `getLinkedAccountReadiness()` and returns a normalized linked/recovery/readiness payload.
 
 This is enough to wire real product UX without building scanner/native camera stack yet.
+
+---
+
+## Background / lifecycle expectations
+
+For service integrators, one subtle but important point is that the mobile app and backend play different roles.
+
+- The app can measure, prove, and attempt sync.
+- The backend decides whether a linked account is currently ready.
+- Background execution behavior on iOS is best-effort, not an unconditional guarantee.
+
+That means a Presence integration should be designed around:
+- strong foreground correctness
+- strong foreground-resume recovery
+- best-effort background renewal where platform conditions allow it
+- explicit backend freshness checks
+
+Do not assume that a background-capable mobile app implies guaranteed periodic renewal at exact deadlines.
 
 ---
 

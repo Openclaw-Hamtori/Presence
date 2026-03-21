@@ -2,6 +2,15 @@
 
 Reference React Native test surface for the Presence mobile flow.
 
+This app is primarily for:
+- integration testing
+- product-flow validation
+- QR/deeplink linking UX checks
+- renewal and server-sync debugging
+
+It should not be described as the whole Presence product by itself.
+It is a reference/testing surface around the broader Presence architecture.
+
 ## What changed in this phase
 
 The app now demonstrates a realistic connection UX:
