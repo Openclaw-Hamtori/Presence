@@ -164,17 +164,43 @@ async function fetchJson<T>(url: string): Promise<T> {
 function mergeServiceBindings(bindings: ServiceBinding[]): ServiceBinding[] {
   const byKey = new Map<string, ServiceBinding>();
 
+  const mergePair = (current: ServiceBinding, incoming: ServiceBinding): ServiceBinding => {
+    const currentTime = current.lastVerifiedAt ?? current.linkedAt ?? 0;
+    const incomingTime = incoming.lastVerifiedAt ?? incoming.linkedAt ?? 0;
+    const newerWins = incomingTime >= currentTime;
+    const preferred = newerWins ? { ...current, ...incoming } : { ...incoming, ...current };
+
+    const currentLooksLocal = current.bindingId.startsWith("local_");
+    const incomingLooksLocal = incoming.bindingId.startsWith("local_");
+    if (currentLooksLocal && !incomingLooksLocal) {
+      preferred.bindingId = incoming.bindingId;
+    } else if (!currentLooksLocal && incomingLooksLocal) {
+      preferred.bindingId = current.bindingId;
+    }
+
+    return preferred;
+  };
+
+  const logicalKeyOf = (binding: ServiceBinding) => `${binding.linkedDeviceIss}:${binding.serviceId}:${binding.accountId ?? "-"}`;
+
   for (const binding of bindings) {
-    const key = binding.bindingId || `${binding.serviceId}:${binding.accountId ?? "-"}`;
-    const existing = byKey.get(key);
-    if (!existing) {
-      byKey.set(key, binding);
+    const logicalKey = logicalKeyOf(binding);
+    const existingLogical = byKey.get(logicalKey);
+    if (existingLogical) {
+      byKey.set(logicalKey, mergePair(existingLogical, binding));
       continue;
     }
 
-    const existingTime = existing.lastVerifiedAt ?? existing.linkedAt ?? 0;
-    const incomingTime = binding.lastVerifiedAt ?? binding.linkedAt ?? 0;
-    byKey.set(key, incomingTime >= existingTime ? { ...existing, ...binding } : { ...binding, ...existing });
+    const idKey = `id:${binding.bindingId}`;
+    const existingById = byKey.get(idKey);
+    if (existingById) {
+      const merged = mergePair(existingById, binding);
+      byKey.delete(idKey);
+      byKey.set(logicalKeyOf(merged), merged);
+      continue;
+    }
+
+    byKey.set(logicalKey, binding);
   }
 
   return [...byKey.values()];
