@@ -126,8 +126,8 @@ export function usePresenceRenewal(
     if (!needsMeasurementSync && !initialPendingSyncs) {
       if (source === "background") {
         await finishBackgroundRefresh(true);
-        await scheduleRenewal();
       }
+      await scheduleRenewal();
       return;
     }
 
