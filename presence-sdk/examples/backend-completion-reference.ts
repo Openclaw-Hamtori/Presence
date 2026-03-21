@@ -1,3 +1,8 @@
+/**
+ * Canonical backend handler layout for:
+ * link once -> stay linked -> request PASS when the service needs proof.
+ */
+
 import {
   PresenceClient,
   FileSystemLinkageStore,
@@ -90,23 +95,44 @@ export async function createLinkedProofRequestHandler(req: { params: { accountId
     accountId: req.params.accountId,
   });
 
-  if (!request.ok) {
-    return {
-      ok: false,
-      code: request.state === "missing_binding" ? "ERR_BINDING_NOT_FOUND" : "ERR_LINKED_PROOF_UNAVAILABLE",
-      message: request.reason,
-      state: request.state,
-      bindingId: request.binding?.bindingId,
-    };
+  if (request.ok) {
+    return createLinkedProofRequestResponse({
+      binding: request.binding,
+      nonce: request.nonce,
+      contract: endpointContract,
+    });
   }
 
-  return createLinkedProofRequestResponse({
-    binding: request.binding,
-    nonce: request.nonce,
-    contract: endpointContract,
-  });
+  switch (request.state) {
+    case "missing_binding":
+      return {
+        ok: false,
+        code: "ERR_BINDING_NOT_FOUND",
+        message: request.reason,
+        state: request.state,
+      };
+    case "unlinked":
+    case "revoked":
+    case "recovery_pending":
+      return {
+        ok: false,
+        code: "ERR_LINKED_PROOF_UNAVAILABLE",
+        message: request.reason,
+        state: request.state,
+        bindingId: request.binding?.bindingId,
+      };
+    default:
+      return {
+        ok: false,
+        code: "ERR_LINKED_PROOF_UNAVAILABLE",
+        message: request.reason,
+        state: request.state,
+        bindingId: request.binding?.bindingId,
+      };
+  }
 }
 
+// Compatibility alias for older examples that still refer to the endpoint as "issue nonce".
 export const issueLinkedNonceHandler = createLinkedProofRequestHandler;
 
 export async function getLinkedAccountStatusHandler(req: { params: { accountId: string } }) {

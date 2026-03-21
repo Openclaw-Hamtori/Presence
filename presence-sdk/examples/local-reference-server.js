@@ -195,30 +195,54 @@ async function main() {
         const request = await presence.createLinkedProofRequest({
           accountId: decodeURIComponent(linkedNonceMatch[1]),
         });
-        if (!request.ok) {
-          send(request.state === "missing_binding" ? 404 : 409, {
-            ok: false,
-            code: request.state === "missing_binding" ? "ERR_BINDING_NOT_FOUND" : "ERR_LINKED_PROOF_UNAVAILABLE",
-            message: request.reason,
-            state: request.state,
-            bindingId: request.binding?.bindingId,
+
+        if (request.ok) {
+          const response = createLinkedProofRequestResponse({
+            binding: request.binding,
+            nonce: request.nonce,
+            contract: endpointContract,
           });
+          response.proofRequest.endpoints.verify.path = absolutize(publicBaseUrl, response.proofRequest.endpoints.verify.path);
+          if (response.proofRequest.endpoints.status?.path) {
+            response.proofRequest.endpoints.status.path = absolutize(publicBaseUrl, response.proofRequest.endpoints.status.path);
+          }
+          if (response.proofRequest.endpoints.unlink?.path) {
+            response.proofRequest.endpoints.unlink.path = absolutize(publicBaseUrl, response.proofRequest.endpoints.unlink.path);
+          }
+          send(200, response);
           return;
         }
-        const response = createLinkedProofRequestResponse({
-          binding: request.binding,
-          nonce: request.nonce,
-          contract: endpointContract,
-        });
-        response.proofRequest.endpoints.verify.path = absolutize(publicBaseUrl, response.proofRequest.endpoints.verify.path);
-        if (response.proofRequest.endpoints.status?.path) {
-          response.proofRequest.endpoints.status.path = absolutize(publicBaseUrl, response.proofRequest.endpoints.status.path);
+
+        switch (request.state) {
+          case "missing_binding":
+            send(404, {
+              ok: false,
+              code: "ERR_BINDING_NOT_FOUND",
+              message: request.reason,
+              state: request.state,
+            });
+            return;
+          case "unlinked":
+          case "revoked":
+          case "recovery_pending":
+            send(409, {
+              ok: false,
+              code: "ERR_LINKED_PROOF_UNAVAILABLE",
+              message: request.reason,
+              state: request.state,
+              bindingId: request.binding?.bindingId,
+            });
+            return;
+          default:
+            send(409, {
+              ok: false,
+              code: "ERR_LINKED_PROOF_UNAVAILABLE",
+              message: request.reason,
+              state: request.state,
+              bindingId: request.binding?.bindingId,
+            });
+            return;
         }
-        if (response.proofRequest.endpoints.unlink?.path) {
-          response.proofRequest.endpoints.unlink.path = absolutize(publicBaseUrl, response.proofRequest.endpoints.unlink.path);
-        }
-        send(200, response);
-        return;
       }
 
       const verifyMatch = url.pathname.match(/^\/presence\/linked-accounts\/([^/]+)\/verify$/);

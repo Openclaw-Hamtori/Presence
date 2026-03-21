@@ -69,6 +69,7 @@ Its role is to sit between:
 - the service backend that stores authoritative truth
 
 If you are trying to understand the full product split, also read:
+- `../docs/presence-integration-quickstart.md`
 - `../docs/presence-public-architecture.md`
 - `../presence-mobile/README.md`
 - `../presence-verifier/README.md`
@@ -82,8 +83,19 @@ import {
   PresenceClient,
   FileSystemLinkageStore,
   fileLinkageStorePath,
+  createCompletionSessionResponse,
   createLinkedProofRequestResponse,
 } from "presence-sdk";
+
+const endpointContract = {
+  createSessionPath: "/presence/link-sessions",
+  completeSessionPath: "/presence/link-sessions/:sessionId/complete",
+  sessionStatusPath: "/presence/link-sessions/:sessionId",
+  linkedNoncePath: "/presence/linked-accounts/:accountId/nonce",
+  verifyLinkedAccountPath: "/presence/linked-accounts/:accountId/verify",
+  linkedStatusPath: "/presence/linked-accounts/:accountId/status",
+  unlinkAccountPath: "/presence/linked-accounts/:accountId/unlink",
+};
 
 const presence = new PresenceClient({
   serviceId: "discord-bot",
@@ -102,50 +114,63 @@ const presence = new PresenceClient({
   },
 });
 
-const { session, nonce } = await presence.createLinkSession({
-  serviceId: "discord-bot",
-  accountId: "user_123",
-});
+export async function createLinkSessionHandler(req) {
+  const { session } = await presence.createLinkSession({
+    accountId: req.body.accountId,
+  });
 
-// return session.completion.qrUrl or session.completion.deeplinkUrl to your product UI
-
-const linkResult = await presence.completeLinkSession({
-  sessionId: session.id,
-  body: req.body,
-});
-
-if (linkResult.verification.verified) {
-  res.json({
-    linked: true,
-    bindingId: linkResult.binding?.bindingId,
-    deviceIss: linkResult.binding?.deviceIss,
+  return createCompletionSessionResponse({
+    session,
+    contract: endpointContract,
   });
 }
 
-const proofRequest = await presence.createLinkedProofRequest({
-  accountId: "user_123",
-});
+export async function createLinkedProofRequestHandler(req, res) {
+  const proofRequest = await presence.createLinkedProofRequest({
+    accountId: req.params.accountId,
+  });
 
-if (proofRequest.ok) {
-  res.json(
-    createLinkedProofRequestResponse({
-      binding: proofRequest.binding,
-      nonce: proofRequest.nonce,
-      contract: {
-        createSessionPath: "/presence/link-sessions",
-        completeSessionPath: "/presence/link-sessions/:sessionId/complete",
-        linkedNoncePath: "/presence/linked-accounts/:accountId/nonce",
-        verifyLinkedAccountPath: "/presence/linked-accounts/:accountId/verify",
-        linkedStatusPath: "/presence/linked-accounts/:accountId/status",
-      },
-    })
-  );
-} else if (proofRequest.state === "missing_binding") {
-  res.status(404).json({ ok: false, code: "ERR_BINDING_NOT_FOUND", message: proofRequest.reason });
-} else {
-  res.status(409).json({ ok: false, code: "ERR_LINKED_PROOF_UNAVAILABLE", state: proofRequest.state, message: proofRequest.reason });
+  if (proofRequest.ok) {
+    return res.json(
+      createLinkedProofRequestResponse({
+        binding: proofRequest.binding,
+        nonce: proofRequest.nonce,
+        contract: endpointContract,
+      })
+    );
+  }
+
+  switch (proofRequest.state) {
+    case "missing_binding":
+      return res.status(404).json({
+        ok: false,
+        code: "ERR_BINDING_NOT_FOUND",
+        state: proofRequest.state,
+        message: proofRequest.reason,
+      });
+    case "unlinked":
+    case "revoked":
+    case "recovery_pending":
+      return res.status(409).json({
+        ok: false,
+        code: "ERR_LINKED_PROOF_UNAVAILABLE",
+        state: proofRequest.state,
+        bindingId: proofRequest.binding?.bindingId,
+        message: proofRequest.reason,
+      });
+    default:
+      return res.status(409).json({
+        ok: false,
+        code: "ERR_LINKED_PROOF_UNAVAILABLE",
+        state: proofRequest.state,
+        bindingId: proofRequest.binding?.bindingId,
+        message: proofRequest.reason,
+      });
+  }
 }
 ```
+
+Use `../docs/presence-integration-quickstart.md` as the canonical endpoint and state reference for the full link-once, stay-linked, request-PASS flow. The runnable handler layout lives in `examples/backend-completion-reference.ts`.
 
 ---
 
@@ -215,13 +240,15 @@ service-driven PASS request.
 
 Recommended usage:
 - call this when your service needs human proof for a gated action
-- hand the returned nonce + verify endpoint metadata to product UI
+- return `createLinkedProofRequestResponse()` from `POST /presence/linked-accounts/:accountId/nonce`
+- hand the resulting `proofRequest` descriptor to product UI
 - have the app submit PASS to `verifyLinkedAccount()`
 
 Return shape:
 - `ok: true` with `binding` + fresh `nonce` when the account is linked and eligible
 - `ok: false, state: "missing_binding"` when nothing is linked for that account
 - `ok: false` with `state: "unlinked" | "revoked" | "recovery_pending"` when a binding exists but should not accept a fresh PASS request
+- the normalized HTTP success shape is `{ ok: true, proofRequest: { flow: "reauth", bindingId, nonce, endpoints } }`
 
 ### `getLinkedAccountReadiness({ serviceId?, accountId, now?, maxSnapshotAgeSeconds? })`
 
@@ -330,6 +357,7 @@ The SDK now includes response helpers for these shapes:
 - `createLinkedAccountReadinessResponse()`
 
 See `examples/backend-completion-reference.ts` for a practical handler layout.
+Use `../docs/presence-integration-quickstart.md` as the canonical flow/state guide.
 
 ## QR / deeplink completion architecture
 
@@ -378,6 +406,17 @@ Do not assume that a background-capable mobile app will keep PASS ready on a fix
 
 ---
 
+## Trust metadata checklist
+
+If you emit `service_domain`, `nonce_url`, or `verify_url` in deeplinks or session completion metadata:
+
+- `https://{service_domain}/.well-known/presence.json` must be publicly reachable over HTTPS
+- `service_id` in the well-known JSON must match the emitted `service_id`
+- `allowed_url_prefixes` must cover the emitted `nonce_url` and `verify_url`
+- well-known responses should use cache headers that will not pin stale metadata during rollout or debugging
+
+---
+
 ## Production checklist
 
 - [ ] Replace in-memory nonce handling with a persistent managed store
@@ -411,10 +450,3 @@ So you can verify the end-to-end linkage flow locally: create session -> app pro
 ## License
 
 MIT
-ost-only
-- [ ] `https://{service_domain}/.well-known/presence.json` is publicly reachable over HTTPS
-- [ ] `service_id` in the well-known JSON matches the link session `service_id`
-- [ ] `allowed_url_prefixes` actually covers emitted `nonce_url` and `verify_url`
-- [ ] well-known responses use cache headers that won't pin outdated metadata during rollout/debugging
-
----
