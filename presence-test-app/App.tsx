@@ -16,9 +16,9 @@ import {
   KeyboardAvoidingView,
   ScrollView,
   Linking,
+  Clipboard,
 } from "react-native";
 import { usePresenceState } from "./src/ui/usePresenceState";
-import { usePresenceBackgroundSync } from "./src/ui/usePresenceBackgroundSync";
 import {
   loadPresenceState,
   savePresenceState,
@@ -37,7 +37,18 @@ import type { ServiceBinding } from "./src/types/index";
 import type { ProveOptions } from "./src/service";
 import { isQrScannerSupported, scanQrCode } from "./src/qrScanner";
 import { getInitialPresenceLink, subscribeToPresenceLinks } from "./src/ui/connectionLinking";
-import { syncLinkedBindings, type LinkedBindingSyncError } from "./src/sync/linkedBindings";
+import {
+  submitLinkedBindingProof,
+} from "./src/sync/linkedBindings";
+import {
+  resolveRequestedLinkedBinding,
+  syncFromEnvelope,
+} from "./src/sync/requestedBinding";
+import {
+  buildRequestedProofKey,
+  getProductState,
+  type RequestedProofUiStatus,
+} from "./src/ui/productState";
 
 const C = {
   bg: "#FFFFFF",
@@ -60,9 +71,21 @@ const ORB_IMAGE = require("./src/ui/assets/presence-orb.png");
 
 const MONO_FONT = Platform.OS === "ios" ? "Menlo" : "monospace";
 const SYNC_LOG_CHUNK_SIZE = 4;
+const MAX_LOG_ENTRIES = 240;
+const COPY_STATUS_RESET_MS = 1800;
+
+type LinkedProofRequestState =
+  | { requestKey: string; status: RequestedProofUiStatus }
+  | null;
 
 function nowTime(): string {
   return new Date().toISOString().slice(11, 19);
+}
+
+function colorForProductTone(tone: "success" | "warn" | "error"): string {
+  if (tone === "success") return C.success;
+  if (tone === "error") return C.error;
+  return C.warn;
 }
 
 function truncateJson(obj: unknown, maxLen = 1400): string {
@@ -82,14 +105,6 @@ function formatGroupedLogEntries(label: string, values: string[], chunkSize = SY
     lines.push(`${label}[${index + 1}-${index + chunk.length}/${values.length}] ${chunk.join(" | ")}`);
   }
   return lines;
-}
-
-function formatSyncErrorEntries(errors: LinkedBindingSyncError[]): string[] {
-  return formatGroupedLogEntries(
-    "errors",
-    errors.map((error) => `${error.bindingId}=${error.message}`),
-    2
-  );
 }
 
 function normalizeAbsoluteUrl(value?: string): string | null {
@@ -211,6 +226,46 @@ function describeBindingSync(sync: ServiceBinding["sync"] | undefined): string {
     `verify_url=${normalized?.verifyUrl ? "present" : "missing"}`,
     `status_url=${normalized?.statusUrl ? "present" : "missing"}`,
   ].join(" ");
+}
+
+function describePresenceValue(value: unknown): string {
+  if (typeof value === "string") {
+    return value.trim().length > 0 ? "present" : "missing";
+  }
+  return value ? "present" : "missing";
+}
+
+function inferRequestedBindingResolution(
+  envelope: LinkCompletionEnvelope | null,
+  binding: ServiceBinding | null
+): string {
+  if (!envelope || !binding) return "none";
+  if (envelope.bindingId && envelope.bindingId === binding.bindingId) return "binding_id";
+  if (envelope.serviceId && envelope.accountId && envelope.serviceId === binding.serviceId && envelope.accountId === binding.accountId) {
+    return "service_account";
+  }
+  return "fallback";
+}
+
+function buildLogExport(params: {
+  entries: string[];
+  phase: string;
+  deviceIss?: string;
+  envelope: LinkCompletionEnvelope | null;
+  binding: ServiceBinding | null;
+}): string {
+  return [
+    "Presence test app debug logs",
+    `exported_at=${new Date().toISOString()}`,
+    `platform=${Platform.OS}`,
+    `phase=${params.phase}`,
+    `device_iss=${params.deviceIss ?? "-"}`,
+    `open_session=${params.envelope?.sessionId ?? "-"}`,
+    `request_flow=${params.envelope?.flow ?? (params.envelope?.bindingId ? "reauth" : params.envelope ? "initial_link" : "-")}`,
+    `resolved_binding=${params.binding?.bindingId ?? "-"}`,
+    "",
+    ...[...params.entries].reverse(),
+  ].join("\n");
 }
 
 function findMatchingBinding(
@@ -369,105 +424,6 @@ function envelopeToProveOptions(envelope: LinkCompletionEnvelope): ProveOptions 
   };
 }
 
-function syncFromEnvelope(envelope: LinkCompletionEnvelope | null): ServiceBinding["sync"] | undefined {
-  if (!envelope) return undefined;
-  return normalizeBindingSyncMetadata({
-    serviceDomain: envelope.serviceDomain,
-    nonceUrl: envelope.nonceUrl,
-    verifyUrl: envelope.verifyUrl,
-    statusUrl: envelope.statusUrl,
-  });
-}
-
-function formatLinkedServiceLabel(count: number): string {
-  if (count === 0) return "No linked services";
-  return `${count} linked service${count === 1 ? "" : "s"}`;
-}
-
-function getProductState(params: {
-  phase: string;
-  pass: boolean | undefined;
-  hasRecovery: boolean;
-  linkedServiceCount: number;
-  requestedServiceId?: string | null;
-}) {
-  const { phase, pass, hasRecovery, linkedServiceCount, requestedServiceId } = params;
-  const linkedSummary = formatLinkedServiceLabel(linkedServiceCount);
-  const requestSummary = requestedServiceId ? ` for ${requestedServiceId}` : "";
-  const hasPass = !!pass && phase !== "not_ready" && phase !== "error" && !hasRecovery;
-
-  if (phase === "measuring") {
-    return {
-      label: hasPass ? "PASS" : "FAIL",
-      tone: hasPass ? C.success : C.warn,
-      heading: "Checking this device",
-      detail: "Presence is running a local on-device check to determine PASS or FAIL.",
-      action: "Keep the app open while the local check completes.",
-      summary: linkedSummary,
-    };
-  }
-
-  if (phase === "proving") {
-    return {
-      label: hasPass ? "PASS" : "FAIL",
-      tone: hasPass ? C.success : C.warn,
-      heading: requestedServiceId ? "Submitting proof" : "Creating proof",
-      detail: requestedServiceId
-        ? `Presence is submitting PASS${requestSummary}.`
-        : "Presence is creating a proof for the current request.",
-      action: "The service will verify the proof before allowing the action.",
-      summary: linkedSummary,
-    };
-  }
-
-  if (hasRecovery || phase === "recovery_pending") {
-    return {
-      label: "FAIL",
-      tone: C.warn,
-      heading: "Recovery required",
-      detail: "A linked service needs recovery or relink before it can accept proof from this device.",
-      action: "Open the next service request to relink this device.",
-      summary: linkedSummary,
-    };
-  }
-
-  if (hasPass) {
-    return {
-      label: "PASS",
-      tone: C.success,
-      heading: requestedServiceId ? "Proof request ready" : "Presence is linked",
-      detail: requestedServiceId
-        ? `This device is ready to submit PASS${requestSummary}.`
-        : linkedServiceCount > 0
-          ? "Presence keeps your linked services connected and submits proof only when one asks."
-          : "This device currently has PASS and can be linked to a service from a deeplink or QR.",
-      action: requestedServiceId
-        ? "Tap the orb to submit PASS to the requesting service."
-        : linkedServiceCount > 0
-          ? "Open a service request when proof is needed."
-          : "Open Connect to scan a QR or load a service link.",
-      summary: linkedSummary,
-    };
-  }
-
-  return {
-    label: "FAIL",
-    tone: phase === "error" ? C.error : C.warn,
-    heading: requestedServiceId ? "Proof request blocked" : "Presence is not ready",
-    detail: requestedServiceId
-      ? `This request cannot be submitted until this device returns PASS${requestSummary}.`
-      : linkedServiceCount > 0
-        ? "Linked services stay connected, but proof is blocked until this device returns PASS."
-        : "Open a service deeplink or QR to start linking Presence, then run a local check when PASS is needed.",
-    action: requestedServiceId
-      ? "Tap the orb to run a new local check."
-      : linkedServiceCount > 0
-        ? "Tap the orb to run a local check."
-        : "Open Connect to start a link from your service.",
-    summary: linkedSummary,
-  };
-}
-
 export default function App() {
   const presence = usePresenceState();
   const [rawLink, setRawLink] = useState("");
@@ -476,9 +432,13 @@ export default function App() {
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [showConnection, setShowConnection] = useState(false);
   const [showService, setShowService] = useState(false);
+  const [showLogs, setShowLogs] = useState(false);
   const [scannerSupported, setScannerSupported] = useState(false);
   const [scannerBusy, setScannerBusy] = useState(false);
-  const [, setLog] = useState<string[]>([`[${nowTime()}] App started — platform: ${Platform.OS}`]);
+  const [submittingLinkedProof, setSubmittingLinkedProof] = useState(false);
+  const [linkedProofRequestState, setLinkedProofRequestState] = useState<LinkedProofRequestState>(null);
+  const [logEntries, setLogEntries] = useState<string[]>([`[${nowTime()}] App started — platform: ${Platform.OS}`]);
+  const [copyLogsStatus, setCopyLogsStatus] = useState<"idle" | "copied" | "failed">("idle");
   const [hydratedServiceBindings, setHydratedServiceBindings] = useState<HydratedBindingCache | null>(null);
   const [hydratingServiceBindings, setHydratingServiceBindings] = useState(false);
   const [serviceBindingsHydrationError, setServiceBindingsHydrationError] = useState<string | null>(null);
@@ -491,68 +451,32 @@ export default function App() {
   const addLog = useCallback((msg: string) => {
     const line = `[${nowTime()}] ${msg}`;
     console.log(`[PresenceApp] ${line}`);
-    setLog((prev) => [line, ...prev].slice(0, 40));
+    setLogEntries((prev) => [line, ...prev].slice(0, MAX_LOG_ENTRIES));
   }, []);
 
-  const runMeasurementAndSync = useCallback(async (source: "manual" | "scheduled") => {
+  useEffect(() => {
+    if (copyLogsStatus === "idle") return;
+    const timeout = setTimeout(() => setCopyLogsStatus("idle"), COPY_STATUS_RESET_MS);
+    return () => clearTimeout(timeout);
+  }, [copyLogsStatus]);
+
+  const runLocalMeasurement = useCallback(async () => {
     const measurement = await presence.measure();
     if (!measurement) {
-      addLog(source === "scheduled" ? "❌ Scheduled measurement failed" : "❌ Measurement failed");
+      addLog("❌ Measurement failed");
       return null;
     }
 
     addLog(
-      source === "scheduled"
-        ? (
-          measurement.pass
-            ? "↻ Scheduled background check returned PASS"
-            : `⚠️ Scheduled background check returned FAIL — ${measurement.reason}`
-        )
-        : (
-          measurement.pass
-            ? "✅ Local check returned PASS"
-            : `⚠️ Local check returned FAIL — ${measurement.reason}`
-        )
-    );
-
-    const syncResult = await syncLinkedBindings({ measurement });
-    const refreshedState = source === "scheduled" || syncResult.attempted > 0 || syncResult.errors.length > 0
-      ? (await presence.refresh()) ?? measurement.state
-      : measurement.state;
-    addLog(
-      `   state: created=${refreshedState?.stateCreatedAt ?? '-'} validUntil=${refreshedState?.stateValidUntil ?? '-'} measured=${refreshedState?.lastMeasuredAt ?? '-'} phase=${refreshedState?.status ?? '-'}`
+      measurement.pass
+        ? "✅ Local check returned PASS"
+        : `⚠️ Local check returned FAIL — ${measurement.reason}`
     );
     addLog(
-      `↻ Synced bindings — verified ${syncResult.verified}, recovery ${syncResult.recoveryRequired}, skipped ${syncResult.skipped}, attempted ${syncResult.attempted}`
+      `   state: created=${measurement.state?.stateCreatedAt ?? '-'} validUntil=${measurement.state?.stateValidUntil ?? '-'} measured=${measurement.state?.lastMeasuredAt ?? '-'} phase=${measurement.state?.status ?? '-'}`
     );
-    if (measurement.pass && syncResult.attempted === 0 && (measurement.state?.serviceBindings.some(isActiveBinding) ?? false)) {
-      addLog("   no linked binding selected for nonce/prove/verify");
-    }
-    for (const diagnosticLine of formatGroupedLogEntries("diagnostics", syncResult.diagnostics)) {
-      addLog(`   ${diagnosticLine}`);
-    }
-    for (const errorLine of formatSyncErrorEntries(syncResult.errors)) {
-      addLog(syncResult.errors.length > 0 ? `❌ ${errorLine}` : `   ${errorLine}`);
-    }
-
-    return { measurement, syncResult };
+    return measurement;
   }, [addLog, presence]);
-
-  const runScheduledSync = useCallback(async () => {
-    const result = await runMeasurementAndSync("scheduled");
-    if (!result) {
-      addLog("❌ Scheduled sync finished without a measurement result");
-      return false;
-    }
-
-    const success = result.measurement.pass && result.syncResult.errors.length === 0;
-    addLog(
-      `↻ Scheduled sync finished — pass=${result.measurement.pass} attempted=${result.syncResult.attempted} verified=${result.syncResult.verified} recovery=${result.syncResult.recoveryRequired} errors=${result.syncResult.errors.length}`
-    );
-    return success;
-  }, [addLog, runMeasurementAndSync]);
-
-  usePresenceBackgroundSync(presence, runScheduledSync);
 
   const hydratedBindingsForCurrentDevice = useMemo(() => {
     if (!currentDeviceIss || hydratedServiceBindings?.deviceIss !== currentDeviceIss) {
@@ -660,6 +584,8 @@ export default function App() {
   ): Promise<boolean> => {
     setRawLink(rawUrl ?? buildPresenceLinkUrl(parsed));
     setShowConnection(true);
+    setLocalError(null);
+    setLinkedProofRequestState(null);
     const normalizedServiceDomain = debugNormalizeServiceDomain(parsed.serviceDomain);
     const envelopeSync = syncFromEnvelope(parsed);
     addLog(`🔎 ${source} parse session=${parsed.sessionId} service=${parsed.serviceId ?? "-"}`);
@@ -818,16 +744,21 @@ export default function App() {
       ).serviceBindings
     );
   }, [currentDeviceIss, hydratedServiceBindings, localBindingsForHydration, presence.state]);
-  const hasRecovery = effectiveServiceBindings.some((binding) => binding.status === "recovery_pending" || binding.status === "reauth_required");
-  const openedSessionAlreadyLinked = !!(
-    openedEnvelope?.serviceId
-    && openedEnvelope?.accountId
-    && effectiveServiceBindings.some((binding) => (
-      binding.serviceId === openedEnvelope.serviceId
-      && binding.accountId === openedEnvelope.accountId
-      && binding.status === "linked"
-    ))
+  const openedRequestedBinding = useMemo(
+    () => resolveRequestedLinkedBinding(openedEnvelope, effectiveServiceBindings),
+    [effectiveServiceBindings, openedEnvelope]
   );
+  const currentRequestedProofKey = useMemo(
+    () => buildRequestedProofKey({
+      sessionId: openedEnvelope?.sessionId ?? null,
+      bindingId: openedRequestedBinding?.bindingId ?? null,
+      serviceId: openedEnvelope?.serviceId ?? null,
+      accountId: openedEnvelope?.accountId ?? null,
+    }),
+    [openedEnvelope?.accountId, openedEnvelope?.serviceId, openedEnvelope?.sessionId, openedRequestedBinding?.bindingId]
+  );
+  const hasRecovery = effectiveServiceBindings.some((binding) => binding.status === "recovery_pending" || binding.status === "reauth_required");
+  const openedSessionAlreadyLinked = !!openedRequestedBinding;
   const recentServiceBindings = [...effectiveServiceBindings]
     .filter((binding) => isActiveBinding(binding))
     .sort((a, b) => {
@@ -836,13 +767,18 @@ export default function App() {
       return timeB - timeA;
     })
     .slice(0, 10);
+  const requestedProofStatus = currentRequestedProofKey && linkedProofRequestState?.requestKey === currentRequestedProofKey
+    ? linkedProofRequestState.status
+    : null;
   const productState = getProductState({
     phase: presence.phase,
     pass: presence.state?.pass,
     hasRecovery,
     linkedServiceCount: recentServiceBindings.length,
     requestedServiceId: openedEnvelope?.serviceId ?? null,
+    requestedProofStatus,
   });
+  const productTone = colorForProductTone(productState.tone);
   const serviceScrollTrackVisible = serviceContentHeight > serviceViewportHeight + 8;
   const serviceScrollThumbHeight = serviceScrollTrackVisible
     ? Math.max(36, (serviceViewportHeight * serviceViewportHeight) / Math.max(serviceContentHeight, 1))
@@ -855,12 +791,44 @@ export default function App() {
   const displayedErrorCode = presence.error?.code ?? "PRESENCE";
   const displayedErrorMessage = localError ?? presence.error?.message ?? null;
   const showHealthAccessRecovery = isHealthAccessRecoveryNeeded(displayedErrorCode, displayedErrorMessage);
+  const isSubmittingPass = presence.phase === "proving" || presence.phase === "measuring" || submittingLinkedProof;
+  const latestLogEntry = logEntries[0] ?? "No debug events yet.";
+  const buildCurrentLogExport = useCallback(
+    () => buildLogExport({
+      entries: logEntries,
+      phase: presence.phase,
+      deviceIss: currentDeviceIss,
+      envelope: openedEnvelope,
+      binding: openedRequestedBinding,
+    }),
+    [currentDeviceIss, logEntries, openedEnvelope, openedRequestedBinding, presence.phase]
+  );
 
   const clearConnectSession = useCallback(() => {
     setOpenedEnvelope(null);
     setRawLink("");
     setConnectionError(null);
+    setLinkedProofRequestState(null);
     setShowConnection(false);
+  }, []);
+
+  const handleCopyLogs = useCallback(() => {
+    try {
+      Clipboard.setString(buildCurrentLogExport());
+      addLog(`📋 copied ${logEntries.length} log entries to clipboard`);
+      setCopyLogsStatus("copied");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      addLog(`❌ copy logs failed — ${message}`);
+      setCopyLogsStatus("failed");
+    }
+  }, [addLog, buildCurrentLogExport, logEntries.length]);
+
+  const handleClearLogs = useCallback(() => {
+    const line = `[${nowTime()}] Debug logs cleared`;
+    console.log(`[PresenceApp] ${line}`);
+    setLogEntries([line]);
+    setCopyLogsStatus("idle");
   }, []);
 
   const handleOpenLink = async () => {
@@ -882,6 +850,7 @@ export default function App() {
   const handleScanQr = async () => {
     setConnectionError(null);
     setOpenedEnvelope(null);
+    setLinkedProofRequestState(null);
     setScannerBusy(true);
     try {
       const payload = await scanQrCode();
@@ -905,14 +874,102 @@ export default function App() {
   };
 
   const handleApprove = async () => {
-    if (!proveOptions) {
+    const currentEnvelope = openedEnvelope;
+    if (!currentEnvelope) {
       setLocalError("Open a link session first.");
       return;
     }
 
-    const currentEnvelope = openedEnvelope;
-    if (openedSessionAlreadyLinked) {
-      addLog("↩ Approve ignored — service/account is already linked in the current app state");
+    const envelopeSync = syncFromEnvelope(currentEnvelope);
+    const requestedBindingResolution = inferRequestedBindingResolution(currentEnvelope, openedRequestedBinding);
+    addLog(
+      `🔎 request boundary envelope=present session=${currentEnvelope.sessionId} flow=${currentEnvelope.flow ?? (currentEnvelope.bindingId ? "reauth" : "initial_link")}`
+    );
+    addLog(
+      `🔎 requested binding resolution method=${requestedBindingResolution} binding_hint=${currentEnvelope.bindingId ?? "-"} service=${currentEnvelope.serviceId ?? "-"} account=${currentEnvelope.accountId ?? "-"} resolved=${openedRequestedBinding?.bindingId ?? "missing"}`
+    );
+    addLog(
+      `   envelope sync: ${describeBindingSync(envelopeSync)} nonce=${describePresenceValue(currentEnvelope.nonce)}`
+    );
+    addLog(
+      `   requested binding sync: ${describeBindingSync(openedRequestedBinding?.sync)} nonce_source=${currentEnvelope.nonce ? "envelope" : openedRequestedBinding?.sync?.nonceUrl ? "binding_sync" : "missing"}`
+    );
+
+    if (openedRequestedBinding) {
+      const diagnostics: string[] = [];
+      const requestKey = currentRequestedProofKey ?? buildRequestedProofKey({
+        sessionId: currentEnvelope.sessionId,
+        bindingId: openedRequestedBinding.bindingId,
+        serviceId: currentEnvelope.serviceId ?? null,
+        accountId: currentEnvelope.accountId ?? null,
+      });
+      setSubmittingLinkedProof(true);
+      if (requestKey) {
+        setLinkedProofRequestState({ requestKey, status: "submitting" });
+      }
+      addLog(
+        `→ submit linked PASS request binding=${openedRequestedBinding.bindingId} service=${openedRequestedBinding.serviceId}`
+      );
+
+      try {
+        await persistSeededBinding(openedRequestedBinding);
+        addLog(`↻ persisted linked request sync — ${describeBindingSync(openedRequestedBinding.sync)}`);
+
+        const result = await submitLinkedBindingProof({
+          binding: openedRequestedBinding,
+          nonce: currentEnvelope.nonce,
+          diagnostics,
+        });
+        const refreshedState = await presence.refresh();
+
+        addLog(
+          `✅ linked proof attempt finished — binding=${result.bindingId} status=${result.status} nonce=${result.nonce ? "present" : "missing"}`
+        );
+        addLog(
+          `   state: created=${refreshedState?.stateCreatedAt ?? '-'} validUntil=${refreshedState?.stateValidUntil ?? '-'} measured=${refreshedState?.lastMeasuredAt ?? '-'} phase=${refreshedState?.status ?? '-'}`
+        );
+        for (const diagnosticLine of formatGroupedLogEntries("diagnostics", diagnostics)) {
+          addLog(`   ${diagnosticLine}`);
+        }
+
+        if (result.status === "verified") {
+          setLocalError(null);
+          if (requestKey) {
+            setLinkedProofRequestState(null);
+          }
+          clearConnectSession();
+          return;
+        }
+
+        if (requestKey) {
+          setLinkedProofRequestState({ requestKey, status: "failed" });
+        }
+        if (result.status === "recovery_required") {
+          setLocalError("This linked service needs recovery or relink before it can accept proof from this device.");
+          return;
+        }
+
+        setLocalError(refreshedState?.lastMeasurementReason ?? "This device is not ready to submit PASS.");
+        return;
+      } catch (error) {
+        await presence.refresh();
+        const message = error instanceof Error ? error.message : String(error);
+        if (requestKey) {
+          setLinkedProofRequestState({ requestKey, status: "failed" });
+        }
+        setLocalError(`Could not submit proof to the linked service: ${message}`);
+        addLog(`❌ linked proof error — ${message}`);
+        for (const diagnosticLine of formatGroupedLogEntries("diagnostics", diagnostics)) {
+          addLog(`   ${diagnosticLine}`);
+        }
+        return;
+      } finally {
+        setSubmittingLinkedProof(false);
+      }
+    }
+
+    if (!proveOptions) {
+      setLocalError("Open a valid link session first.");
       return;
     }
 
@@ -985,19 +1042,20 @@ export default function App() {
 
   const handleMeasure = async () => {
     addLog("→ run local PASS check");
-    const result = await runMeasurementAndSync("manual");
+    setLinkedProofRequestState(null);
+    const result = await runLocalMeasurement();
     if (!result) {
       setLocalError(presence.error?.message ?? "Could not complete the measurement.");
       addLog(`❌ ${presence.error?.code ?? "unknown"} — ${presence.error?.message ?? ""}`);
       return;
     }
 
-    if (result.measurement.pass) {
+    if (result.pass) {
       setLocalError(null);
       return;
     }
 
-    setLocalError(result.measurement.reason);
+    setLocalError(result.reason);
   };
 
   return (
@@ -1008,9 +1066,9 @@ export default function App() {
             <Text style={styles.qrIcon}>⌁</Text>
           </TouchableOpacity>
           <View style={styles.topRightCompact}>
-            <View style={[styles.statePill, styles.statePillLight, { borderColor: productState.tone }]}> 
-              <View style={[styles.stateDot, { backgroundColor: productState.tone }]} />
-              <Text style={[styles.stateLabel, { color: productState.tone }]}>{productState.label}</Text>
+            <View style={[styles.statePill, styles.statePillLight, { borderColor: productTone }]}> 
+              <View style={[styles.stateDot, { backgroundColor: productTone }]} />
+              <Text style={[styles.stateLabel, { color: productTone }]}>{productState.label}</Text>
             </View>
             <Text style={styles.topMeta}>{productState.summary}</Text>
           </View>
@@ -1020,10 +1078,10 @@ export default function App() {
           <TouchableOpacity
             style={styles.heroImageWrap}
             onPress={openedEnvelope ? handleApprove : handleMeasure}
-            disabled={presence.phase === "proving" || presence.phase === "measuring"}
+            disabled={isSubmittingPass}
             activeOpacity={0.9}
           >
-            {(presence.phase === "proving" || presence.phase === "measuring")
+            {isSubmittingPass
               ? <ActivityIndicator color={C.text} style={styles.heroSpinner} />
               : null}
             <Image source={ORB_IMAGE} style={styles.heroImage} resizeMode="contain" />
@@ -1057,6 +1115,9 @@ export default function App() {
         <View style={styles.bottomBar}>
           <TouchableOpacity style={styles.bottomBarButton} onPress={() => setShowService(true)} activeOpacity={0.85}>
             <Text style={styles.bottomBarButtonText}>LINKED SERVICES</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.bottomBarButton} onPress={() => setShowLogs(true)} activeOpacity={0.85}>
+            <Text style={styles.bottomBarButtonText}>DEBUG LOGS</Text>
           </TouchableOpacity>
         </View>
 
@@ -1127,6 +1188,51 @@ export default function App() {
           </View>
         </Modal>
 
+        <Modal visible={showLogs} transparent animationType="fade" onRequestClose={() => setShowLogs(false)}>
+          <View style={styles.modalBackdrop}>
+            <TouchableOpacity style={styles.modalBackdropPressable} onPress={() => setShowLogs(false)} activeOpacity={1} />
+            <View style={styles.modalCardLarge}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.sectionTitle}>Debug Logs</Text>
+                <TouchableOpacity onPress={() => setShowLogs(false)} activeOpacity={0.85}>
+                  <Text style={styles.modalClose}>Close</Text>
+                </TouchableOpacity>
+              </View>
+
+              <Text style={styles.modalMeta}>{logEntries.length} recent events. Newest first. Copy exports the full rolling buffer.</Text>
+
+              <View style={styles.logSummaryCard}>
+                <Text style={styles.logSummaryLabel}>Latest event</Text>
+                <Text style={styles.logSummaryBody} selectable>{latestLogEntry}</Text>
+              </View>
+
+              <View style={styles.logActionRow}>
+                <TouchableOpacity style={[styles.logActionButton, styles.logActionPrimary]} onPress={handleCopyLogs} activeOpacity={0.85}>
+                  <Text style={styles.logActionPrimaryText}>
+                    {copyLogsStatus === "copied" ? "Copied" : copyLogsStatus === "failed" ? "Copy Failed" : "Copy Logs"}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.logActionButton, styles.logActionSecondary]} onPress={handleClearLogs} activeOpacity={0.85}>
+                  <Text style={styles.logActionSecondaryText}>Clear</Text>
+                </TouchableOpacity>
+              </View>
+
+              <ScrollView
+                style={styles.logViewport}
+                contentContainerStyle={styles.logList}
+                showsVerticalScrollIndicator
+                keyboardShouldPersistTaps="handled"
+              >
+                {logEntries.map((entry, index) => (
+                  <Text key={`${index}:${entry}`} style={styles.logEntry} selectable>
+                    {entry}
+                  </Text>
+                ))}
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
+
         <Modal visible={showConnection} transparent animationType="fade" onRequestClose={() => setShowConnection(false)}>
           <TouchableWithoutFeedback
             onPress={() => {
@@ -1180,35 +1286,39 @@ export default function App() {
                     </View>
                   </View>
 
-                  {openedEnvelope && !openedSessionAlreadyLinked ? (
+                  {openedEnvelope ? (
                     <View style={styles.loadedSessionCard}>
                       <Text style={styles.loadedSessionLabel}>Submit PASS to service</Text>
                       <Text style={styles.loadedSessionBody}>
                         {openedSessionAlreadyLinked
-                          ? "This service/account is already linked in the current app state. Load a fresh request if you want to relink."
+                          ? "This service/account is already linked. Presence will submit PASS directly to the linked binding and refresh the saved sync metadata for future requests."
                           : "Request loaded. Review the details below, then tap Submit PASS. Initial links connect the service; later requests submit proof on demand."}
                       </Text>
                       <View style={styles.loadedSessionMeta}>
                         <KeyValue label="Service" value={openedEnvelope.serviceId ?? "unknown"} />
                         <KeyValue label="Service domain" value={openedEnvelope.serviceDomain ?? "not supplied"} />
                         <KeyValue label="Session" value={openedEnvelope.sessionId} mono />
-                        <KeyValue label="Flow" value={openedEnvelope.flow ?? "initial_link"} />
+                        <KeyValue label="Flow" value={openedEnvelope.flow ?? (openedRequestedBinding ? "reauth" : "initial_link")} />
                         <KeyValue label="Code" value={openedEnvelope.code ?? "none"} mono />
+                        {openedRequestedBinding ? (
+                          <KeyValue label="Binding" value={openedRequestedBinding.bindingId} mono />
+                        ) : null}
                       </View>
                       <TouchableOpacity
-                        style={[styles.primaryActionButton, presence.phase === "proving" && styles.buttonDisabled]}
+                        style={[styles.primaryActionButton, isSubmittingPass && styles.buttonDisabled]}
                         onPress={handleApprove}
-                        disabled={presence.phase === "proving"}
+                        disabled={isSubmittingPass}
                         activeOpacity={0.85}
                       >
                         <Text style={styles.primaryActionButtonText}>
-                          {presence.phase === "proving" ? "Submitting PASS…" : "Submit PASS"}
+                          {isSubmittingPass ? "Submitting PASS…" : "Submit PASS"}
                         </Text>
                       </TouchableOpacity>
                       <TouchableOpacity
                         style={styles.ghostButton}
                         onPress={() => {
                           setOpenedEnvelope(null);
+                          setLinkedProofRequestState(null);
                           setLocalError(null);
                           setRawLink("");
                         }}
@@ -1226,6 +1336,7 @@ export default function App() {
                           setRawLink(value);
                           setConnectionError(null);
                           setOpenedEnvelope(null);
+                          setLinkedProofRequestState(null);
                         }}
                         placeholder="Paste a presence://link request here"
                         placeholderTextColor={C.subtext}
@@ -1859,8 +1970,10 @@ const styles = StyleSheet.create({
     fontSize: 11,
   },
   bottomBar: {
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
+    gap: 10,
     marginTop: 8,
     marginBottom: 6,
   },
@@ -1923,6 +2036,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingBottom: 22,
     maxHeight: "78%",
+    gap: 12,
   },
   modalHeader: {
     flexDirection: "row",
@@ -1943,6 +2057,68 @@ const styles = StyleSheet.create({
   modalScroll: {
     gap: 16,
     paddingBottom: 20,
+  },
+  logSummaryCard: {
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: C.border,
+    backgroundColor: C.surfaceSoft,
+    padding: 14,
+    gap: 8,
+  },
+  logSummaryLabel: {
+    color: C.subtext,
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: 0.4,
+    textTransform: "uppercase",
+  },
+  logSummaryBody: {
+    color: C.text,
+    fontSize: 13,
+    lineHeight: 19,
+    fontFamily: MONO_FONT,
+  },
+  logActionRow: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  logActionButton: {
+    minHeight: 48,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 16,
+  },
+  logActionPrimary: {
+    flex: 1,
+    backgroundColor: C.accent,
+  },
+  logActionSecondary: {
+    minWidth: 92,
+    borderWidth: 1,
+    borderColor: C.border,
+    backgroundColor: C.surfaceSoft,
+  },
+  logActionPrimaryText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  logActionSecondaryText: {
+    color: C.text,
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  logViewport: {
+    flex: 1,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: C.border,
+    backgroundColor: "#FCFBF8",
+  },
+  logList: {
+    paddingVertical: 6,
   },
   devButton: {
     marginHorizontal: 18,

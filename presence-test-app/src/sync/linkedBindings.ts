@@ -7,6 +7,7 @@ import {
   loadPresenceState,
   savePresenceState,
 } from "../state/presenceState";
+import { isFreshMeasurementSnapshot } from "../state/measurementFreshness";
 import { validateBindingSyncConfiguration } from "../linkTrust";
 import { markBindingMismatchForRecovery, markBindingSyncExhausted, markBindingVerified, measure, proveMeasured } from "../service";
 import type { MeasureResult } from "../service";
@@ -166,8 +167,15 @@ export async function submitLinkedBindingProof(params: {
   state?: PresenceState | null;
   diagnostics?: string[];
 }): Promise<LinkedBindingProofSubmissionResult> {
-  const measurement = await getMeasurement(params.measurement);
+  pushBindingDiagnostic(
+    params.diagnostics,
+    params.binding.bindingId,
+    "submission_start",
+    `measurement=${params.measurement ? "present" : "missing"} state=${params.state ? "present" : "missing"} nonce=${params.nonce ? "present" : "missing"}`
+  );
+  const measurement = await getMeasurement(params.measurement, { forceFreshSnapshot: true });
   if (!measurement) {
+    pushBindingDiagnostic(params.diagnostics, params.binding.bindingId, "final_outcome", "status=error stage=measurement");
     throw new Error("measurement unavailable");
   }
 
@@ -180,9 +188,23 @@ export async function submitLinkedBindingProof(params: {
   );
 }
 
-async function getMeasurement(measurement?: MeasureResult | null): Promise<MeasureResult | null> {
-  if (measurement) return measurement;
-  const result = await measure();
+async function getMeasurement(
+  measurement?: MeasureResult | null,
+  options: { forceFreshSnapshot?: boolean } = {}
+): Promise<MeasureResult | null> {
+  if (!options.forceFreshSnapshot && measurement) {
+    return measurement;
+  }
+
+  if (
+    measurement
+    && options.forceFreshSnapshot
+    && isFreshMeasurementSnapshot(measurement.state, measurement.capturedAt)
+  ) {
+    return measurement;
+  }
+
+  const result = await measure({ forceRefresh: !!options.forceFreshSnapshot });
   if (!result.ok) return null;
   return result.value;
 }
@@ -201,9 +223,23 @@ async function executeBindingSync(
     "binding_selected",
     `service=${bindingWithSync.serviceId} account=${bindingWithSync.accountId ?? "-"}`
   );
+  pushBindingDiagnostic(
+    diagnostics,
+    bindingWithSync.bindingId,
+    "sync_metadata",
+    [
+      `sync=${bindingWithSync.sync ? "present" : "missing"}`,
+      `service_domain=${bindingWithSync.sync?.serviceDomain ? "present" : "missing"}`,
+      `nonce_url=${bindingWithSync.sync?.nonceUrl ? "present" : "missing"}`,
+      `verify_url=${bindingWithSync.sync?.verifyUrl ? "present" : "missing"}`,
+      `status_url=${bindingWithSync.sync?.statusUrl ? "present" : "missing"}`,
+      `provided_nonce=${providedNonce ? "present" : "missing"}`,
+    ].join(" ")
+  );
 
   if (!measurement.pass) {
     pushBindingDiagnostic(diagnostics, bindingWithSync.bindingId, "skipped", "pass=false");
+    pushBindingDiagnostic(diagnostics, bindingWithSync.bindingId, "final_outcome", "status=skipped reason=pass_false");
     return {
       bindingId: bindingWithSync.bindingId,
       status: "skipped",
@@ -213,6 +249,7 @@ async function executeBindingSync(
   if (!bindingWithSync.sync?.verifyUrl || (!providedNonce && !bindingWithSync.sync?.nonceUrl)) {
     const error = new Error(`sync_endpoints_missing nonce=${!!(providedNonce || bindingWithSync.sync?.nonceUrl)} verify=${!!bindingWithSync.sync?.verifyUrl}`);
     pushBindingDiagnostic(diagnostics, bindingWithSync.bindingId, "trust_error", error.message);
+    pushBindingDiagnostic(diagnostics, bindingWithSync.bindingId, "final_outcome", "status=error stage=sync_configuration");
     throw error;
   }
 
@@ -227,11 +264,14 @@ async function executeBindingSync(
       "trust_error",
       toErrorMessage(trustValidation.error)
     );
+    pushBindingDiagnostic(diagnostics, bindingWithSync.bindingId, "final_outcome", "status=error stage=trust_validation");
     throw trustValidation.error;
   }
   pushBindingDiagnostic(diagnostics, bindingWithSync.bindingId, "trust_validation_passed");
 
   let resolvedNonce = providedNonce ?? "";
+  const nonceSource = providedNonce ? "provided" : "nonce_endpoint";
+  pushBindingDiagnostic(diagnostics, bindingWithSync.bindingId, "nonce_resolution", `source=${nonceSource}`);
   try {
     if (!resolvedNonce) {
       pushBindingDiagnostic(diagnostics, bindingWithSync.bindingId, "nonce_request", bindingWithSync.sync.nonceUrl);
@@ -252,10 +292,12 @@ async function executeBindingSync(
     }
   } catch (error) {
     pushBindingDiagnostic(diagnostics, bindingWithSync.bindingId, "nonce_error", toErrorMessage(error));
+    pushBindingDiagnostic(diagnostics, bindingWithSync.bindingId, "final_outcome", "status=error stage=nonce");
     throw error;
   }
-  pushBindingDiagnostic(diagnostics, bindingWithSync.bindingId, "nonce_received");
+  pushBindingDiagnostic(diagnostics, bindingWithSync.bindingId, "nonce_received", `source=${nonceSource}`);
 
+  pushBindingDiagnostic(diagnostics, bindingWithSync.bindingId, "prove_start", `nonce=${resolvedNonce ? "present" : "missing"}`);
   const proof = await proveMeasured(measurement, {
     nonce: resolvedNonce,
     persistLocalState: false,
@@ -267,12 +309,20 @@ async function executeBindingSync(
     },
   });
   if (!proof.ok) {
+    pushBindingDiagnostic(diagnostics, bindingWithSync.bindingId, "prove_error", toErrorMessage(proof.error));
+    pushBindingDiagnostic(diagnostics, bindingWithSync.bindingId, "final_outcome", "status=error stage=prove");
     throw proof.error;
   }
+  pushBindingDiagnostic(
+    diagnostics,
+    bindingWithSync.bindingId,
+    "prove_end",
+    `payload=present link_context_binding=${proof.value.payload.link_context?.binding_id ?? "-"}`
+  );
 
   let verifyResponse: any;
   try {
-    pushBindingDiagnostic(diagnostics, bindingWithSync.bindingId, "verify_call", bindingWithSync.sync.verifyUrl);
+    pushBindingDiagnostic(diagnostics, bindingWithSync.bindingId, "verify_start", bindingWithSync.sync.verifyUrl);
     verifyResponse = await requestJson(bindingWithSync.sync.verifyUrl, {
       method: "POST",
       headers: { "x-presence-nonce": resolvedNonce },
@@ -280,6 +330,7 @@ async function executeBindingSync(
     });
   } catch (error) {
     pushBindingDiagnostic(diagnostics, bindingWithSync.bindingId, "verify_error", toErrorMessage(error));
+    pushBindingDiagnostic(diagnostics, bindingWithSync.bindingId, "final_outcome", "status=error stage=verify");
     throw error;
   }
 
@@ -288,7 +339,9 @@ async function executeBindingSync(
       bindingWithSync.bindingId,
       verifyResponse.recovery?.reason ?? verifyResponse.message ?? "binding_mismatch"
     );
+    pushBindingDiagnostic(diagnostics, bindingWithSync.bindingId, "verify_end", "ok=false code=ERR_BINDING_RECOVERY_REQUIRED");
     pushBindingDiagnostic(diagnostics, bindingWithSync.bindingId, "verify_recovery_required");
+    pushBindingDiagnostic(diagnostics, bindingWithSync.bindingId, "final_outcome", "status=recovery_required");
     return {
       bindingId: bindingWithSync.bindingId,
       status: "recovery_required",
@@ -299,13 +352,22 @@ async function executeBindingSync(
 
   if (!verifyResponse || verifyResponse.ok !== true) {
     const error = new Error("verify endpoint returned no explicit success");
+    pushBindingDiagnostic(
+      diagnostics,
+      bindingWithSync.bindingId,
+      "verify_end",
+      `ok=${verifyResponse?.ok === true ? "true" : "false"}`
+    );
     pushBindingDiagnostic(diagnostics, bindingWithSync.bindingId, "verify_error", error.message);
+    pushBindingDiagnostic(diagnostics, bindingWithSync.bindingId, "final_outcome", "status=error stage=verify_response");
     throw error;
   }
 
   await savePresenceState(proof.value.state);
   await markBindingVerified(bindingWithSync.bindingId);
+  pushBindingDiagnostic(diagnostics, bindingWithSync.bindingId, "verify_end", "ok=true");
   pushBindingDiagnostic(diagnostics, bindingWithSync.bindingId, "verify_ok");
+  pushBindingDiagnostic(diagnostics, bindingWithSync.bindingId, "final_outcome", "status=verified");
   return {
     bindingId: bindingWithSync.bindingId,
     status: "verified",

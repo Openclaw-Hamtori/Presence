@@ -22,6 +22,7 @@ import {
   unlinkServiceBinding,
   isCheckDue,
 } from "./state/presenceState";
+import { canReuseMeasuredPassState } from "./state/measurementFreshness";
 import type {
   PresenceAttestation,
   PresenceTransportPayload,
@@ -129,8 +130,8 @@ export async function measure(options: MeasureOptions = {}): Promise<Result<Meas
   }
 
   const shouldPreserveValidity = !!existingState
-    && existingState.pass
     && !forceRefresh
+    && canReuseMeasuredPassState(existingState, capturedAt)
     && !isCheckDue(existingState);
 
   if (existingState && shouldPreserveValidity) {

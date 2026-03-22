@@ -17,11 +17,16 @@ import {
   normalizeLinkSessionStatus,
   normalizePresenceSnapshotSource,
 } from "../types/index";
+import {
+  hasRequiredBindingSyncMetadata,
+  mergeBindingSyncMetadata,
+  normalizeBindingSyncMetadata,
+} from "./bindingSync";
+import { SCHEDULED_CHECK_LEAD_SECONDS } from "./measurementFreshness";
 
 const STORAGE_KEY = "@presence:state:v2";
 const LEGACY_STORAGE_KEY = "@presence:state:v1";
 const STATE_VALIDITY_SECONDS = 3 * 60;
-const SCHEDULED_CHECK_LEAD_SECONDS = 60;
 const FAILED_RETRY_SECONDS = 30 * 60;
 
 export async function loadPresenceState(): Promise<PresenceState | null> {
@@ -575,50 +580,11 @@ function sharesBindingShadowScope(a: ServiceBinding, b: ServiceBinding): boolean
   return true;
 }
 
-function normalizeOptionalSyncValue(value?: string): string | undefined {
-  if (typeof value !== "string") return undefined;
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : undefined;
-}
-
-export function normalizeBindingSyncMetadata(
-  sync: ServiceBinding["sync"] | undefined | null
-): ServiceBinding["sync"] | undefined {
-  if (!sync) return undefined;
-
-  const normalized = {
-    serviceDomain: normalizeOptionalSyncValue(sync.serviceDomain),
-    nonceUrl: normalizeOptionalSyncValue(sync.nonceUrl),
-    verifyUrl: normalizeOptionalSyncValue(sync.verifyUrl),
-    statusUrl: normalizeOptionalSyncValue(sync.statusUrl),
-  };
-
-  return normalized.serviceDomain || normalized.nonceUrl || normalized.verifyUrl || normalized.statusUrl
-    ? normalized
-    : undefined;
-}
-
-export function hasRequiredBindingSyncMetadata(
-  sync: ServiceBinding["sync"] | undefined | null
-): boolean {
-  const normalized = normalizeBindingSyncMetadata(sync);
-  return !!normalized?.nonceUrl && !!normalized?.verifyUrl;
-}
-
-export function mergeBindingSyncMetadata(
-  existingSync: ServiceBinding["sync"] | undefined,
-  incomingSync: ServiceBinding["sync"] | undefined
-): ServiceBinding["sync"] | undefined {
-  const normalizedExisting = normalizeBindingSyncMetadata(existingSync);
-  const normalizedIncoming = normalizeBindingSyncMetadata(incomingSync);
-
-  if (!normalizedExisting) return normalizedIncoming;
-  if (!normalizedIncoming) return normalizedExisting;
-  return {
-    ...normalizedExisting,
-    ...normalizedIncoming,
-  };
-}
+export {
+  hasRequiredBindingSyncMetadata,
+  mergeBindingSyncMetadata,
+  normalizeBindingSyncMetadata,
+} from "./bindingSync";
 
 function computeNextMeasurementAt(params: {
   capturedAt: number;
