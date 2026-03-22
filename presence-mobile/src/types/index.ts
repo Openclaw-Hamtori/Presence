@@ -58,6 +58,7 @@ export interface PresenceBindingSync {
   nonceUrl?: string;
   verifyUrl?: string;
   statusUrl?: string;
+  pendingRequestsUrl?: string;
 }
 
 /**
@@ -85,6 +86,7 @@ export type LinkCompletionMethod = "qr" | "deeplink" | "manual_code";
  * contain the legacy `linked` alias, which should be normalized to `consumed`.
  */
 export type LinkSessionStatus = "pending" | "consumed" | "expired" | "revoked" | "recovery_pending";
+export type PendingProofRequestStatus = "pending" | "verified" | "recovery_required" | "expired" | "cancelled";
 /**
  * Canonical local/mobile snapshot source names.
  * Backend/sdk authoritative snapshots use `local_measurement` and
@@ -139,6 +141,22 @@ export interface ServiceBinding {
   sync?: PresenceBindingSync;
 }
 
+export interface PendingProofRequest {
+  requestId: string;
+  serviceId: string;
+  accountId?: string;
+  bindingId: string;
+  deviceIss?: string;
+  nonce: string;
+  requestedAt: number;
+  expiresAt: number;
+  status: PendingProofRequestStatus;
+  respondUrl: string;
+  statusUrl?: string;
+  unlinkUrl?: string;
+  serviceDomain?: string;
+}
+
 export interface PresenceSnapshot {
   capturedAt: number;
   attestedAt?: number;
@@ -166,6 +184,7 @@ export interface PresenceState {
   linkedDevice: LinkedDevice;
   activeLinkSession?: LinkSession;
   serviceBindings: ServiceBinding[];
+  pendingProofRequests?: PendingProofRequest[];
   lastSnapshot: PresenceSnapshot;
 }
 

@@ -19,6 +19,7 @@ export function syncFromEnvelope(
     nonceUrl: envelope.nonceUrl,
     verifyUrl: envelope.verifyUrl,
     statusUrl: envelope.statusUrl,
+    pendingRequestsUrl: envelope.pendingRequestsUrl,
   });
 }
 

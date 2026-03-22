@@ -14,6 +14,10 @@ export {
   updatePresenceSnapshot,
   addOrUpdateServiceBinding,
   attachLinkSession,
+  replacePendingProofRequests,
+  upsertPendingProofRequest,
+  removePendingProofRequest,
+  getActivePendingProofRequests,
   markBindingForRecovery,
   unlinkServiceBinding,
 } from "./state/presenceState";
@@ -45,6 +49,7 @@ export { OnboardingScreen } from "./ui/screens/OnboardingScreen";
 export { ConnectionFlowScreen } from "./ui/screens/ConnectionFlowScreen";
 export { PresenceStatusCard } from "./ui/components/PresenceStatusCard";
 export { syncLinkedBindings, flushQueuedLinkedBindingSyncs, submitLinkedBindingProof } from "./sync/linkedBindings";
+export { syncPendingProofRequests, submitPendingProofRequest } from "./sync/pendingProofRequests";
 export { hasPendingLinkedBindingSyncJobs, clearLinkedBindingSyncQueue } from "./sync/queue";
 export type {
   LinkedBindingSyncError,
@@ -52,6 +57,11 @@ export type {
   LinkedBindingProofSubmissionStatus,
   LinkedBindingProofSubmissionResult,
 } from "./sync/linkedBindings";
+export type {
+  PendingProofRequestSyncError,
+  PendingProofRequestSyncResult,
+  PendingProofRequestSubmissionResult,
+} from "./sync/pendingProofRequests";
 export type { LinkedBindingSyncJob, LinkedBindingSyncJobKind } from "./sync/queue";
 
 export type {
@@ -61,6 +71,7 @@ export type {
   LinkedDevice,
   LinkSession,
   ServiceBinding,
+  PendingProofRequest,
   PresenceSnapshot,
   PresenceTransportPayload,
   PresenceBindingSync,
@@ -70,5 +81,6 @@ export type {
   Result,
   LinkFlow,
   LinkCompletionMethod,
+  PendingProofRequestStatus,
 } from "./types/index";
 export { PresenceMobileError, ok, err } from "./types/index";

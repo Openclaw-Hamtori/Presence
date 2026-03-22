@@ -23,6 +23,7 @@ import {
   loadPresenceState,
   savePresenceState,
   addOrUpdateServiceBinding,
+  getActivePendingProofRequests,
   mergeAuthoritativeServiceBindings,
   isActiveBinding,
   hasRequiredBindingSyncMetadata,
@@ -33,13 +34,17 @@ import {
 import { buildPresenceLinkUrl, parsePresenceLinkUrl } from "./src/deeplink";
 import type { LinkCompletionEnvelope } from "./src/deeplink";
 import { debugNormalizeServiceDomain, validateLinkCompletionEnvelope } from "./src/linkTrust";
-import type { ServiceBinding } from "./src/types/index";
+import type { PendingProofRequest, ServiceBinding } from "./src/types/index";
 import type { ProveOptions } from "./src/service";
 import { isQrScannerSupported, scanQrCode } from "./src/qrScanner";
 import { getInitialPresenceLink, subscribeToPresenceLinks } from "./src/ui/connectionLinking";
 import {
   submitLinkedBindingProof,
 } from "./src/sync/linkedBindings";
+import {
+  syncPendingProofRequests,
+  submitPendingProofRequest,
+} from "./src/sync/pendingProofRequests";
 import {
   resolveRequestedLinkedBinding,
   syncFromEnvelope,
@@ -442,6 +447,8 @@ export default function App() {
   const [hydratedServiceBindings, setHydratedServiceBindings] = useState<HydratedBindingCache | null>(null);
   const [hydratingServiceBindings, setHydratingServiceBindings] = useState(false);
   const [serviceBindingsHydrationError, setServiceBindingsHydrationError] = useState<string | null>(null);
+  const [syncingPendingRequests, setSyncingPendingRequests] = useState(false);
+  const [pendingRequestsSyncError, setPendingRequestsSyncError] = useState<string | null>(null);
   const serviceScrollRef = useRef<ScrollView | null>(null);
   const [serviceViewportHeight, setServiceViewportHeight] = useState(0);
   const [serviceContentHeight, setServiceContentHeight] = useState(0);
@@ -705,6 +712,33 @@ export default function App() {
     }
   }, [addLog, persistAuthoritativeBindings]);
 
+  const hydratePendingProofRequests = useCallback(async (bindings: ServiceBinding[], source: string) => {
+    const currentState = await loadPresenceState();
+    if (!currentState) {
+      return;
+    }
+
+    setSyncingPendingRequests(true);
+    setPendingRequestsSyncError(null);
+    try {
+      const result = await syncPendingProofRequests({
+        state: currentState,
+        bindings,
+      });
+      const activeCount = result.requests.filter((request) => request.status === "pending").length;
+      addLog(`↻ Synced ${activeCount} pending proof requests (${source})`);
+      for (const error of result.errors) {
+        addLog(`ℹ️ pending request sync skipped for ${error.bindingId} — ${error.message}`);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setPendingRequestsSyncError(message);
+      addLog(`ℹ️ pending request sync failed (${source}) — ${message}`);
+    } finally {
+      setSyncingPendingRequests(false);
+    }
+  }, [addLog]);
+
   useEffect(() => {
     if (!showService) return;
     const indicatorTimer = setTimeout(() => {
@@ -744,18 +778,48 @@ export default function App() {
       ).serviceBindings
     );
   }, [currentDeviceIss, hydratedServiceBindings, localBindingsForHydration, presence.state]);
+  const activePendingProofRequests = useMemo(
+    () => (presence.state ? getActivePendingProofRequests(presence.state) : []),
+    [presence.state]
+  );
+  const currentPendingProofRequest = useMemo<PendingProofRequest | null>(
+    () => (!openedEnvelope ? activePendingProofRequests[0] ?? null : null),
+    [activePendingProofRequests, openedEnvelope]
+  );
   const openedRequestedBinding = useMemo(
     () => resolveRequestedLinkedBinding(openedEnvelope, effectiveServiceBindings),
     [effectiveServiceBindings, openedEnvelope]
   );
+  const currentPendingRequestedBinding = useMemo(
+    () => (
+      currentPendingProofRequest
+        ? (
+          effectiveServiceBindings.find((binding) => binding.bindingId === currentPendingProofRequest.bindingId)
+          ?? null
+        )
+        : null
+    ),
+    [currentPendingProofRequest, effectiveServiceBindings]
+  );
+  const orbRequestedBinding = openedRequestedBinding ?? currentPendingRequestedBinding;
   const currentRequestedProofKey = useMemo(
     () => buildRequestedProofKey({
+      requestId: currentPendingProofRequest?.requestId ?? null,
       sessionId: openedEnvelope?.sessionId ?? null,
-      bindingId: openedRequestedBinding?.bindingId ?? null,
-      serviceId: openedEnvelope?.serviceId ?? null,
-      accountId: openedEnvelope?.accountId ?? null,
+      bindingId: orbRequestedBinding?.bindingId ?? currentPendingProofRequest?.bindingId ?? null,
+      serviceId: openedEnvelope?.serviceId ?? currentPendingProofRequest?.serviceId ?? null,
+      accountId: openedEnvelope?.accountId ?? currentPendingProofRequest?.accountId ?? null,
     }),
-    [openedEnvelope?.accountId, openedEnvelope?.serviceId, openedEnvelope?.sessionId, openedRequestedBinding?.bindingId]
+    [
+      currentPendingProofRequest?.accountId,
+      currentPendingProofRequest?.bindingId,
+      currentPendingProofRequest?.requestId,
+      currentPendingProofRequest?.serviceId,
+      openedEnvelope?.accountId,
+      openedEnvelope?.serviceId,
+      openedEnvelope?.sessionId,
+      orbRequestedBinding?.bindingId,
+    ]
   );
   const hasRecovery = effectiveServiceBindings.some((binding) => binding.status === "recovery_pending" || binding.status === "reauth_required");
   const openedSessionAlreadyLinked = !!openedRequestedBinding;
@@ -767,15 +831,24 @@ export default function App() {
       return timeB - timeA;
     })
     .slice(0, 10);
+  const pendingProofBindingsKey = useMemo(
+    () => effectiveServiceBindings
+      .filter((binding) => binding.status === "linked" && !!binding.sync?.pendingRequestsUrl)
+      .map((binding) => `${binding.bindingId}:${binding.sync?.pendingRequestsUrl ?? "-"}`)
+      .sort()
+      .join("|"),
+    [effectiveServiceBindings]
+  );
   const requestedProofStatus = currentRequestedProofKey && linkedProofRequestState?.requestKey === currentRequestedProofKey
     ? linkedProofRequestState.status
     : null;
+  const requestedServiceId = openedEnvelope?.serviceId ?? currentPendingProofRequest?.serviceId ?? null;
   const productState = getProductState({
     phase: presence.phase,
     pass: presence.state?.pass,
     hasRecovery,
     linkedServiceCount: recentServiceBindings.length,
-    requestedServiceId: openedEnvelope?.serviceId ?? null,
+    requestedServiceId,
     requestedProofStatus,
   });
   const productTone = colorForProductTone(productState.tone);
@@ -799,10 +872,21 @@ export default function App() {
       phase: presence.phase,
       deviceIss: currentDeviceIss,
       envelope: openedEnvelope,
-      binding: openedRequestedBinding,
+      binding: orbRequestedBinding,
     }),
-    [currentDeviceIss, logEntries, openedEnvelope, openedRequestedBinding, presence.phase]
+    [currentDeviceIss, logEntries, openedEnvelope, orbRequestedBinding, presence.phase]
   );
+
+  useEffect(() => {
+    if (!presence.state || !currentDeviceIss || !pendingProofBindingsKey) {
+      return;
+    }
+    void hydratePendingProofRequests(effectiveServiceBindings, "foreground_hydration");
+  }, [
+    currentDeviceIss,
+    hydratePendingProofRequests,
+    pendingProofBindingsKey,
+  ]);
 
   const clearConnectSession = useCallback(() => {
     setOpenedEnvelope(null);
@@ -875,6 +959,72 @@ export default function App() {
 
   const handleApprove = async () => {
     const currentEnvelope = openedEnvelope;
+    const pendingRequest = currentPendingProofRequest;
+    const pendingBinding = currentPendingRequestedBinding;
+
+    if (!currentEnvelope && pendingRequest && pendingBinding) {
+      const requestKey = currentRequestedProofKey ?? buildRequestedProofKey({
+        requestId: pendingRequest.requestId,
+        bindingId: pendingBinding.bindingId,
+        serviceId: pendingRequest.serviceId,
+        accountId: pendingRequest.accountId ?? null,
+      });
+      setSubmittingLinkedProof(true);
+      if (requestKey) {
+        setLinkedProofRequestState({ requestKey, status: "submitting" });
+      }
+      addLog(
+        `→ submit pending PASS request request=${pendingRequest.requestId} binding=${pendingBinding.bindingId} service=${pendingRequest.serviceId}`
+      );
+
+      try {
+        const result = await submitPendingProofRequest({
+          request: pendingRequest,
+          binding: pendingBinding,
+        });
+        const refreshedState = await presence.refresh();
+
+        addLog(
+          `✅ pending proof attempt finished — request=${result.requestId} binding=${result.bindingId} status=${result.status}`
+        );
+        addLog(
+          `   state: created=${refreshedState?.stateCreatedAt ?? '-'} validUntil=${refreshedState?.stateValidUntil ?? '-'} measured=${refreshedState?.lastMeasuredAt ?? '-'} phase=${refreshedState?.status ?? '-'}`
+        );
+
+        if (result.status === "verified") {
+          setLocalError(null);
+          if (requestKey) {
+            setLinkedProofRequestState(null);
+          }
+          void hydratePendingProofRequests(effectiveServiceBindings, "post_pending_submit");
+          return;
+        }
+
+        if (requestKey) {
+          setLinkedProofRequestState({ requestKey, status: "failed" });
+        }
+        setLocalError("This linked service needs recovery or relink before it can accept proof from this device.");
+        return;
+      } catch (error) {
+        await presence.refresh();
+        const message = error instanceof Error ? error.message : String(error);
+        if (requestKey) {
+          setLinkedProofRequestState({ requestKey, status: "failed" });
+        }
+        setLocalError(`Could not submit the pending proof request: ${message}`);
+        addLog(`❌ pending proof error — ${message}`);
+        return;
+      } finally {
+        setSubmittingLinkedProof(false);
+      }
+    }
+
+    if (!currentEnvelope && pendingRequest && !pendingBinding) {
+      setLocalError("This pending proof request no longer matches an active linked service on this device.");
+      addLog(`❌ pending proof request ${pendingRequest.requestId} could not be matched to an active binding`);
+      return;
+    }
+
     if (!currentEnvelope) {
       setLocalError("Open a link session first.");
       return;
@@ -1077,7 +1227,7 @@ export default function App() {
         <View style={styles.heroCard}>
           <TouchableOpacity
             style={styles.heroImageWrap}
-            onPress={openedEnvelope ? handleApprove : handleMeasure}
+            onPress={openedEnvelope || currentPendingProofRequest ? handleApprove : handleMeasure}
             disabled={isSubmittingPass}
             activeOpacity={0.9}
           >
@@ -1136,6 +1286,10 @@ export default function App() {
                 <Text style={styles.modalMeta}>Syncing linked services…</Text>
               ) : serviceBindingsHydrationError ? (
                 <Text style={styles.modalMeta}>Service sync fallback: {serviceBindingsHydrationError}</Text>
+              ) : syncingPendingRequests ? (
+                <Text style={styles.modalMeta}>Syncing pending proof requests…</Text>
+              ) : pendingRequestsSyncError ? (
+                <Text style={styles.modalMeta}>Pending request sync fallback: {pendingRequestsSyncError}</Text>
               ) : null}
 
               {recentServiceBindings.length > 0 ? (

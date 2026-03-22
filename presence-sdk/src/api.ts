@@ -6,6 +6,8 @@ import type {
   LinkageAuditEvent,
   LinkedVerificationRecovery,
   LinkedAccountReadiness,
+  PendingProofRequest,
+  PendingProofRequestStatus,
 } from "./types.js";
 
 /**
@@ -21,6 +23,9 @@ export interface PresenceCompletionEndpointContract {
   sessionStatusPath?: string;
   linkedNoncePath?: string;
   verifyLinkedAccountPath?: string;
+  linkedPendingProofRequestsPath?: string;
+  pendingProofRequestPath?: string;
+  respondPendingProofRequestPath?: string;
   linkedStatusPath?: string;
   unlinkAccountPath?: string;
   revokeDevicePath?: string;
@@ -122,6 +127,34 @@ export interface PresenceLinkedProofRequestResponse {
   proofRequest: PresenceLinkedProofRequestDescriptor;
 }
 
+export interface PresencePendingProofRequestDescriptor {
+  flow: "reauth";
+  requestId: string;
+  serviceId: string;
+  accountId: string;
+  bindingId: string;
+  deviceIss: string;
+  nonce: string;
+  issuedAt: number;
+  expiresAt: number;
+  status: PendingProofRequestStatus;
+  endpoints: {
+    respond: CompletionEndpointDescriptor;
+    status?: CompletionEndpointDescriptor;
+    unlink?: CompletionEndpointDescriptor;
+  };
+}
+
+export interface PresencePendingProofRequestResponse {
+  ok: true;
+  proofRequest: PresencePendingProofRequestDescriptor;
+}
+
+export interface PresencePendingProofRequestListResponse {
+  ok: true;
+  proofRequests: PresencePendingProofRequestDescriptor[];
+}
+
 export interface PresenceLinkedAccountReadinessResponse {
   ok: true;
   readiness: LinkedAccountReadiness;
@@ -170,6 +203,13 @@ function rewriteLinkUrlForPublicBase(
     }
   }
 
+  for (const key of ["pending_url"]) {
+    const current = parsed.searchParams.get(key);
+    if (current?.startsWith("/")) {
+      parsed.searchParams.set(key, absolutizePublicUrl(publicBaseUrl, current)!);
+    }
+  }
+
   if (serviceDomain && !parsed.searchParams.get("service_domain")) {
     parsed.searchParams.set("service_domain", serviceDomain);
   }
@@ -196,6 +236,7 @@ export function rewriteLinkSessionForPublicBase(
       completionApiUrl: absolutizePublicUrl(publicBaseUrl, session.completion.completionApiUrl),
       linkedNonceApiUrl: absolutizePublicUrl(publicBaseUrl, session.completion.linkedNonceApiUrl),
       verifyLinkedAccountApiUrl: absolutizePublicUrl(publicBaseUrl, session.completion.verifyLinkedAccountApiUrl),
+      pendingProofRequestsApiUrl: absolutizePublicUrl(publicBaseUrl, session.completion.pendingProofRequestsApiUrl),
     },
   };
 }
@@ -212,6 +253,11 @@ function completionStatusEndpointPath(completion?: LinkCompletion, sessionId?: s
 function accountEndpointPath(path: string | undefined, accountId: string, fallback: string): string {
   if (!path) return fallback;
   return path.replace(/:accountId\b/g, encodeURIComponent(accountId));
+}
+
+function requestEndpointPath(path: string | undefined, requestId: string, fallback: string): string {
+  if (!path) return fallback;
+  return path.replace(/:requestId\b/g, encodeURIComponent(requestId));
 }
 
 export function createCompletionDescriptor(params: {
@@ -374,6 +420,73 @@ export function createLinkedProofRequestResponse(params: {
   return {
     ok: true,
     proofRequest: createLinkedProofRequestDescriptor(params),
+  };
+}
+
+export function createPendingProofRequestDescriptor(params: {
+  request: PendingProofRequest;
+  contract: PresenceCompletionEndpointContract;
+}): PresencePendingProofRequestDescriptor {
+  const { request, contract } = params;
+  const respondPath = requestEndpointPath(
+    contract.respondPendingProofRequestPath,
+    request.id,
+    `/presence/pending-proof-requests/${encodeURIComponent(request.id)}/respond`
+  );
+  const statusPath = contract.pendingProofRequestPath
+    ? requestEndpointPath(
+        contract.pendingProofRequestPath,
+        request.id,
+        `/presence/pending-proof-requests/${encodeURIComponent(request.id)}`
+      )
+    : undefined;
+  const unlinkPath = contract.unlinkAccountPath
+    ? accountEndpointPath(
+        contract.unlinkAccountPath,
+        request.accountId,
+        `/presence/linked-accounts/${encodeURIComponent(request.accountId)}/unlink`
+      )
+    : undefined;
+
+  return {
+    flow: "reauth",
+    requestId: request.id,
+    serviceId: request.serviceId,
+    accountId: request.accountId,
+    bindingId: request.bindingId,
+    deviceIss: request.deviceIss,
+    nonce: request.nonce,
+    issuedAt: request.requestedAt,
+    expiresAt: request.expiresAt,
+    status: request.status,
+    endpoints: {
+      respond: { method: "POST", path: respondPath },
+      status: statusPath ? { method: "GET", path: statusPath } : undefined,
+      unlink: unlinkPath ? { method: "POST", path: unlinkPath } : undefined,
+    },
+  };
+}
+
+export function createPendingProofRequestResponse(params: {
+  request: PendingProofRequest;
+  contract: PresenceCompletionEndpointContract;
+}): PresencePendingProofRequestResponse {
+  return {
+    ok: true,
+    proofRequest: createPendingProofRequestDescriptor(params),
+  };
+}
+
+export function createPendingProofRequestListResponse(params: {
+  requests: PendingProofRequest[];
+  contract: PresenceCompletionEndpointContract;
+}): PresencePendingProofRequestListResponse {
+  return {
+    ok: true,
+    proofRequests: params.requests.map((request) => createPendingProofRequestDescriptor({
+      request,
+      contract: params.contract,
+    })),
   };
 }
 

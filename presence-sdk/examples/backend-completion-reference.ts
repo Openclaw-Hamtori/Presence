@@ -12,6 +12,8 @@ import {
   createRecoveryResponse,
   createAuditEventsResponse,
   createLinkedProofRequestResponse,
+  createPendingProofRequestResponse,
+  createPendingProofRequestListResponse,
   createLinkedAccountReadinessResponse,
   rewriteLinkSessionForPublicBase,
 } from "../src/index.js";
@@ -30,6 +32,9 @@ const endpointContract = {
   sessionStatusPath: "/presence/link-sessions/:sessionId",
   linkedNoncePath: "/presence/linked-accounts/:accountId/nonce",
   verifyLinkedAccountPath: "/presence/linked-accounts/:accountId/verify",
+  linkedPendingProofRequestsPath: "/presence/linked-accounts/:accountId/pending-proof-requests",
+  pendingProofRequestPath: "/presence/pending-proof-requests/:requestId",
+  respondPendingProofRequestPath: "/presence/pending-proof-requests/:requestId/respond",
   linkedStatusPath: "/presence/linked-accounts/:accountId/status",
   unlinkAccountPath: "/presence/linked-accounts/:accountId/unlink",
   revokeDevicePath: "/presence/devices/:deviceIss/revoke",
@@ -144,6 +149,75 @@ export async function createLinkedProofRequestHandler(req: { params: { accountId
 
 // Compatibility alias for older examples that still refer to the endpoint as "issue nonce".
 export const issueLinkedNonceHandler = createLinkedProofRequestHandler;
+
+export async function createPendingProofRequestHandler(req: { params: { accountId: string } }) {
+  const request = await presence.createPendingProofRequest({
+    accountId: req.params.accountId,
+  });
+
+  if (request.ok) {
+    return createPendingProofRequestResponse({
+      request: request.request,
+      contract: endpointContract,
+    });
+  }
+
+  switch (request.state) {
+    case "missing_binding":
+      return {
+        ok: false,
+        code: "ERR_BINDING_NOT_FOUND",
+        message: request.reason,
+        state: request.state,
+      };
+    default:
+      return {
+        ok: false,
+        code: "ERR_LINKED_PROOF_UNAVAILABLE",
+        message: request.reason,
+        state: request.state,
+        bindingId: request.binding?.bindingId,
+      };
+  }
+}
+
+export async function listPendingProofRequestsHandler(req: { params: { accountId: string } }) {
+  const requests = await presence.listPendingProofRequests({
+    accountId: req.params.accountId,
+  });
+  return createPendingProofRequestListResponse({
+    requests,
+    contract: endpointContract,
+  });
+}
+
+export async function respondToPendingProofRequestHandler(req: { params: { requestId: string }; body: unknown }) {
+  const result = await presence.respondToPendingProofRequest({
+    requestId: req.params.requestId,
+    body: req.body,
+  });
+
+  if (result.verified) {
+    return {
+      ok: true,
+      state: "linked",
+      binding: result.binding,
+      snapshot: result.snapshot,
+      request: result.request,
+    };
+  }
+
+  if (result.error === "ERR_BINDING_RECOVERY_REQUIRED") {
+    return createRecoveryResponse(result);
+  }
+
+  return {
+    ok: false,
+    code: result.error,
+    message: result.detail,
+    request: result.request,
+  };
+}
 
 export async function getLinkedAccountStatusHandler(req: { params: { accountId: string } }) {
   const readiness = await presence.getLinkedAccountReadiness({

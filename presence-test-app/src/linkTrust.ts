@@ -36,6 +36,8 @@ const DEMO_WELL_KNOWN: PresenceWellKnownDocument = {
   allowed_url_prefixes: [
     "https://demo.presence.local/presence/nonce",
     "https://demo.presence.local/presence/verify",
+    "https://demo.presence.local/presence/linked-accounts",
+    "https://demo.presence.local/presence/pending-proof-requests",
   ],
 };
 
@@ -46,6 +48,7 @@ export async function validateLinkCompletionEnvelope(envelope: LinkCompletionEnv
     nonceUrl: envelope.nonceUrl,
     verifyUrl: envelope.verifyUrl,
     statusUrl: envelope.statusUrl,
+    pendingRequestsUrl: envelope.pendingRequestsUrl,
   });
 }
 
@@ -83,6 +86,7 @@ export async function validateBindingSyncConfiguration(params: {
     serviceDomain: params.sync?.serviceDomain,
     nonceUrl: params.sync?.nonceUrl,
     verifyUrl: params.sync?.verifyUrl,
+    pendingRequestsUrl: params.sync?.pendingRequestsUrl,
   });
 }
 
@@ -92,6 +96,7 @@ async function validateServiceSyncTargets(params: {
   nonceUrl?: string;
   verifyUrl?: string;
   statusUrl?: string;
+  pendingRequestsUrl?: string;
 }): Promise<Result<void>> {
   const statusUrl = params.statusUrl?.trim();
   if (statusUrl && !normalizeAbsoluteUrl(statusUrl)) {
@@ -104,6 +109,7 @@ async function validateServiceSyncTargets(params: {
   const syncTargets = [
     ["nonce_url", params.nonceUrl],
     ["verify_url", params.verifyUrl],
+    ["pending_url", params.pendingRequestsUrl],
   ].filter((entry): entry is [string, string] => typeof entry[1] === "string" && entry[1].trim().length > 0);
 
   if (syncTargets.length === 0) {

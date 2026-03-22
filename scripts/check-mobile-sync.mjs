@@ -13,7 +13,6 @@ const mirroredDuplicates = [
   "ui/assets/presence-orb.png",
   "ui/components/PresenceStatusCard.tsx",
   "ui/screens/OnboardingScreen.tsx",
-  "ui/usePresenceBackgroundSync.ts",
   "ui/usePresenceState.ts",
 ];
 
@@ -22,6 +21,7 @@ const reexportBridges = {
   "deeplink.ts": "../../presence-mobile/src/deeplink",
   "health/pass.ts": "../../../presence-mobile/src/health/pass",
   "qrScanner.ts": "../../presence-mobile/src/qrScanner",
+  "sync/pendingProofRequests.ts": "../../../presence-mobile/src/sync/pendingProofRequests",
   "sync/queue.ts": "../../../presence-mobile/src/sync/queue",
   "types/index.ts": "../../../presence-mobile/src/types/index",
   "ui/connectionLinking.ts": "../../../presence-mobile/src/ui/connectionLinking",
@@ -35,6 +35,7 @@ const intentionalForks = {
   "service.ts": "test app preserves app-specific proof orchestration and local-state behavior",
   "state/presenceState.ts": "test app compresses timing and carries app-only hydration helpers for validation",
   "sync/linkedBindings.ts": "test app records detailed linked-sync diagnostics and stricter debug guardrails",
+  "ui/usePresenceBackgroundSync.ts": "test app disables background scheduling for the on-demand linked-service flow",
 };
 
 const allowedMissingInTestApp = new Set([

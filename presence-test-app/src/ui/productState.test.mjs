@@ -6,6 +6,15 @@ import { buildRequestedProofKey, getProductState } from "./productState.ts";
 test("buildRequestedProofKey() scopes linked proof UI state to the active request", () => {
   assert.equal(
     buildRequestedProofKey({
+      requestId: "ppreq_123",
+      bindingId: "pbind_456",
+      serviceId: "presence-demo",
+      accountId: "acct-1",
+    }),
+    "ppreq_123:pbind_456:presence-demo:acct-1"
+  );
+  assert.equal(
+    buildRequestedProofKey({
       sessionId: "plink_123",
       bindingId: "pbind_456",
       serviceId: "presence-demo",

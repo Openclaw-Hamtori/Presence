@@ -21,6 +21,10 @@ export {
   savePresenceState,
   clearPresenceState,
   isStateUsable,
+  replacePendingProofRequests,
+  upsertPendingProofRequest,
+  removePendingProofRequest,
+  getActivePendingProofRequests,
 } from "./state/presenceState";
 
 // ─── Health ───────────────────────────────────────────────────────────────────
@@ -51,6 +55,7 @@ export { OnboardingScreen } from "./ui/screens/OnboardingScreen";
 export { PresenceStatusCard } from "./ui/components/PresenceStatusCard";
 export { isQrScannerSupported, scanQrCode } from "./qrScanner";
 export { syncLinkedBindings, flushQueuedLinkedBindingSyncs, submitLinkedBindingProof } from "./sync/linkedBindings";
+export { syncPendingProofRequests, submitPendingProofRequest } from "./sync/pendingProofRequests";
 export { hasPendingLinkedBindingSyncJobs, clearLinkedBindingSyncQueue } from "./sync/queue";
 export type {
   LinkedBindingSyncError,
@@ -58,6 +63,11 @@ export type {
   LinkedBindingProofSubmissionStatus,
   LinkedBindingProofSubmissionResult,
 } from "./sync/linkedBindings";
+export type {
+  PendingProofRequestSyncError,
+  PendingProofRequestSyncResult,
+  PendingProofRequestSubmissionResult,
+} from "./sync/pendingProofRequests";
 export type { LinkedBindingSyncJob, LinkedBindingSyncJobKind } from "./sync/queue";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -66,10 +76,12 @@ export type {
   PresenceSignal,
   PresenceState,
   PresenceBindingSync,
+  PendingProofRequest,
   PresenceTransportPayload,
   PresenceMobileErrorCode,
   BiometricWindow,
   PassResult,
   Result,
+  PendingProofRequestStatus,
 } from "./types/index";
 export { PresenceMobileError, ok, err } from "./types/index";

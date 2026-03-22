@@ -5,6 +5,7 @@ import type { PresenceVerifyResult, VerifierSuccess } from "./types.js";
 export type LinkSessionStatus = "pending" | "consumed" | "expired" | "cancelled";
 export type ServiceBindingStatus = "linked" | "revoked" | "unlinked" | "reauth_required" | "recovery_pending";
 export type LinkedDeviceTrustState = "active" | "revoked" | "recovery_pending";
+export type PendingProofRequestStatus = "pending" | "verified" | "recovery_required" | "expired" | "cancelled";
 export type BindingRecoveryAction = "reauth" | "relink" | "contact_support";
 export type LinkCompletionMethod = "qr" | "deeplink" | "manual_code";
 export type BindingEventType =
@@ -97,6 +98,21 @@ export interface LinkageAuditEvent {
   metadata?: Record<string, string>;
 }
 
+export interface PendingProofRequest {
+  id: string;
+  serviceId: string;
+  accountId: string;
+  bindingId: string;
+  deviceIss: string;
+  nonce: string;
+  requestedAt: number;
+  expiresAt: number;
+  status: PendingProofRequestStatus;
+  completedAt?: number;
+  recoveryReason?: string;
+  metadata?: Record<string, string>;
+}
+
 export interface LinkCompletion {
   /**
    * `defaultLinkCompletion()` emits backend-relative API paths by default.
@@ -112,6 +128,7 @@ export interface LinkCompletion {
   completionApiUrl?: string;
   linkedNonceApiUrl?: string;
   verifyLinkedAccountApiUrl?: string;
+  pendingProofRequestsApiUrl?: string;
 }
 
 export interface BindingPolicy {
@@ -126,6 +143,15 @@ export interface LinkageStore {
   saveServiceBinding(binding: ServiceBinding): Promise<void>;
   getServiceBinding(serviceId: string, accountId: string): Promise<ServiceBinding | null>;
   listBindingsForDevice(deviceIss: string): Promise<ServiceBinding[]>;
+  savePendingProofRequest(request: PendingProofRequest): Promise<void>;
+  getPendingProofRequest(requestId: string): Promise<PendingProofRequest | null>;
+  listPendingProofRequests(filter?: {
+    serviceId?: string;
+    accountId?: string;
+    bindingId?: string;
+    deviceIss?: string;
+    statuses?: PendingProofRequestStatus[];
+  }): Promise<PendingProofRequest[]>;
   getLinkedDevice(deviceIss: string): Promise<LinkedDevice | null>;
   saveLinkedDevice(device: LinkedDevice): Promise<void>;
   appendAuditEvent(event: LinkageAuditEvent): Promise<void>;
@@ -205,6 +231,7 @@ export interface BindingMutationResult {
 export class InMemoryLinkageStore implements LinkageStore {
   private readonly sessions = new Map<string, LinkSession>();
   private readonly bindings = new Map<string, ServiceBinding>();
+  private readonly pendingProofRequests = new Map<string, PendingProofRequest>();
   private readonly devices = new Map<string, LinkedDevice>();
   private readonly auditEvents: LinkageAuditEvent[] = [];
   private mutationQueue: Promise<void> = Promise.resolve();
@@ -229,6 +256,26 @@ export class InMemoryLinkageStore implements LinkageStore {
     return [...this.bindings.values()]
       .filter((binding) => binding.deviceIss === deviceIss)
       .map((binding) => ({ ...binding }));
+  }
+
+  async savePendingProofRequest(request: PendingProofRequest): Promise<void> {
+    this.pendingProofRequests.set(request.id, clonePendingProofRequest(request));
+  }
+
+  async getPendingProofRequest(requestId: string): Promise<PendingProofRequest | null> {
+    const request = this.pendingProofRequests.get(requestId);
+    return request ? clonePendingProofRequest(request) : null;
+  }
+
+  async listPendingProofRequests(filter?: {
+    serviceId?: string;
+    accountId?: string;
+    bindingId?: string;
+    deviceIss?: string;
+    statuses?: PendingProofRequestStatus[];
+  }): Promise<PendingProofRequest[]> {
+    return filterPendingProofRequests([...this.pendingProofRequests.values()], filter)
+      .map((request) => clonePendingProofRequest(request));
   }
 
   async getLinkedDevice(deviceIss: string): Promise<LinkedDevice | null> {
@@ -273,6 +320,7 @@ export class InMemoryLinkageStore implements LinkageStore {
 interface FileLinkageStoreData {
   sessions: Record<string, LinkSession>;
   bindings: Record<string, ServiceBinding>;
+  pendingProofRequests: Record<string, PendingProofRequest>;
   devices: Record<string, LinkedDevice>;
   auditEvents: LinkageAuditEvent[];
 }
@@ -329,6 +377,13 @@ function cloneServiceBinding(binding: ServiceBinding): ServiceBinding {
   };
 }
 
+function clonePendingProofRequest(request: PendingProofRequest): PendingProofRequest {
+  return {
+    ...request,
+    metadata: cloneMetadata(request.metadata),
+  };
+}
+
 function cloneAuditEvent(event: LinkageAuditEvent): LinkageAuditEvent {
   return {
     ...event,
@@ -348,6 +403,9 @@ function normalizeFileLinkageStoreData(parsed: unknown): FileLinkageStoreData {
   return {
     sessions: isRecord(parsed.sessions) ? parsed.sessions as Record<string, LinkSession> : {},
     bindings: isRecord(parsed.bindings) ? parsed.bindings as Record<string, ServiceBinding> : {},
+    pendingProofRequests: isRecord(parsed.pendingProofRequests)
+      ? parsed.pendingProofRequests as Record<string, PendingProofRequest>
+      : {},
     devices: isRecord(parsed.devices) ? parsed.devices as Record<string, LinkedDevice> : {},
     auditEvents: Array.isArray(parsed.auditEvents) ? parsed.auditEvents as LinkageAuditEvent[] : [],
   };
@@ -361,6 +419,27 @@ function filterAuditEvents(
     if (filter?.serviceId && event.serviceId !== filter.serviceId) return false;
     if (filter?.accountId && event.accountId !== filter.accountId) return false;
     if (filter?.bindingId && event.bindingId !== filter.bindingId) return false;
+    return true;
+  });
+}
+
+function filterPendingProofRequests(
+  requests: readonly PendingProofRequest[],
+  filter?: {
+    serviceId?: string;
+    accountId?: string;
+    bindingId?: string;
+    deviceIss?: string;
+    statuses?: PendingProofRequestStatus[];
+  }
+): PendingProofRequest[] {
+  const statuses = filter?.statuses ? new Set(filter.statuses) : null;
+  return requests.filter((request) => {
+    if (filter?.serviceId && request.serviceId !== filter.serviceId) return false;
+    if (filter?.accountId && request.accountId !== filter.accountId) return false;
+    if (filter?.bindingId && request.bindingId !== filter.bindingId) return false;
+    if (filter?.deviceIss && request.deviceIss !== filter.deviceIss) return false;
+    if (statuses && !statuses.has(request.status)) return false;
     return true;
   });
 }
@@ -399,6 +478,30 @@ export class FileSystemLinkageStore implements LinkageStore {
     return Object.values(data.bindings)
       .filter((binding) => binding.deviceIss === deviceIss)
       .map((binding) => cloneServiceBinding(binding));
+  }
+
+  async savePendingProofRequest(request: PendingProofRequest): Promise<void> {
+    await this.update((data) => {
+      data.pendingProofRequests[request.id] = clonePendingProofRequest(request);
+    });
+  }
+
+  async getPendingProofRequest(requestId: string): Promise<PendingProofRequest | null> {
+    const data = await this.readData();
+    const request = data.pendingProofRequests[requestId];
+    return request ? clonePendingProofRequest(request) : null;
+  }
+
+  async listPendingProofRequests(filter?: {
+    serviceId?: string;
+    accountId?: string;
+    bindingId?: string;
+    deviceIss?: string;
+    statuses?: PendingProofRequestStatus[];
+  }): Promise<PendingProofRequest[]> {
+    const data = await this.readData();
+    return filterPendingProofRequests(Object.values(data.pendingProofRequests), filter)
+      .map((request) => clonePendingProofRequest(request));
   }
 
   async getLinkedDevice(deviceIss: string): Promise<LinkedDevice | null> {
@@ -456,7 +559,7 @@ export class FileSystemLinkageStore implements LinkageStore {
       }
     } catch (error) {
       if (this.isErrnoException(error, "ENOENT")) {
-        return { sessions: {}, bindings: {}, devices: {}, auditEvents: [] };
+        return { sessions: {}, bindings: {}, pendingProofRequests: {}, devices: {}, auditEvents: [] };
       }
       if (error instanceof LinkageStoreCorruptionError) {
         throw error;
@@ -516,6 +619,17 @@ export class FileSystemLinkageStore implements LinkageStore {
       listBindingsForDevice: async (deviceIss) => Object.values(data.bindings)
         .filter((binding) => binding.deviceIss === deviceIss)
         .map((binding) => cloneServiceBinding(binding)),
+      savePendingProofRequest: async (request) => {
+        data.pendingProofRequests[request.id] = clonePendingProofRequest(request);
+      },
+      getPendingProofRequest: async (requestId) => {
+        const request = data.pendingProofRequests[requestId];
+        return request ? clonePendingProofRequest(request) : null;
+      },
+      listPendingProofRequests: async (filter) => filterPendingProofRequests(
+        Object.values(data.pendingProofRequests),
+        filter
+      ).map((request) => clonePendingProofRequest(request)),
       getLinkedDevice: async (deviceIss) => {
         const device = data.devices[deviceIss];
         return device ? cloneLinkedDevice(device) : null;
@@ -648,6 +762,7 @@ export function defaultLinkCompletion(
   const code = sessionId.slice(-6).toUpperCase();
   const linkedNonceApiUrl = `/presence/linked-accounts/${encodeURIComponent(accountId)}/nonce`;
   const verifyLinkedAccountApiUrl = `/presence/linked-accounts/${encodeURIComponent(accountId)}/verify`;
+  const pendingProofRequestsApiUrl = `/presence/linked-accounts/${encodeURIComponent(accountId)}/pending-proof-requests`;
   const query =
     `session_id=${encodeURIComponent(sessionId)}` +
     `&service_id=${encodeURIComponent(serviceId)}` +
@@ -655,6 +770,7 @@ export function defaultLinkCompletion(
     `&nonce=${encodeURIComponent(nonce)}` +
     `&nonce_url=${encodeURIComponent(linkedNonceApiUrl)}` +
     `&verify_url=${encodeURIComponent(verifyLinkedAccountApiUrl)}` +
+    `&pending_url=${encodeURIComponent(pendingProofRequestsApiUrl)}` +
     `&status_url=${encodeURIComponent(`/presence/link-sessions/${encodeURIComponent(sessionId)}`)}`;
   return {
     method: "deeplink",
@@ -666,6 +782,7 @@ export function defaultLinkCompletion(
     completionApiUrl: `/presence/link-sessions/${encodeURIComponent(sessionId)}/complete`,
     linkedNonceApiUrl,
     verifyLinkedAccountApiUrl,
+    pendingProofRequestsApiUrl,
   };
 }
 

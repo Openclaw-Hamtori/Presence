@@ -23,6 +23,7 @@ import type {
   NonceIssuer,
   NonceStore,
   CreateLinkedProofRequestResult,
+  CreatePendingProofRequestResult,
   CreateLinkSessionOptions,
   CreateLinkSessionResult,
   CompleteLinkSessionResult,
@@ -32,6 +33,8 @@ import type {
   BindingMutationResult,
   LinkageAuditEvent,
   LinkageStore,
+  PendingProofRequest,
+  PendingProofRequestStatus,
   ServiceBinding,
 } from "./types.js";
 import {
@@ -302,6 +305,175 @@ export class PresenceClient {
       binding,
       nonce: this.generateNonce(),
     };
+  }
+
+  async createPendingProofRequest(params: {
+    serviceId?: string;
+    accountId: string;
+    metadata?: Record<string, string>;
+  }): Promise<CreatePendingProofRequestResult> {
+    const linkedRequest = await this.createLinkedProofRequest({
+      serviceId: params.serviceId,
+      accountId: params.accountId,
+    });
+
+    if (!linkedRequest.ok) {
+      return linkedRequest;
+    }
+
+    const request = await this.runStoreMutation(async (store) => {
+      const now = Math.floor(Date.now() / 1000);
+      await this.expirePendingProofRequestsWithStore(store, {
+        serviceId: linkedRequest.serviceId,
+        accountId: linkedRequest.accountId,
+        bindingId: linkedRequest.binding.bindingId,
+        deviceIss: linkedRequest.binding.deviceIss,
+        statuses: ["pending"],
+      }, now);
+
+      const stalePending = await store.listPendingProofRequests({
+        serviceId: linkedRequest.serviceId,
+        accountId: linkedRequest.accountId,
+        bindingId: linkedRequest.binding.bindingId,
+        deviceIss: linkedRequest.binding.deviceIss,
+        statuses: ["pending"],
+      });
+      for (const existing of stalePending) {
+        await store.savePendingProofRequest({
+          ...existing,
+          status: "cancelled",
+          completedAt: now,
+        });
+      }
+
+      const nextRequest: PendingProofRequest = {
+        id: randomId("ppreq"),
+        serviceId: linkedRequest.serviceId,
+        accountId: linkedRequest.accountId,
+        bindingId: linkedRequest.binding.bindingId,
+        deviceIss: linkedRequest.binding.deviceIss,
+        nonce: linkedRequest.nonce.value,
+        requestedAt: linkedRequest.nonce.issuedAt,
+        expiresAt: linkedRequest.nonce.expiresAt,
+        status: "pending",
+        metadata: params.metadata,
+      };
+      await store.savePendingProofRequest(nextRequest);
+      return nextRequest;
+    });
+
+    return {
+      ok: true,
+      state: "linked",
+      serviceId: linkedRequest.serviceId,
+      accountId: linkedRequest.accountId,
+      binding: linkedRequest.binding,
+      request,
+    };
+  }
+
+  async getPendingProofRequest(params: {
+    requestId: string;
+  }): Promise<PendingProofRequest | null> {
+    return this.runStoreMutation(async (store) => {
+      const current = await store.getPendingProofRequest(params.requestId);
+      if (!current) return null;
+      return this.ensurePendingProofRequestFreshWithStore(store, current);
+    });
+  }
+
+  async listPendingProofRequests(params: {
+    serviceId?: string;
+    accountId?: string;
+    bindingId?: string;
+    deviceIss?: string;
+    statuses?: PendingProofRequestStatus[];
+    includeInactive?: boolean;
+  } = {}): Promise<PendingProofRequest[]> {
+    return this.runStoreMutation(async (store) => {
+      const activeStatuses = params.statuses ?? (params.includeInactive ? undefined : ["pending"]);
+      await this.expirePendingProofRequestsWithStore(store, {
+        serviceId: params.serviceId,
+        accountId: params.accountId,
+        bindingId: params.bindingId,
+        deviceIss: params.deviceIss,
+        statuses: activeStatuses?.includes("pending") || activeStatuses == null
+          ? ["pending"]
+          : undefined,
+      });
+      return store.listPendingProofRequests({
+        serviceId: params.serviceId,
+        accountId: params.accountId,
+        bindingId: params.bindingId,
+        deviceIss: params.deviceIss,
+        statuses: activeStatuses,
+      });
+    });
+  }
+
+  async respondToPendingProofRequest(params: {
+    requestId: string;
+    body: unknown;
+  }): Promise<(LinkedVerificationResult & { request?: PendingProofRequest }) | PresenceVerifyResult> {
+    const request = await this.getPendingProofRequest({ requestId: params.requestId });
+    if (!request) {
+      return {
+        verified: false,
+        error: "ERR_INVALID_FORMAT",
+        detail: "unknown pending proof request",
+      };
+    }
+
+    if (request.status !== "pending") {
+      return {
+        verified: false,
+        error: "ERR_INVALID_FORMAT",
+        detail: `pending proof request is ${request.status}`,
+      };
+    }
+
+    const result = await this.verifyLinkedAccount(params.body, {
+      serviceId: request.serviceId,
+      accountId: request.accountId,
+      nonce: request.nonce,
+    });
+
+    if (!result.verified && result.error !== "ERR_BINDING_RECOVERY_REQUIRED") {
+      return { ...result, request };
+    }
+
+    const updatedRequest = await this.runStoreMutation(async (store) => {
+      const current = await store.getPendingProofRequest(params.requestId);
+      if (!current) {
+        return null;
+      }
+      const now = Math.floor(Date.now() / 1000);
+      const nextRequest: PendingProofRequest = result.verified
+        ? {
+            ...current,
+            status: "verified",
+            completedAt: now,
+            recoveryReason: undefined,
+          }
+        : {
+            ...current,
+            status: "recovery_required",
+            completedAt: now,
+            recoveryReason: result.binding.recoveryReason ?? "binding_recovery_required",
+          };
+      await store.savePendingProofRequest(nextRequest);
+      return nextRequest;
+    });
+
+    if (!updatedRequest) {
+      return {
+        verified: false,
+        error: "ERR_INVALID_FORMAT",
+        detail: "pending proof request disappeared during response handling",
+      };
+    }
+
+    return { ...result, request: updatedRequest };
   }
 
   async completeLinkSession(params: { sessionId: string; body: unknown }): Promise<CompleteLinkSessionResult> {
@@ -745,6 +917,44 @@ export class PresenceClient {
 
   async listAuditEvents(filter?: { serviceId?: string; accountId?: string; bindingId?: string }) {
     return this.linkageStore.listAuditEvents(filter);
+  }
+
+  private async ensurePendingProofRequestFreshWithStore(
+    store: LinkageStore,
+    request: PendingProofRequest,
+    now = Math.floor(Date.now() / 1000)
+  ): Promise<PendingProofRequest> {
+    if (request.status !== "pending" || request.expiresAt > now) {
+      return request;
+    }
+
+    const expiredRequest: PendingProofRequest = {
+      ...request,
+      status: "expired",
+      completedAt: request.completedAt ?? now,
+    };
+    await store.savePendingProofRequest(expiredRequest);
+    return expiredRequest;
+  }
+
+  private async expirePendingProofRequestsWithStore(
+    store: LinkageStore,
+    filter?: {
+      serviceId?: string;
+      accountId?: string;
+      bindingId?: string;
+      deviceIss?: string;
+      statuses?: PendingProofRequestStatus[];
+    },
+    now = Math.floor(Date.now() / 1000)
+  ): Promise<void> {
+    const requests = await store.listPendingProofRequests({
+      ...filter,
+      statuses: filter?.statuses ?? ["pending"],
+    });
+    for (const request of requests) {
+      await this.ensurePendingProofRequestFreshWithStore(store, request, now);
+    }
   }
 
   cleanupNonces(): void {

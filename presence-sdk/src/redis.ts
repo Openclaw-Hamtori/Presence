@@ -4,11 +4,14 @@ import type {
   ServiceBinding,
   LinkedDevice,
   LinkageAuditEvent,
+  PendingProofRequest,
+  PendingProofRequestStatus,
 } from "./types.js";
 
 interface RedisLinkageStoreData {
   sessions: Record<string, LinkSession>;
   bindings: Record<string, ServiceBinding>;
+  pendingProofRequests: Record<string, PendingProofRequest>;
   devices: Record<string, LinkedDevice>;
   auditEvents: LinkageAuditEvent[];
 }
@@ -51,6 +54,36 @@ export class RedisLinkageStore implements LinkageStore {
   async listBindingsForDevice(deviceIss: string): Promise<ServiceBinding[]> {
     const data = await this.readData();
     return Object.values(data.bindings).filter((binding) => binding.deviceIss === deviceIss);
+  }
+
+  async savePendingProofRequest(request: PendingProofRequest): Promise<void> {
+    await this.update((data) => {
+      data.pendingProofRequests[request.id] = { ...request };
+    });
+  }
+
+  async getPendingProofRequest(requestId: string): Promise<PendingProofRequest | null> {
+    const data = await this.readData();
+    return data.pendingProofRequests[requestId] ?? null;
+  }
+
+  async listPendingProofRequests(filter?: {
+    serviceId?: string;
+    accountId?: string;
+    bindingId?: string;
+    deviceIss?: string;
+    statuses?: PendingProofRequestStatus[];
+  }): Promise<PendingProofRequest[]> {
+    const statuses = filter?.statuses ? new Set(filter.statuses) : null;
+    const data = await this.readData();
+    return Object.values(data.pendingProofRequests).filter((request) => {
+      if (filter?.serviceId && request.serviceId !== filter.serviceId) return false;
+      if (filter?.accountId && request.accountId !== filter.accountId) return false;
+      if (filter?.bindingId && request.bindingId !== filter.bindingId) return false;
+      if (filter?.deviceIss && request.deviceIss !== filter.deviceIss) return false;
+      if (statuses && !statuses.has(request.status)) return false;
+      return true;
+    });
   }
 
   async getLinkedDevice(deviceIss: string): Promise<LinkedDevice | null> {
@@ -104,7 +137,7 @@ export class RedisLinkageStore implements LinkageStore {
   private async readData(): Promise<RedisLinkageStoreData> {
     const raw = await this.client.get(this.key);
     if (!raw) {
-      return { sessions: {}, bindings: {}, devices: {}, auditEvents: [] };
+      return { sessions: {}, bindings: {}, pendingProofRequests: {}, devices: {}, auditEvents: [] };
     }
 
     try {
@@ -112,11 +145,12 @@ export class RedisLinkageStore implements LinkageStore {
       return {
         sessions: parsed.sessions ?? {},
         bindings: parsed.bindings ?? {},
+        pendingProofRequests: parsed.pendingProofRequests ?? {},
         devices: parsed.devices ?? {},
         auditEvents: parsed.auditEvents ?? [],
       };
     } catch {
-      return { sessions: {}, bindings: {}, devices: {}, auditEvents: [] };
+      return { sessions: {}, bindings: {}, pendingProofRequests: {}, devices: {}, auditEvents: [] };
     }
   }
 }

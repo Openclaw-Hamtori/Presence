@@ -17,6 +17,8 @@ import { PresenceClient } from "../client.js";
 import {
   createCompletionSessionResponse,
   createLinkedProofRequestResponse,
+  createPendingProofRequestResponse,
+  createPendingProofRequestListResponse,
   createRecoveryResponse,
   rewriteLinkSessionForPublicBase,
 } from "../api.js";
@@ -378,6 +380,121 @@ function buildAndroidBody(
     assert.equal(request.state, "recovery_pending");
     assert.equal(request.binding?.bindingId, "pbind_recovery");
     assert.equal(request.reason, "binding_mismatch");
+  });
+
+  await test("createPendingProofRequest() persists a server-side pending request and formats respond endpoints", async () => {
+    const store = new InMemoryLinkageStore();
+    const client = new PresenceClient({ silent: true, linkageStore: store, serviceId: "svc" });
+    const now = Math.floor(Date.now() / 1000);
+    await store.saveServiceBinding({
+      bindingId: "pbind_pending",
+      serviceId: "svc",
+      accountId: "acct-pending",
+      deviceIss: "presence:device:pending",
+      createdAt: now,
+      updatedAt: now,
+      status: "linked",
+      lastLinkedAt: now,
+      lastVerifiedAt: now,
+      lastAttestedAt: now,
+    });
+
+    const pending = await client.createPendingProofRequest({
+      accountId: "acct-pending",
+      metadata: { source: "sdk-test" },
+    });
+    assert.equal(pending.ok, true);
+    if (!pending.ok) {
+      throw new Error("expected pending proof request");
+    }
+
+    const response = createPendingProofRequestResponse({
+      request: pending.request,
+      contract: {
+        createSessionPath: "/presence/link-sessions",
+        completeSessionPath: "/presence/link-sessions/:sessionId/complete",
+        linkedPendingProofRequestsPath: "/presence/linked-accounts/:accountId/pending-proof-requests",
+        pendingProofRequestPath: "/presence/pending-proof-requests/:requestId",
+        respondPendingProofRequestPath: "/presence/pending-proof-requests/:requestId/respond",
+        unlinkAccountPath: "/presence/linked-accounts/:accountId/unlink",
+      },
+    });
+    assert.equal(response.proofRequest.requestId, pending.request.id);
+    assert.equal(response.proofRequest.endpoints.respond.path, `/presence/pending-proof-requests/${encodeURIComponent(pending.request.id)}/respond`);
+    assert.equal(response.proofRequest.endpoints.status?.path, `/presence/pending-proof-requests/${encodeURIComponent(pending.request.id)}`);
+
+    const listResponse = createPendingProofRequestListResponse({
+      requests: await client.listPendingProofRequests({ accountId: "acct-pending" }),
+      contract: {
+        createSessionPath: "/presence/link-sessions",
+        completeSessionPath: "/presence/link-sessions/:sessionId/complete",
+        linkedPendingProofRequestsPath: "/presence/linked-accounts/:accountId/pending-proof-requests",
+        pendingProofRequestPath: "/presence/pending-proof-requests/:requestId",
+        respondPendingProofRequestPath: "/presence/pending-proof-requests/:requestId/respond",
+      },
+    });
+    assert.equal(listResponse.proofRequests.length, 1);
+    assert.equal(listResponse.proofRequests[0]?.status, "pending");
+  });
+
+  await test("respondToPendingProofRequest() marks the pending request verified after a successful linked verification", async () => {
+    const store = new InMemoryLinkageStore();
+    const client = new PresenceClient({ silent: true, linkageStore: store, serviceId: "svc" });
+    const now = Math.floor(Date.now() / 1000);
+    const binding = {
+      bindingId: "pbind_pending_verify",
+      serviceId: "svc",
+      accountId: "acct-pending-verify",
+      deviceIss: "presence:device:pending-verify",
+      createdAt: now,
+      updatedAt: now,
+      status: "linked" as const,
+      lastLinkedAt: now,
+      lastVerifiedAt: now,
+      lastAttestedAt: now,
+    };
+    await store.saveServiceBinding(binding);
+
+    const pending = await client.createPendingProofRequest({ accountId: "acct-pending-verify" });
+    assert.equal(pending.ok, true);
+    if (!pending.ok) {
+      throw new Error("expected pending proof request");
+    }
+
+    const respondStub = async () => ({
+      verified: true as const,
+      pol_version: "1.0" as const,
+      iss: binding.deviceIss,
+      iat: NOW,
+      state_created_at: STATE_CREATED,
+      state_valid_until: STATE_VALID_UNTIL,
+      human: true as const,
+      pass: true as const,
+      signals: ["heart_rate", "steps"] as const,
+      nonce: pending.request.nonce,
+      binding,
+      snapshot: {
+        deviceIss: binding.deviceIss,
+        capturedAt: NOW,
+        attestedAt: NOW,
+        stateCreatedAt: STATE_CREATED,
+        stateValidUntil: STATE_VALID_UNTIL,
+        human: true,
+        pass: true,
+        signals: ["heart_rate", "steps"] as const,
+        source: "verified_proof" as const,
+      },
+    });
+    (client as unknown as { verifyLinkedAccount: typeof respondStub }).verifyLinkedAccount = respondStub;
+
+    const result = await client.respondToPendingProofRequest({
+      requestId: pending.request.id,
+      body: { ok: true },
+    });
+    assert.equal(result.verified, true);
+    const savedRequest = await store.getPendingProofRequest(pending.request.id);
+    assert.equal(savedRequest?.status, "verified");
+    assert.ok(savedRequest?.completedAt);
   });
 
   await test("completeLinkSession() persists Android platform metadata from parsed request", async () => {

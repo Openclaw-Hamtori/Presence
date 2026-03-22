@@ -15,9 +15,11 @@ import type {
   BindingPolicy,
   LinkSessionStatus,
   ServiceBindingStatus,
+  PendingProofRequestStatus,
   LinkSession,
   LinkedDevice,
   ServiceBinding,
+  PendingProofRequest,
   PresenceSnapshot,
   CreateLinkSessionOptions,
   CreateLinkSessionResult,
@@ -47,6 +49,9 @@ import type {
   PresenceLinkedNonceResponse,
   PresenceLinkedProofRequestDescriptor,
   PresenceLinkedProofRequestResponse,
+  PresencePendingProofRequestDescriptor,
+  PresencePendingProofRequestResponse,
+  PresencePendingProofRequestListResponse,
   PresenceLinkedAccountReadinessResponse,
   LinkSessionPublicBaseOptions,
 } from "./api.js";
@@ -160,12 +165,25 @@ export interface LinkedProofRequestUnavailable {
 
 export type CreateLinkedProofRequestResult = LinkedProofRequestReady | LinkedProofRequestUnavailable;
 
+export interface PendingProofRequestReady {
+  ok: true;
+  state: "linked";
+  serviceId: string;
+  accountId: string;
+  binding: ServiceBinding;
+  request: PendingProofRequest;
+}
+
+export type CreatePendingProofRequestResult = PendingProofRequestReady | LinkedProofRequestUnavailable;
+
 export type {
   LinkSessionStatus,
   ServiceBindingStatus,
+  PendingProofRequestStatus,
   LinkSession,
   LinkedDevice,
   ServiceBinding,
+  PendingProofRequest,
   PresenceSnapshot,
   LinkageStore,
   BindingPolicy,
@@ -195,6 +213,9 @@ export type {
   PresenceLinkedNonceResponse,
   PresenceLinkedProofRequestDescriptor,
   PresenceLinkedProofRequestResponse,
+  PresencePendingProofRequestDescriptor,
+  PresencePendingProofRequestResponse,
+  PresencePendingProofRequestListResponse,
   PresenceLinkedAccountReadinessResponse,
   LinkSessionPublicBaseOptions,
   RedisLikeClient,

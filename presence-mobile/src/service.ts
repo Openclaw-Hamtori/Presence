@@ -148,6 +148,7 @@ export async function measure(options: MeasureOptions = {}): Promise<Result<Meas
       pass: true,
       signals: passResult.signals,
       serviceBindings: existingState?.serviceBindings,
+      pendingProofRequests: existingState?.pendingProofRequests,
       linkedDevice: existingState?.linkedDevice,
       capturedAt,
       reason: passResult.reason,
@@ -213,6 +214,7 @@ export async function proveMeasured(measurement: MeasureResult, options: ProveOp
     state = {
       ...measurement.state,
       serviceBindings: persistedState.serviceBindings,
+      pendingProofRequests: persistedState.pendingProofRequests,
       linkedDevice: persistedState.linkedDevice,
       activeLinkSession: persistedState.activeLinkSession,
     };

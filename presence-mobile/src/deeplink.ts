@@ -14,6 +14,7 @@ export interface LinkCompletionEnvelope {
   nonceUrl?: string;
   verifyUrl?: string;
   statusUrl?: string;
+  pendingRequestsUrl?: string;
 }
 
 function encodeParam(value: string): string {
@@ -47,6 +48,7 @@ export function buildPresenceLinkUrl(envelope: LinkCompletionEnvelope, baseUrl =
   if (envelope.nonceUrl) params.push(["nonce_url", envelope.nonceUrl]);
   if (envelope.verifyUrl) params.push(["verify_url", envelope.verifyUrl]);
   if (envelope.statusUrl) params.push(["status_url", envelope.statusUrl]);
+  if (envelope.pendingRequestsUrl) params.push(["pending_url", envelope.pendingRequestsUrl]);
 
   const query = params.map(([k, v]) => `${encodeParam(k)}=${encodeParam(v)}`).join("&");
   const { prefix, path } = splitBaseUrl(baseUrl);
@@ -89,6 +91,7 @@ export function parsePresenceLinkUrl(rawUrl: string): LinkCompletionEnvelope | n
       nonceUrl: search.get("nonce_url") ?? undefined,
       verifyUrl: search.get("verify_url") ?? undefined,
       statusUrl: search.get("status_url") ?? undefined,
+      pendingRequestsUrl: search.get("pending_url") ?? undefined,
     };
   } catch {
     return null;

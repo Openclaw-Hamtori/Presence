@@ -16,11 +16,13 @@ export function normalizeBindingSyncMetadata(
   const nonceUrl = normalizeOptionalSyncValue(sync.nonceUrl);
   const verifyUrl = normalizeOptionalSyncValue(sync.verifyUrl);
   const statusUrl = normalizeOptionalSyncValue(sync.statusUrl);
+  const pendingRequestsUrl = normalizeOptionalSyncValue(sync.pendingRequestsUrl);
 
   if (serviceDomain) normalized.serviceDomain = serviceDomain;
   if (nonceUrl) normalized.nonceUrl = nonceUrl;
   if (verifyUrl) normalized.verifyUrl = verifyUrl;
   if (statusUrl) normalized.statusUrl = statusUrl;
+  if (pendingRequestsUrl) normalized.pendingRequestsUrl = pendingRequestsUrl;
 
   return Object.keys(normalized).length > 0 ? normalized : undefined;
 }

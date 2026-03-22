@@ -7,15 +7,17 @@ function formatLinkedServiceLabel(count: number): string {
 }
 
 export function buildRequestedProofKey(params: {
+  requestId?: string | null;
   sessionId?: string | null;
   bindingId?: string | null;
   serviceId?: string | null;
   accountId?: string | null;
 }): string | null {
-  if (!params.sessionId) return null;
+  const primaryId = params.requestId ?? params.sessionId;
+  if (!primaryId) return null;
 
   return [
-    params.sessionId,
+    primaryId,
     params.bindingId ?? "-",
     params.serviceId ?? "-",
     params.accountId ?? "-",

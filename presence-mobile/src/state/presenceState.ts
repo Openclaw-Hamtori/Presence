@@ -10,6 +10,7 @@ import type {
   ServiceBinding,
   LinkSession,
   PresenceSnapshot,
+  PendingProofRequest,
 } from "../types/index";
 import {
   normalizeLinkSessionStatus,
@@ -69,6 +70,7 @@ export async function loadPresenceState(): Promise<PresenceState | null> {
         linkedAt: legacy.stateCreatedAt,
       },
       serviceBindings: [],
+      pendingProofRequests: [],
       lastSnapshot: {
         capturedAt: legacy.stateCreatedAt,
         pass: legacy.pass,
@@ -125,6 +127,7 @@ export function createPresenceState(params: {
   linkSession?: LinkSession;
   binding?: ServiceBinding;
   serviceBindings?: ServiceBinding[];
+  pendingProofRequests?: PendingProofRequest[];
   linkedDevice?: PresenceState["linkedDevice"];
   capturedAt?: number;
   reason?: string;
@@ -175,6 +178,7 @@ export function createPresenceState(params: {
         },
     activeLinkSession: params.linkSession,
     serviceBindings: preservedBindings,
+    pendingProofRequests: normalizePendingProofRequests(params.pendingProofRequests),
     lastSnapshot: snapshot,
   });
 }
@@ -327,6 +331,41 @@ export function attachLinkSession(state: PresenceState, session: LinkSession): P
   return withComputedStatus({ ...state, activeLinkSession: session });
 }
 
+export function replacePendingProofRequests(
+  state: PresenceState,
+  requests: PendingProofRequest[]
+): PresenceState {
+  return withComputedStatus({
+    ...state,
+    pendingProofRequests: normalizePendingProofRequests(requests),
+  });
+}
+
+export function upsertPendingProofRequest(
+  state: PresenceState,
+  request: PendingProofRequest
+): PresenceState {
+  const next = (state.pendingProofRequests ?? [])
+    .filter((existing) => existing.requestId !== request.requestId)
+    .concat(request);
+  return replacePendingProofRequests(state, next);
+}
+
+export function removePendingProofRequest(
+  state: PresenceState,
+  requestId: string
+): PresenceState {
+  return replacePendingProofRequests(
+    state,
+    (state.pendingProofRequests ?? []).filter((request) => request.requestId !== requestId)
+  );
+}
+
+export function getActivePendingProofRequests(state: PresenceState): PendingProofRequest[] {
+  return normalizePendingProofRequests(state.pendingProofRequests)
+    .filter((request) => request.status === "pending");
+}
+
 export function isCheckDue(state: PresenceState): boolean {
   const now = Math.floor(Date.now() / 1000);
   if (state.pass) {
@@ -397,20 +436,24 @@ function normalizeState(state: PresenceState): PresenceState {
           source: lastSnapshotSource,
         },
       };
+  const pendingProofRequests = normalizePendingProofRequests(normalizedBaseState.pendingProofRequests);
   const serviceBindings = suppressShadowedLegacyUnsyncableBindings(normalizedBaseState.serviceBindings);
 
   if (!normalizedBaseState.activeLinkSession || normalizedBaseState.activeLinkSession.expiresAt > now) {
     return serviceBindings === normalizedBaseState.serviceBindings
+      && pendingProofRequests === normalizedBaseState.pendingProofRequests
       ? normalizedBaseState
       : {
           ...normalizedBaseState,
           serviceBindings,
+          pendingProofRequests,
         };
   }
 
   return {
     ...normalizedBaseState,
     serviceBindings,
+    pendingProofRequests,
     activeLinkSession: {
       ...normalizedBaseState.activeLinkSession,
       status: "expired",
@@ -513,9 +556,10 @@ export function normalizeBindingSyncMetadata(
     nonceUrl: normalizeOptionalSyncValue(sync.nonceUrl),
     verifyUrl: normalizeOptionalSyncValue(sync.verifyUrl),
     statusUrl: normalizeOptionalSyncValue(sync.statusUrl),
+    pendingRequestsUrl: normalizeOptionalSyncValue(sync.pendingRequestsUrl),
   };
 
-  return normalized.serviceDomain || normalized.nonceUrl || normalized.verifyUrl || normalized.statusUrl
+  return normalized.serviceDomain || normalized.nonceUrl || normalized.verifyUrl || normalized.statusUrl || normalized.pendingRequestsUrl
     ? normalized
     : undefined;
 }
@@ -567,4 +611,21 @@ function touchBindingsForMeasurement(
     lastFailedAt: params.failureReason ? params.capturedAt : undefined,
     lastFailureReason: params.failureReason,
   }));
+}
+
+function normalizePendingProofRequests(
+  requests: PendingProofRequest[] | undefined
+): PendingProofRequest[] {
+  if (!requests || requests.length === 0) {
+    return [];
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  return requests
+    .map((request) => (
+      request.status === "pending" && request.expiresAt <= now
+        ? { ...request, status: "expired" as const }
+        : request
+    ))
+    .sort((a, b) => b.requestedAt - a.requestedAt);
 }

@@ -9,6 +9,8 @@ import {
   createCompletionSuccessResponse,
   createRecoveryResponse,
   createLinkedProofRequestResponse,
+  createPendingProofRequestResponse,
+  createPendingProofRequestListResponse,
   createLinkedAccountReadinessResponse,
   createAuditEventsResponse,
   rewriteLinkSessionForPublicBase,
@@ -60,6 +62,9 @@ async function main() {
     sessionStatusPath: "/presence/link-sessions/:sessionId",
     linkedNoncePath: "/presence/linked-accounts/:accountId/nonce",
     verifyLinkedAccountPath: "/presence/linked-accounts/:accountId/verify",
+    linkedPendingProofRequestsPath: "/presence/linked-accounts/:accountId/pending-proof-requests",
+    pendingProofRequestPath: "/presence/pending-proof-requests/:requestId",
+    respondPendingProofRequestPath: "/presence/pending-proof-requests/:requestId/respond",
     linkedStatusPath: "/presence/linked-accounts/:accountId/status",
     unlinkAccountPath: "/presence/linked-accounts/:accountId/unlink",
     revokeDevicePath: "/presence/devices/:deviceIss/revoke",
@@ -219,6 +224,127 @@ async function main() {
             });
             return;
         }
+      }
+
+      const pendingMatch = url.pathname.match(/^\/presence\/linked-accounts\/([^/]+)\/pending-proof-requests$/);
+      if (pendingMatch && method === "POST") {
+        const request = await presence.createPendingProofRequest({
+          accountId: decodeURIComponent(pendingMatch[1]),
+        });
+
+        if (!request.ok) {
+          switch (request.state) {
+            case "missing_binding":
+              send(404, {
+                ok: false,
+                code: "ERR_BINDING_NOT_FOUND",
+                message: request.reason,
+                state: request.state,
+              });
+              return;
+            default:
+              send(409, {
+                ok: false,
+                code: "ERR_LINKED_PROOF_UNAVAILABLE",
+                message: request.reason,
+                state: request.state,
+                bindingId: request.binding?.bindingId,
+              });
+              return;
+          }
+        }
+
+        const response = createPendingProofRequestResponse({
+          request: request.request,
+          contract: endpointContract,
+        });
+        response.proofRequest.endpoints.respond.path = absolutize(publicBaseUrl, response.proofRequest.endpoints.respond.path);
+        if (response.proofRequest.endpoints.status?.path) {
+          response.proofRequest.endpoints.status.path = absolutize(publicBaseUrl, response.proofRequest.endpoints.status.path);
+        }
+        if (response.proofRequest.endpoints.unlink?.path) {
+          response.proofRequest.endpoints.unlink.path = absolutize(publicBaseUrl, response.proofRequest.endpoints.unlink.path);
+        }
+        send(200, response);
+        return;
+      }
+
+      if (pendingMatch && method === "GET") {
+        const requests = await presence.listPendingProofRequests({
+          accountId: decodeURIComponent(pendingMatch[1]),
+        });
+        const response = createPendingProofRequestListResponse({
+          requests,
+          contract: endpointContract,
+        });
+        for (const proofRequest of response.proofRequests) {
+          proofRequest.endpoints.respond.path = absolutize(publicBaseUrl, proofRequest.endpoints.respond.path);
+          if (proofRequest.endpoints.status?.path) {
+            proofRequest.endpoints.status.path = absolutize(publicBaseUrl, proofRequest.endpoints.status.path);
+          }
+          if (proofRequest.endpoints.unlink?.path) {
+            proofRequest.endpoints.unlink.path = absolutize(publicBaseUrl, proofRequest.endpoints.unlink.path);
+          }
+        }
+        send(200, response);
+        return;
+      }
+
+      const pendingRequestMatch = url.pathname.match(/^\/presence\/pending-proof-requests\/([^/]+)$/);
+      if (pendingRequestMatch && method === "GET") {
+        const request = await presence.getPendingProofRequest({
+          requestId: decodeURIComponent(pendingRequestMatch[1]),
+        });
+        if (!request) {
+          send(404, { ok: false, code: "ERR_PENDING_PROOF_REQUEST_NOT_FOUND" });
+          return;
+        }
+        const response = createPendingProofRequestResponse({
+          request,
+          contract: endpointContract,
+        });
+        response.proofRequest.endpoints.respond.path = absolutize(publicBaseUrl, response.proofRequest.endpoints.respond.path);
+        if (response.proofRequest.endpoints.status?.path) {
+          response.proofRequest.endpoints.status.path = absolutize(publicBaseUrl, response.proofRequest.endpoints.status.path);
+        }
+        if (response.proofRequest.endpoints.unlink?.path) {
+          response.proofRequest.endpoints.unlink.path = absolutize(publicBaseUrl, response.proofRequest.endpoints.unlink.path);
+        }
+        send(200, response);
+        return;
+      }
+
+      const respondPendingMatch = url.pathname.match(/^\/presence\/pending-proof-requests\/([^/]+)\/respond$/);
+      if (respondPendingMatch && method === "POST") {
+        const body = await readJson(req);
+        const result = await presence.respondToPendingProofRequest({
+          requestId: decodeURIComponent(respondPendingMatch[1]),
+          body,
+        });
+
+        if (result.verified) {
+          send(200, {
+            ok: true,
+            state: "linked",
+            binding: result.binding,
+            snapshot: result.snapshot,
+            request: result.request,
+          });
+          return;
+        }
+
+        if (result.error === "ERR_BINDING_RECOVERY_REQUIRED") {
+          send(409, createRecoveryResponse(result));
+          return;
+        }
+
+        send(400, {
+          ok: false,
+          code: result.error,
+          message: result.detail,
+          request: result.request,
+        });
+        return;
       }
 
       const verifyMatch = url.pathname.match(/^\/presence\/linked-accounts\/([^/]+)\/verify$/);
