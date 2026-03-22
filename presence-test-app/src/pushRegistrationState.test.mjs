@@ -12,7 +12,7 @@ import {
 } from "../../presence-mobile/src/pushRegistrationState.ts";
 
 const REGISTRATION = {
-  token: "AA BB CC DD EE FF 00 11 22 33 44 55 66 77 88 99 00 AA",
+  token: "AA BB CC DD EE FF 00 11 22 33 44 55 66 77 88 99 00 AA 11 22 33 44 55 66 77 88 99 00 AA BB CC DD EE FF 01",
   platform: "ios_apns",
   environment: "development",
   bundleId: "com.presence.testapp",
@@ -24,7 +24,7 @@ test("notePushTokenReceived() stores the latest normalized APNs token for later 
   });
 
   assert.deepEqual(getLatestPushToken(state), {
-    token: "aabbccddeeff0011223344556677889900aa",
+    token: "aabbccddeeff0011223344556677889900aa11223344556677889900aabbccddeeff01",
     platform: "ios_apns",
     environment: "development",
     bundleId: "com.presence.testapp",
@@ -54,7 +54,7 @@ test("notePushUploadConfirmed() marks the exact device/token slot as confirmed",
     pushRegistrationSignature({
       deviceIss: "presence:device:123",
       registration: {
-        token: "aabbccdd",
+        token: "AABBCCDDEEFF0011223344556677889900AA11223344556677889900AABBCCDDEEFF01",
         environment: "development",
         bundleId: "com.presence.testapp",
       },
