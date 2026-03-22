@@ -107,10 +107,21 @@ private final class PresencePushNotificationsCoordinator: NSObject, UNUserNotifi
   }
 
   func didRegisterForRemoteNotifications(deviceToken: Data) {
+    let token = deviceToken.map { String(format: "%02x", $0) }.joined()
+    guard token.count >= 64, token.count % 2 == 0 else {
+      self.enqueueOrEmit(
+        name: Self.registrationFailedEvent,
+        body: [
+          "message": "invalid apns token format received",
+        ]
+      )
+      return
+    }
+
     self.enqueueOrEmit(
       name: Self.tokenRegisteredEvent,
       body: [
-        "token": deviceToken.map { String(format: "%02x", $0) }.joined(),
+        "token": token,
         "environment": Self.currentEnvironment(),
         "bundleId": Bundle.main.bundleIdentifier ?? NSNull(),
       ]

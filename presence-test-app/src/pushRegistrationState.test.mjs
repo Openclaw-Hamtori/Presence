@@ -12,7 +12,7 @@ import {
 } from "../../presence-mobile/src/pushRegistrationState.ts";
 
 const REGISTRATION = {
-  token: "AA BB CC DD",
+  token: "AA BB CC DD EE FF 00 11 22 33 44 55 66 77 88 99 00 AA",
   platform: "ios_apns",
   environment: "development",
   bundleId: "com.presence.testapp",
@@ -24,7 +24,7 @@ test("notePushTokenReceived() stores the latest normalized APNs token for later 
   });
 
   assert.deepEqual(getLatestPushToken(state), {
-    token: "aabbccdd",
+    token: "aabbccddeeff0011223344556677889900aa",
     platform: "ios_apns",
     environment: "development",
     bundleId: "com.presence.testapp",

@@ -306,7 +306,9 @@ function normalizeToken(value: unknown): string | null {
     return null;
   }
   const normalized = value.replace(/[^0-9a-f]/gi, "").toLowerCase();
-  return normalized.length > 0 ? normalized : null;
+  return normalized.length >= 64 && normalized.length % 2 === 0
+    ? normalized
+    : null;
 }
 
 function readNumber(value: unknown): number | null {
