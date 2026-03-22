@@ -38,6 +38,7 @@ import {
   notePushTokenReceived,
   notePushUploadAttempt,
   notePushUploadConfirmed,
+  notePushUploadConfirmationCleared,
   pushRegistrationSignature,
   savePushSetupState,
   type PresencePushSetupState,
@@ -828,18 +829,29 @@ export default function App() {
         const matchingServerToken = latestRegistration
           ? deviceBindings.device?.pushTokens?.find((token) => matchesActiveServerPushToken(latestRegistration, token))
           : undefined;
-        if (latestRegistration && matchingServerToken) {
-          const alreadyConfirmed = isPushUploadConfirmed(pushSetupStateRef.current, {
+        if (latestRegistration) {
+          if (matchingServerToken) {
+            const alreadyConfirmed = isPushUploadConfirmed(pushSetupStateRef.current, {
+              deviceIss,
+              registration: latestRegistration,
+            });
+            await updatePushSetupState((state) => notePushUploadConfirmed(state, {
+              deviceIss,
+              registration: latestRegistration,
+              confirmedAt: matchingServerToken.lastConfirmedAt,
+            }));
+            if (!alreadyConfirmed) {
+              addLog(`↻ confirmed APNs token from device record (${source})`);
+            }
+          } else if (isPushUploadConfirmed(pushSetupStateRef.current, {
             deviceIss,
             registration: latestRegistration,
-          });
-          await updatePushSetupState((state) => notePushUploadConfirmed(state, {
-            deviceIss,
-            registration: latestRegistration,
-            confirmedAt: matchingServerToken.lastConfirmedAt,
-          }));
-          if (!alreadyConfirmed) {
-            addLog(`↻ confirmed APNs token from device record (${source})`);
+          })) {
+            await updatePushSetupState((state) => notePushUploadConfirmationCleared(state, {
+              deviceIss,
+              registration: latestRegistration,
+            }));
+            addLog(`↻ invalidated local APNs confirmation for ${deviceIss}: server has no matching active token (${source})`);
           }
         }
         const recoveredBindings = preserveLocalBindingSyncMetadata(
@@ -1707,6 +1719,11 @@ export default function App() {
       );
       if (linkedDeviceIss && completionToken) {
         pendingLinkPushUploadDeviceIssRef.current = null;
+        try {
+          await hydrateAuthoritativeBindings(linkedDeviceIss, "link_completion");
+        } catch {
+          // hydration failures are handled internally and surfaced by logs; continue with local retry path.
+        }
         void syncPushTokenWithServer(
           completionToken,
           "link_completion",

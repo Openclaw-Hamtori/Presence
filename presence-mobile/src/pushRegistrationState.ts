@@ -139,6 +139,38 @@ export function notePushUploadConfirmed(
   return nextState;
 }
 
+export function notePushUploadConfirmationCleared(
+  state: PresencePushSetupState,
+  params: {
+    deviceIss: string;
+    registration: PresencePushTokenRegistration;
+  }
+): PresencePushSetupState {
+  const deviceIss = normalizeString(params.deviceIss);
+  const registration = normalizeRegistration(params.registration);
+  if (!deviceIss || !registration) {
+    return normalizePushSetupState(state);
+  }
+
+  const nextState = normalizePushSetupState(state);
+  const device = findDeviceState(nextState, deviceIss);
+  if (!device) {
+    return nextState;
+  }
+
+  const signature = pushRegistrationSignature({
+    deviceIss,
+    registration,
+  });
+  if (device.confirmedRegistrationSignature === signature) {
+    device.confirmedRegistrationSignature = undefined;
+    device.lastUploadConfirmedAt = undefined;
+    device.lastUploadError = undefined;
+  }
+
+  return nextState;
+}
+
 export function isPushUploadConfirmed(
   state: PresencePushSetupState,
   params: {

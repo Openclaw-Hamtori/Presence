@@ -8,6 +8,7 @@ import {
   notePushTokenReceived,
   notePushUploadAttempt,
   notePushUploadConfirmed,
+  notePushUploadConfirmationCleared,
   pushRegistrationSignature,
 } from "../../presence-mobile/src/pushRegistrationState.ts";
 
@@ -98,4 +99,30 @@ test("notePushUploadAttempt() keeps failed upload state until a later confirmati
   );
   assert.equal(confirmed.devices[0]?.lastUploadError, undefined);
   assert.equal(confirmed.devices[0]?.lastUploadConfirmedAt, 300);
+});
+
+test("notePushUploadConfirmationCleared() drops stale confirmation for matching device/token", () => {
+  const confirmed = notePushUploadConfirmed(
+    notePushTokenReceived(createEmptyPushSetupState(), REGISTRATION),
+    {
+      deviceIss: "presence:device:clear",
+      registration: REGISTRATION,
+      confirmedAt: 456,
+    }
+  );
+
+  const cleared = notePushUploadConfirmationCleared(confirmed, {
+    deviceIss: "presence:device:clear",
+    registration: REGISTRATION,
+  });
+
+  assert.equal(
+    isPushUploadConfirmed(cleared, {
+      deviceIss: "presence:device:clear",
+      registration: REGISTRATION,
+    }),
+    false
+  );
+  assert.equal(cleared.devices[0]?.confirmedRegistrationSignature, undefined);
+  assert.equal(cleared.devices[0]?.lastUploadConfirmedAt, undefined);
 });
