@@ -543,6 +543,7 @@ export default function App() {
   const pushSetupStateRef = useRef<PresencePushSetupState>(createEmptyPushSetupState());
   const effectiveServiceBindingsRef = useRef<ServiceBinding[]>([]);
   const pendingPushWakeRef = useRef<PendingPushWakeState | null>(null);
+  const pendingLinkPushUploadDeviceIssRef = useRef<string | null>(null);
   const pushRegistrationInFlightSignatureRef = useRef<string | null>(null);
   const pushRegistrationAttemptedDevicesRef = useRef<Set<string>>(new Set());
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
@@ -956,11 +957,14 @@ export default function App() {
 
     const shouldRequireLinkedBinding = options.requireLinkedBinding !== false;
     if (shouldRequireLinkedBinding && !hasLinkedBindingForCurrentDevice) {
-      addLog("ℹ️ cached APNs token until a linked service is confirmed");
+      addLog(`ℹ️ cached APNs token until a linked service is confirmed (${source})`);
       return;
     }
 
+    addLog(`↪ syncPushTokenWithServer start (${source}) device=${deviceIss} env=${registration.environment}`);
+
     if (isPushUploadConfirmed(pushSetupStateRef.current, { deviceIss, registration })) {
+      addLog(`ℹ️ skip push token sync for ${deviceIss}: already confirmed (${source})`);
       return;
     }
 
@@ -969,6 +973,7 @@ export default function App() {
       registration,
     });
     if (pushRegistrationInFlightSignatureRef.current === signature) {
+      addLog(`ℹ️ skip push token sync for ${deviceIss}: upload already in flight (${source})`);
       return;
     }
 
@@ -1024,10 +1029,20 @@ export default function App() {
   const maybeSyncStoredPushToken = useCallback(async (source: string) => {
     const deviceIss = currentDeviceIssRef.current;
     const registration = getLatestPushToken(pushSetupStateRef.current);
-    if (!deviceIss || !hasLinkedBindingForCurrentDevice || !registration) {
+    if (!deviceIss) {
+      addLog(`ℹ️ skip push token sync (${source}) — no device id`);
+      return;
+    }
+    if (!hasLinkedBindingForCurrentDevice) {
+      addLog(`ℹ️ skip push token sync (${source}) — no linked service yet`);
+      return;
+    }
+    if (!registration) {
+      addLog(`ℹ️ skip push token sync (${source}) — no APNs registration yet`);
       return;
     }
     if (isPushUploadConfirmed(pushSetupStateRef.current, { deviceIss, registration })) {
+      addLog(`ℹ️ skip push token sync (${source}) — already confirmed`);
       return;
     }
     try {
@@ -1142,8 +1157,25 @@ export default function App() {
       onTokenRegistered: (registration) => {
         addLog(`📲 APNs token registered (${registration.environment})`);
         void updatePushSetupState((state) => notePushTokenReceived(state, registration))
-          .then(() => {
-            if (!hasLinkedBindingForCurrentDevice) {
+          .then(async () => {
+            if (pendingLinkPushUploadDeviceIssRef.current) {
+              const pendingDeviceIss = pendingLinkPushUploadDeviceIssRef.current;
+              try {
+                addLog(`↪ queued link completion token upload now starting for ${pendingDeviceIss}`);
+                await syncPushTokenWithServer(
+                  registration,
+                  "token_after_link_completion",
+                  {
+                    deviceIss: pendingDeviceIss,
+                    requireLinkedBinding: false,
+                  }
+                );
+                pendingLinkPushUploadDeviceIssRef.current = null;
+              } catch (error) {
+                addLog(`ℹ️ push token registration failed (token_after_link_completion) — ${error instanceof Error ? error.message : String(error)}`);
+              }
+            } else if (!hasLinkedBindingForCurrentDevice) {
+            } else if (!hasLinkedBindingForCurrentDevice) {
               addLog("ℹ️ cached APNs token until a linked service is confirmed");
             }
           })
@@ -1668,9 +1700,13 @@ export default function App() {
       }
 
       const connectedServiceId = completionResult.binding?.serviceId ?? currentEnvelope?.serviceId ?? "presence-demo";
-      const linkedDeviceIss = completionResult.binding?.deviceIss ?? currentDeviceIss;
+      const linkedDeviceIss = completionResult.binding?.deviceIss ?? currentDeviceIss ?? null;
       const completionToken = getLatestPushToken(pushSetupStateRef.current);
+      addLog(
+        `ℹ️ completion push-sync check — linked_device=${linkedDeviceIss ?? "n/a"} token=${completionToken ? `present (${completionToken.environment})` : "missing"}`
+      );
       if (linkedDeviceIss && completionToken) {
+        pendingLinkPushUploadDeviceIssRef.current = null;
         void syncPushTokenWithServer(
           completionToken,
           "link_completion",
@@ -1681,6 +1717,11 @@ export default function App() {
         ).catch((error) => {
           addLog(`ℹ️ push token registration failed (link_completion) — ${error instanceof Error ? error.message : String(error)}`);
         });
+      } else if (linkedDeviceIss) {
+        pendingLinkPushUploadDeviceIssRef.current = linkedDeviceIss;
+        addLog(`ℹ️ queued link completion token upload pending APNs token for ${linkedDeviceIss}`);
+      } else {
+        addLog("⚠️ completion push-sync skipped: no device id in completion response or app state");
       }
 
       rememberRecentConnectedLink(connectedServiceId);
