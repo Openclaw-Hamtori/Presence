@@ -22,6 +22,8 @@
 - Backend/sdk `ServiceBinding.deviceIss` is the same identifier that mobile/test-app local state stores as `ServiceBinding.linkedDeviceIss`.
 - Backend/session completion metadata may start as backend-relative paths; mobile/test-app `PresenceBindingSync` only accepts public absolute URLs after the backend rewrites them.
 - Mobile UI is local UX only. Backend readiness and bindings remain authoritative.
+- Mobile/test-app `PresenceState.pass` means the latest local measurement can support proof generation. It must not be surfaced as requestless/server-verified PASS by product UI.
+- Mobile/test-app `PresenceSnapshot.source: "proof"` means the app generated proof material locally. It does not, by itself, mean the backend verified that proof.
 
 ## Field aliasing
 - Mobile/test-app `activeLinkSession.status: "consumed"` is the same completed-session meaning as sdk `LinkSession.status: "consumed"`; older local state may still contain the legacy alias `"linked"`.

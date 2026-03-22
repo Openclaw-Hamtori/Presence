@@ -27,7 +27,8 @@ The app now demonstrates the canonical Presence UX:
 - On iPhone, the top-right QR entry now opens a native AVFoundation-based camera scanner and feeds the scanned payload into the same link/proof-request flow.
 - Manual paste / deeplink open still works as a fallback and uses the exact same parsing + proof-submission path.
 - The app also registers the `presence://` URL scheme so a service deeplink can jump straight into the current session preview.
-- The home screen now emphasizes PASS / FAIL, linked services, and PASS submission when a service requests proof.
+- The home screen now emphasizes request state, linked services, local-only checks, and proof submission when a service requests proof.
+- Requestless local checks are explicitly local-only; the app should not imply final PASS until a service verifies proof.
 - Best-effort background catch-up still exists for testing, but the app now treats that as implementation detail rather than the product promise.
 - Simulator builds can compile, but live QR scanning itself still requires a real iPhone camera.
 - Session links can now carry `service_domain`; if they also include `nonce_url` / `verify_url`, the app validates those URLs against `https://{service_domain}/.well-known/presence.json` before proof submission or later sync.

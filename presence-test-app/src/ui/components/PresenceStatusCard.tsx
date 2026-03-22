@@ -22,6 +22,7 @@ export function PresenceStatusCard({ presence, fetchNonce }: PresenceStatusCardP
   const [actionError, setActionError] = React.useState<string | null>(null);
   const visibleErrorMessage = actionError ?? error?.message ?? null;
   const hasServiceRequest = !!state?.activeLinkSession;
+  const hasLocalMeasurement = !!state?.lastMeasuredAt;
 
   const handleSubmitProof = async () => {
     setActionError(null);
@@ -44,22 +45,43 @@ export function PresenceStatusCard({ presence, fetchNonce }: PresenceStatusCardP
     }
   };
 
-  const hasPass = !!state?.pass
+  const hasLocalPass = !!state?.pass
     && phase !== "not_ready"
     && phase !== "error"
     && phase !== "recovery_pending";
-  const statusLabel = hasPass ? "PASS" : "FAIL";
-  const topRightText = phase === "proving"
-    ? "Submitting requested PASS"
+  const statusLabel = phase === "proving"
+    ? "VERIFY"
     : phase === "measuring"
-      ? "Checking device"
-      : hasPass
+      ? hasServiceRequest
+        ? "CHECK"
+        : "LOCAL"
+      : phase === "recovery_pending"
+        ? "FAIL"
+        : hasServiceRequest
+          ? hasLocalPass
+            ? "READY"
+            : "REQUEST"
+          : hasLocalPass
+            ? "LOCAL"
+            : "IDLE";
+  const topRightText = phase === "recovery_pending"
+    ? "Recovery needed"
+    : phase === "proving"
+      ? "Verifying request"
+      : phase === "measuring"
         ? hasServiceRequest
-          ? "Request loaded"
-          : "Ready when asked"
-        : phase === "recovery_pending"
-          ? "Recovery needed"
-          : "";
+          ? "Checking request"
+          : "Local-only check"
+        : hasServiceRequest
+          ? hasLocalPass
+            ? "Request ready"
+            : "Request loaded"
+          : hasLocalPass
+            ? "No active request"
+            : hasLocalMeasurement
+              ? "Local-only result"
+              : "No active request";
+  const isFailStatus = statusLabel === "FAIL";
 
   return (
     <View style={styles.card}>
@@ -69,8 +91,8 @@ export function PresenceStatusCard({ presence, fetchNonce }: PresenceStatusCardP
         </TouchableOpacity>
 
         <View style={styles.topRight}>
-          <View style={[styles.badge, statusLabel === "FAIL" && styles.badgeFail]}>
-            <Text style={[styles.badgeText, statusLabel === "FAIL" && styles.badgeTextFail]}>{statusLabel}</Text>
+          <View style={[styles.badge, isFailStatus ? styles.badgeFail : styles.badgeWarn]}>
+            <Text style={[styles.badgeText, isFailStatus ? styles.badgeTextFail : styles.badgeTextWarn]}>{statusLabel}</Text>
           </View>
           {!!topRightText && <Text style={styles.topMeta}>{topRightText}</Text>}
         </View>
@@ -88,33 +110,52 @@ export function PresenceStatusCard({ presence, fetchNonce }: PresenceStatusCardP
       <View style={styles.bottomArea}>
         {phase === "uninitialized" && <Text style={styles.helper}>Open a service link to connect Presence.</Text>}
 
-        {hasPass && state && (
+        {phase === "proving" && (
           <>
             <Text style={styles.helper}>
-              {phase === "proving"
-                ? "Submitting PASS to the current service request."
-                : hasServiceRequest
-                  ? "A service request is loaded. Submit PASS to finish this link or answer the request."
-                  : "PASS is available, but proof should only be submitted after a linked service request is loaded."}
+              Presence is submitting proof. PASS is reserved for server-verified success.
             </Text>
-            {phase !== "proving" && (
+          </>
+        )}
+
+        {hasServiceRequest && phase !== "proving" && (
+          <>
+            <Text style={styles.helper}>
+              {phase === "measuring"
+                ? "Checking this device for the active request. The service still needs to verify any proof that follows."
+                : hasLocalPass
+                  ? "A local check passed for the active request, but nothing is server-verified yet."
+                  : phase === "recovery_pending"
+                    ? "A linked service needs recovery or relink before proof can be accepted."
+                    : "A service request is loaded. Run a local check, then submit proof."}
+            </Text>
+            {phase !== "measuring" && hasLocalPass && (
               <TouchableOpacity style={styles.primaryButton} onPress={handleSubmitProof}>
-                <Text style={styles.primaryButtonText}>{hasServiceRequest ? "Submit PASS to request" : "Submit requested PASS"}</Text>
+                <Text style={styles.primaryButtonText}>Submit proof</Text>
               </TouchableOpacity>
             )}
           </>
         )}
 
-        {(phase === "not_ready" || phase === "recovery_pending") && (
+        {((hasServiceRequest && !hasLocalPass && phase !== "measuring" && phase !== "recovery_pending")
+          || (!hasServiceRequest && phase !== "proving" && phase !== "uninitialized")) && (
           <>
             <Text style={styles.helper}>
-              {phase === "recovery_pending"
-                ? "A linked service needs recovery or relink before proof can be accepted."
-                : "PASS is unavailable right now. Run a local check before submitting proof."}
+              {hasServiceRequest
+                ? "PASS is unavailable for this request until a fresh local check succeeds."
+                : phase === "measuring"
+                  ? "Running a local-only check. This does not create PASS or notify a server."
+                  : hasLocalPass
+                    ? "Latest local-only check passed on device, but no request is active and nothing has been server-verified."
+                    : hasLocalMeasurement
+                      ? "Latest local-only check did not qualify. No request is active and nothing was sent to a server."
+                      : "No active request. Load a service request before submitting proof."}
             </Text>
-            <TouchableOpacity style={styles.primaryButton} onPress={handleMeasure}>
-              <Text style={styles.primaryButtonText}>Run local check</Text>
-            </TouchableOpacity>
+            {phase !== "measuring" && (
+              <TouchableOpacity style={styles.primaryButton} onPress={handleMeasure}>
+                <Text style={styles.primaryButtonText}>{hasServiceRequest ? "Run local check" : "Run local-only check"}</Text>
+              </TouchableOpacity>
+            )}
           </>
         )}
 
@@ -140,6 +181,7 @@ const COLORS = {
   subtext: "#8C8C84",
   border: "#E8E7E1",
   success: "#2F7D4A",
+  warn: "#B07B1A",
   error: "#A94A4A",
   chip: "rgba(255,255,255,0.72)",
 };
@@ -185,6 +227,9 @@ const styles = StyleSheet.create({
   badgeFail: {
     backgroundColor: "rgba(169,74,74,0.08)",
   },
+  badgeWarn: {
+    backgroundColor: "rgba(176,123,26,0.08)",
+  },
   badgeText: {
     color: COLORS.success,
     fontSize: 12,
@@ -193,6 +238,9 @@ const styles = StyleSheet.create({
   },
   badgeTextFail: {
     color: COLORS.error,
+  },
+  badgeTextWarn: {
+    color: COLORS.warn,
   },
   topMeta: {
     color: COLORS.subtext,

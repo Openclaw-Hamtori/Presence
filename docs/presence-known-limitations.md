@@ -38,6 +38,7 @@ The mobile app can show PASS locally while the service backend still needs a fre
 Implications:
 - service access should be gated by backend readiness
 - app-local state is useful UX but not authoritative service truth
+- requestless local checks should be labeled as local-only / not server-verified rather than final PASS
 
 ---
 

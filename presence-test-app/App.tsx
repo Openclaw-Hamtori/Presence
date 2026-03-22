@@ -476,8 +476,8 @@ export default function App() {
 
     addLog(
       measurement.pass
-        ? "✅ Local check returned PASS"
-        : `⚠️ Local check returned FAIL — ${measurement.reason}`
+        ? "✅ Local-only check passed — not server-verified"
+        : `⚠️ Local-only check failed — ${measurement.reason}`
     );
     addLog(
       `   state: created=${measurement.state?.stateCreatedAt ?? '-'} validUntil=${measurement.state?.stateValidUntil ?? '-'} measured=${measurement.state?.lastMeasuredAt ?? '-'} phase=${measurement.state?.status ?? '-'}`
@@ -786,6 +786,15 @@ export default function App() {
     () => (!openedEnvelope ? activePendingProofRequests[0] ?? null : null),
     [activePendingProofRequests, openedEnvelope]
   );
+  const latestExpiredPendingProofRequest = useMemo<PendingProofRequest | null>(
+    () => {
+      if (openedEnvelope || currentPendingProofRequest) {
+        return null;
+      }
+      return (presence.state?.pendingProofRequests ?? []).find((request) => request.status === "expired") ?? null;
+    },
+    [currentPendingProofRequest, openedEnvelope, presence.state?.pendingProofRequests]
+  );
   const openedRequestedBinding = useMemo(
     () => resolveRequestedLinkedBinding(openedEnvelope, effectiveServiceBindings),
     [effectiveServiceBindings, openedEnvelope]
@@ -841,11 +850,23 @@ export default function App() {
   );
   const requestedProofStatus = currentRequestedProofKey && linkedProofRequestState?.requestKey === currentRequestedProofKey
     ? linkedProofRequestState.status
-    : null;
-  const requestedServiceId = openedEnvelope?.serviceId ?? currentPendingProofRequest?.serviceId ?? null;
+    : latestExpiredPendingProofRequest
+      ? "expired"
+      : !openedEnvelope && !currentPendingProofRequest && presence.state?.activeLinkSession?.status === "expired"
+        ? "expired"
+        : null;
+  const requestedServiceId = openedEnvelope?.serviceId
+    ?? currentPendingProofRequest?.serviceId
+    ?? latestExpiredPendingProofRequest?.serviceId
+    ?? (
+      !openedEnvelope && !currentPendingProofRequest && presence.state?.activeLinkSession?.status === "expired"
+        ? presence.state.activeLinkSession.serviceId
+        : null
+    );
   const productState = getProductState({
     phase: presence.phase,
     pass: presence.state?.pass,
+    hasLocalMeasurement: !!presence.state?.lastMeasuredAt,
     hasRecovery,
     linkedServiceCount: recentServiceBindings.length,
     requestedServiceId,
@@ -928,7 +949,7 @@ export default function App() {
     if (!loaded) {
       return;
     }
-    addLog(`✅ Link session ${parsed.sessionId} loaded — tap Submit PASS to link or answer the request`);
+    addLog(`✅ Link session ${parsed.sessionId} loaded — tap Submit proof to link or answer the request`);
   };
 
   const handleScanQr = async () => {
@@ -974,7 +995,7 @@ export default function App() {
         setLinkedProofRequestState({ requestKey, status: "submitting" });
       }
       addLog(
-        `→ submit pending PASS request request=${pendingRequest.requestId} binding=${pendingBinding.bindingId} service=${pendingRequest.serviceId}`
+        `→ submit pending proof request request=${pendingRequest.requestId} binding=${pendingBinding.bindingId} service=${pendingRequest.serviceId}`
       );
 
       try {
@@ -1058,7 +1079,7 @@ export default function App() {
         setLinkedProofRequestState({ requestKey, status: "submitting" });
       }
       addLog(
-        `→ submit linked PASS request binding=${openedRequestedBinding.bindingId} service=${openedRequestedBinding.serviceId}`
+        `→ submit linked proof request binding=${openedRequestedBinding.bindingId} service=${openedRequestedBinding.serviceId}`
       );
 
       try {
@@ -1191,7 +1212,7 @@ export default function App() {
   };
 
   const handleMeasure = async () => {
-    addLog("→ run local PASS check");
+    addLog("→ run local-only check");
     setLinkedProofRequestState(null);
     const result = await runLocalMeasurement();
     if (!result) {
@@ -1207,6 +1228,30 @@ export default function App() {
 
     setLocalError(result.reason);
   };
+
+  const handleOrbPress = useCallback(() => {
+    if (openedEnvelope || currentPendingProofRequest) {
+      void handleApprove();
+      return;
+    }
+
+    if (requestedProofStatus === "expired") {
+      const serviceLabel = requestedServiceId ?? "The latest";
+      setLocalError(`${serviceLabel} request expired. Open a fresh request before submitting proof.`);
+      addLog(`ℹ️ expired request blocked local proof action — service=${requestedServiceId ?? "-"}`);
+      return;
+    }
+
+    void handleMeasure();
+  }, [
+    addLog,
+    currentPendingProofRequest,
+    handleApprove,
+    handleMeasure,
+    openedEnvelope,
+    requestedProofStatus,
+    requestedServiceId,
+  ]);
 
   return (
     <SafeAreaView style={styles.root}>
@@ -1227,7 +1272,7 @@ export default function App() {
         <View style={styles.heroCard}>
           <TouchableOpacity
             style={styles.heroImageWrap}
-            onPress={openedEnvelope || currentPendingProofRequest ? handleApprove : handleMeasure}
+            onPress={handleOrbPress}
             disabled={isSubmittingPass}
             activeOpacity={0.9}
           >
@@ -1236,6 +1281,12 @@ export default function App() {
               : null}
             <Image source={ORB_IMAGE} style={styles.heroImage} resizeMode="contain" />
           </TouchableOpacity>
+        </View>
+
+        <View style={styles.productStatusCard}>
+          <Text style={[styles.productStatusHeading, { color: productTone }]}>{productState.heading}</Text>
+          <Text style={styles.productStatusDetail}>{productState.detail}</Text>
+          <Text style={styles.productStatusAction}>{productState.action}</Text>
         </View>
 
         {(localError || presence.error) && (
@@ -1436,17 +1487,17 @@ export default function App() {
                     <View style={styles.optionCard}>
                       <Text style={styles.optionIcon}>↗</Text>
                       <Text style={styles.optionTitle}>Open service link</Text>
-                      <Text style={styles.optionBody}>Load a Presence link into this app, then submit PASS to connect or answer the request.</Text>
+                      <Text style={styles.optionBody}>Load a Presence link into this app, then submit proof to connect or answer the request.</Text>
                     </View>
                   </View>
 
                   {openedEnvelope ? (
                     <View style={styles.loadedSessionCard}>
-                      <Text style={styles.loadedSessionLabel}>Submit PASS to service</Text>
+                      <Text style={styles.loadedSessionLabel}>Submit proof to service</Text>
                       <Text style={styles.loadedSessionBody}>
                         {openedSessionAlreadyLinked
-                          ? "This service/account is already linked. Presence will submit PASS directly to the linked binding and refresh the saved sync metadata for future requests."
-                          : "Request loaded. Review the details below, then tap Submit PASS. Initial links connect the service; later requests submit proof on demand."}
+                          ? "This service/account is already linked. Presence will submit proof directly to the linked binding and refresh the saved sync metadata for future requests."
+                          : "Request loaded. Review the details below, then tap Submit proof. Initial links connect the service; later requests submit proof on demand."}
                       </Text>
                       <View style={styles.loadedSessionMeta}>
                         <KeyValue label="Service" value={openedEnvelope.serviceId ?? "unknown"} />
@@ -1465,7 +1516,7 @@ export default function App() {
                         activeOpacity={0.85}
                       >
                         <Text style={styles.primaryActionButtonText}>
-                          {isSubmittingPass ? "Submitting PASS…" : "Submit PASS"}
+                          {isSubmittingPass ? "Submitting proof…" : "Submit proof"}
                         </Text>
                       </TouchableOpacity>
                       <TouchableOpacity
@@ -1626,6 +1677,30 @@ const styles = StyleSheet.create({
   heroSpinner: {
     position: "absolute",
     zIndex: 1,
+  },
+  productStatusCard: {
+    backgroundColor: C.surface,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: C.border,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    gap: 6,
+  },
+  productStatusHeading: {
+    fontSize: 15,
+    fontWeight: "700",
+    letterSpacing: -0.2,
+  },
+  productStatusDetail: {
+    color: C.text,
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  productStatusAction: {
+    color: C.subtext,
+    fontSize: 12,
+    lineHeight: 18,
   },
   statePill: {
     alignSelf: "flex-start",

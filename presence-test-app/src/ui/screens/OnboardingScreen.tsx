@@ -6,7 +6,7 @@
  * Steps:
  *   1. Welcome   — explain linked Presence
  *   2. Heartbeat — explain smartwatch requirement + HealthKit permission
- *   3. Prove     — create first PASS
+ *   3. Prove     — submit first proof
  *   4. Done      — service linked
  */
 
@@ -98,7 +98,7 @@ function WelcomeStep({ onNext }: { onNext: () => void }) {
       <Text style={styles.title}>Link services with Presence</Text>
       <Text style={styles.body}>
         Presence links your device to a service and uses on-device heartbeat data
-        to compute a simple PASS or FAIL result when proof is needed.
+        to compute a local pass/fail eligibility result when proof is needed.
       </Text>
       <Text style={styles.subtext}>
         Services receive proof results, not your raw heart rate data.
@@ -123,8 +123,8 @@ function HeartbeatStep({
       <Text style={styles.title}>Allow heartbeat access</Text>
       <Text style={styles.body}>
         Presence reads recent heart rate data from Apple Health to confirm you're
-        present. Only a PASS or FAIL result is computed locally. Raw BPM values
-        are never submitted as part of the proof.
+        present. Only a local pass/fail eligibility result is computed on device.
+        Raw BPM values are never submitted as part of the proof.
       </Text>
       <Text style={styles.subtext}>
         You'll need a smartwatch paired with your iPhone. Tap Allow when iOS asks
@@ -153,19 +153,19 @@ function ProveStep({
   return (
     <View style={styles.step}>
       <Text style={styles.emoji}>🔐</Text>
-      <Text style={styles.title}>Create your first PASS</Text>
+      <Text style={styles.title}>Submit your first proof</Text>
       <Text style={styles.body}>
         To finish linking, your device creates a unique key, proves its integrity
-        with Apple's App Attest, and submits a proof to the service.
+        with Apple's App Attest, and submits proof to the service for verification.
       </Text>
       {error && <Text style={styles.errorText}>{error}</Text>}
       {isLoading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator color={COLORS.accent} />
-          <Text style={styles.loadingText}>Creating PASS…</Text>
+          <Text style={styles.loadingText}>Submitting proof…</Text>
         </View>
       ) : (
-        <PrimaryButton label="Create PASS" onPress={onProve} />
+        <PrimaryButton label="Submit proof" onPress={onProve} />
       )}
     </View>
   );
@@ -184,12 +184,12 @@ function DoneStep({
       <Text style={styles.title}>Service linked</Text>
       <Text style={styles.body}>
         Presence is now linked to the service. Later, when the service needs human
-        proof, open Presence and submit PASS on demand.
+        proof, open Presence and answer that request.
       </Text>
       <View style={styles.statusBadge}>
         <Text style={styles.statusLabel}>Status</Text>
-        <Text style={styles.statusValue}>PASS</Text>
-        <Text style={styles.statusHint}>Linked and ready for proof requests</Text>
+        <Text style={styles.statusValue}>LINKED</Text>
+        <Text style={styles.statusHint}>No request is active until the service asks for proof</Text>
       </View>
       <PrimaryButton label="Continue" onPress={onComplete} />
     </View>

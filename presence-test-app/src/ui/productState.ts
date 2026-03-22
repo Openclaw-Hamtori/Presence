@@ -1,9 +1,20 @@
 export type ProductStateTone = "success" | "warn" | "error";
-export type RequestedProofUiStatus = "submitting" | "failed";
+export type RequestedProofUiStatus = "submitting" | "failed" | "expired";
 
 function formatLinkedServiceLabel(count: number): string {
   if (count === 0) return "No linked services";
   return `${count} linked service${count === 1 ? "" : "s"}`;
+}
+
+function formatProductSummary(params: {
+  linkedServiceCount: number;
+  requestState: "active" | "verifying" | "expired" | "none";
+}): string {
+  const linkedSummary = formatLinkedServiceLabel(params.linkedServiceCount);
+  if (params.requestState === "verifying") return `Verifying request · ${linkedSummary}`;
+  if (params.requestState === "active") return `Active request · ${linkedSummary}`;
+  if (params.requestState === "expired") return `Expired request · ${linkedSummary}`;
+  return `No active request · ${linkedSummary}`;
 }
 
 export function buildRequestedProofKey(params: {
@@ -27,6 +38,7 @@ export function buildRequestedProofKey(params: {
 export function getProductState(params: {
   phase: string;
   pass: boolean | undefined;
+  hasLocalMeasurement?: boolean;
   hasRecovery: boolean;
   linkedServiceCount: number;
   requestedServiceId?: string | null;
@@ -35,23 +47,30 @@ export function getProductState(params: {
   const {
     phase,
     pass,
+    hasLocalMeasurement,
     hasRecovery,
     linkedServiceCount,
     requestedServiceId,
     requestedProofStatus,
   } = params;
-  const linkedSummary = formatLinkedServiceLabel(linkedServiceCount);
   const requestSummary = requestedServiceId ? ` for ${requestedServiceId}` : "";
-  const hasPass = !!pass && phase !== "not_ready" && phase !== "error" && !hasRecovery;
+  const hasLocalPass = !!pass && phase !== "not_ready" && phase !== "error" && !hasRecovery;
+  const noRequestSummary = formatProductSummary({
+    linkedServiceCount,
+    requestState: "none",
+  });
 
   if (requestedServiceId && requestedProofStatus === "submitting") {
     return {
-      label: "CHECK",
+      label: "VERIFY",
       tone: "warn" as const,
       heading: "Submitting proof",
-      detail: `Presence is submitting proof${requestSummary}. PASS is shown only after the service verifies it.`,
+      detail: `Presence is submitting proof${requestSummary}. PASS is reserved for server-verified success.`,
       action: "Keep the app open while the service verifies the proof.",
-      summary: linkedSummary,
+      summary: formatProductSummary({
+        linkedServiceCount,
+        requestState: "verifying",
+      }),
     };
   }
 
@@ -61,32 +80,25 @@ export function getProductState(params: {
       tone: "warn" as const,
       heading: "Proof request failed",
       detail: `The latest proof attempt${requestSummary} did not complete server verification.`,
-      action: "Tap Submit PASS to retry with a fresh local check.",
-      summary: linkedSummary,
+      action: "Tap Submit proof to retry with a fresh local check.",
+      summary: formatProductSummary({
+        linkedServiceCount,
+        requestState: "active",
+      }),
     };
   }
 
-  if (phase === "measuring") {
+  if (requestedServiceId && requestedProofStatus === "expired") {
     return {
-      label: hasPass ? "PASS" : "FAIL",
-      tone: (hasPass ? "success" : "warn") as ProductStateTone,
-      heading: "Checking this device",
-      detail: "Presence is running a local on-device check to determine PASS or FAIL.",
-      action: "Keep the app open while the local check completes.",
-      summary: linkedSummary,
-    };
-  }
-
-  if (phase === "proving") {
-    return {
-      label: hasPass ? "PASS" : "FAIL",
-      tone: (hasPass ? "success" : "warn") as ProductStateTone,
-      heading: requestedServiceId ? "Submitting proof" : "Creating proof",
-      detail: requestedServiceId
-        ? `Presence is submitting PASS${requestSummary}.`
-        : "Presence is creating a proof for the current request.",
-      action: "The service will verify the proof before allowing the action.",
-      summary: linkedSummary,
+      label: "EXPIRED",
+      tone: "warn" as const,
+      heading: "Request expired",
+      detail: `The latest request${requestSummary} expired before Presence could finish verification.`,
+      action: "Open a fresh service request, then submit proof again.",
+      summary: formatProductSummary({
+        linkedServiceCount,
+        requestState: "expired",
+      }),
     };
   }
 
@@ -97,43 +109,128 @@ export function getProductState(params: {
       heading: "Recovery required",
       detail: "A linked service needs recovery or relink before it can accept proof from this device.",
       action: "Open the next service request to relink this device.",
-      summary: linkedSummary,
+      summary: noRequestSummary,
     };
   }
 
-  if (hasPass) {
+  if (phase === "measuring") {
+    if (requestedServiceId) {
+      return {
+        label: "CHECK",
+        tone: "warn" as const,
+        heading: "Checking this device",
+        detail: `Presence is running a local on-device check${requestSummary}. This only prepares proof and does not mean the server verified PASS.`,
+        action: "Keep the app open while the local check completes.",
+        summary: formatProductSummary({
+          linkedServiceCount,
+          requestState: "active",
+        }),
+      };
+    }
+
     return {
-      label: "PASS",
-      tone: "success" as const,
-      heading: requestedServiceId ? "Proof request ready" : "Presence is linked",
+      label: "LOCAL",
+      tone: "warn" as const,
+      heading: "No active request",
+      detail: "Presence is running a local-only check. Nothing from this check is being submitted or server-verified.",
+      action: "Open Connect to load a service link or wait for a pending request when proof is needed.",
+      summary: noRequestSummary,
+    };
+  }
+
+  if (phase === "proving") {
+    return {
+      label: "VERIFY",
+      tone: "warn" as const,
+      heading: requestedServiceId ? "Submitting proof" : "Creating proof",
       detail: requestedServiceId
-        ? `This device is ready to submit PASS${requestSummary}.`
-        : linkedServiceCount > 0
-          ? "Presence keeps your linked services connected and submits proof only when one asks."
-          : "This device currently has PASS and can be linked to a service from a deeplink or QR.",
-      action: requestedServiceId
-        ? "Tap the orb to submit PASS to the requesting service."
-        : linkedServiceCount > 0
-          ? "Open a service request when proof is needed."
-          : "Open Connect to scan a QR or load a service link.",
-      summary: linkedSummary,
+        ? `Presence is submitting proof${requestSummary}. PASS is reserved for server-verified success.`
+        : "Presence is creating proof for the current request. The service still needs to verify it.",
+      action: "Keep the app open while the proof round-trip completes.",
+      summary: formatProductSummary({
+        linkedServiceCount,
+        requestState: requestedServiceId ? "verifying" : "active",
+      }),
+    };
+  }
+
+  if (requestedServiceId) {
+    if (hasLocalPass) {
+      return {
+        label: "READY",
+        tone: "warn" as const,
+        heading: "Ready to submit proof",
+        detail: `A local check passed${requestSummary}, but nothing is server-verified yet.`,
+        action: "Tap the orb to submit proof to the requesting service.",
+        summary: formatProductSummary({
+          linkedServiceCount,
+          requestState: "active",
+        }),
+      };
+    }
+
+    return {
+      label: "FAIL",
+      tone: phase === "error" ? "error" as const : "warn" as const,
+      heading: "Proof request blocked",
+      detail: `This request cannot be answered until this device passes a fresh local check${requestSummary}.`,
+      action: "Tap the orb to run a local check for this request.",
+      summary: formatProductSummary({
+        linkedServiceCount,
+        requestState: "active",
+      }),
+    };
+  }
+
+  if (hasLocalPass) {
+    return {
+      label: "LOCAL",
+      tone: "warn" as const,
+      heading: "No active request",
+      detail: linkedServiceCount > 0
+        ? "The latest on-device check passed locally, but no linked service is currently asking for proof and nothing has been server-verified."
+        : "The latest on-device check passed locally, but no request is loaded and nothing has been server-verified.",
+      action: linkedServiceCount > 0
+        ? "Wait for a linked service request or open Connect to load a new link."
+        : "Open Connect to load a service link when proof is needed.",
+      summary: noRequestSummary,
+    };
+  }
+
+  if (phase === "error") {
+    return {
+      label: "FAIL",
+      tone: "error" as const,
+      heading: "Presence error",
+      detail: "Presence could not complete the latest local check. No request was active, and nothing was server-verified.",
+      action: "Retry the local-only check or open a fresh service request.",
+      summary: noRequestSummary,
+    };
+  }
+
+  if (hasLocalMeasurement) {
+    return {
+      label: "IDLE",
+      tone: "warn" as const,
+      heading: "No active request",
+      detail: "The latest local-only check did not qualify, and nothing was submitted to a server.",
+      action: linkedServiceCount > 0
+        ? "Wait for a linked service request, then run a fresh local check."
+        : "Open Connect when you have a service link or proof request.",
+      summary: noRequestSummary,
     };
   }
 
   return {
-    label: "FAIL",
-    tone: phase === "error" ? "error" as const : "warn" as const,
-    heading: requestedServiceId ? "Proof request blocked" : "Presence is not ready",
-    detail: requestedServiceId
-      ? `This request cannot be submitted until this device returns PASS${requestSummary}.`
-      : linkedServiceCount > 0
-        ? "Linked services stay connected, but proof is blocked until this device returns PASS."
-        : "Open a service deeplink or QR to start linking Presence, then run a local check when PASS is needed.",
-    action: requestedServiceId
-      ? "Tap the orb to run a new local check."
-      : linkedServiceCount > 0
-        ? "Tap the orb to run a local check."
-        : "Open Connect to start a link from your service.",
-    summary: linkedSummary,
+    label: "IDLE",
+    tone: "warn" as const,
+    heading: "No active request",
+    detail: linkedServiceCount > 0
+      ? "Presence is linked, but no service is currently asking for proof."
+      : "Open Connect to start a link or wait for a service request.",
+    action: linkedServiceCount > 0
+      ? "Wait for a linked service request or open Connect to load one."
+      : "Open Connect to start a link from your service.",
+    summary: noRequestSummary,
   };
 }

@@ -57,7 +57,7 @@ presence-mobile/src/
 - **LinkedDevice** — local durable device identity derived from Secure Enclave key / `iss`
 - **LinkSession** — one-time bootstrap context for initial link or recovery relink
 - **ServiceBinding** — persistent mapping from a service account to this linked device
-- **PresenceSnapshot** — most recent local PASS/FAIL snapshot maintained on device
+- **PresenceSnapshot** — most recent local measurement snapshot maintained on device; local pass eligibility is not the same thing as server-verified PASS
 
 ### Lifecycle
 
@@ -212,6 +212,12 @@ This is intentionally small but enough for app state machines and UI copy.
 ---
 
 ## PASS semantics
+
+Important product boundary:
+
+- a successful local measurement only means the device is locally eligible to generate proof
+- product-facing PASS should be reserved for server-verified success
+- if no request is active, requestless local checks should be described as local-only / not server-verified
 
 Within the rolling 72-hour window, the app looks for at least one qualifying **local calendar day** in the device user's timezone.
 

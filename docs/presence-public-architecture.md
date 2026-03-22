@@ -89,7 +89,7 @@ A mobile app can look healthy locally while the service has not yet received or 
 Because of that, Presence uses **authoritative server truth** for service access.
 
 Recommended rule:
-- the app may show local status
+- the app may show local status, but requestless local measurement should be labeled as local-only rather than final PASS
 - the service should gate on server-side readiness
 
 ---
