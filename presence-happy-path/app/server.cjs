@@ -54,6 +54,36 @@ function absolutize(baseUrl, value) {
   return `${baseUrl}${value}`;
 }
 
+function normalizeRouteBasePath(value) {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "";
+  }
+
+  return `/${trimmed.replace(/^\/+/, "").replace(/\/+$/, "")}`;
+}
+
+function stripRouteBase(pathname, basePath) {
+  if (!basePath || !pathname.startsWith(basePath)) {
+    return pathname;
+  }
+
+  if (pathname === basePath) {
+    return "/";
+  }
+
+  const prefix = `${basePath}/`;
+  if (pathname.startsWith(prefix)) {
+    return pathname.slice(basePath.length);
+  }
+
+  return pathname;
+}
+
 function resolvePendingProofSignalTransport() {
   const transportMode = (process.env.PRESENCE_PUSH_TRANSPORT || "").trim().toLowerCase();
   if (transportMode !== "log") {
@@ -84,6 +114,7 @@ async function main() {
   const host = process.env.HOST || "127.0.0.1";
   const { iosAppId, iosAppIdSource } = resolvePresenceServerConfig(process.env);
   const serviceId = process.env.PRESENCE_SERVICE_ID || "demo-service";
+  const routeBasePath = normalizeRouteBasePath(process.env.ROUTE_BASE_PATH || "");
   const publicBaseUrl = (process.env.PUBLIC_BASE_URL || `http://${host}:${port}`).replace(/\/$/, "");
   const publicPresenceApiBaseUrl = `${publicBaseUrl}/presence`;
   const serviceDomain = process.env.PRESENCE_SERVICE_DOMAIN || "";
@@ -126,8 +157,9 @@ async function main() {
     try {
       const url = new URL(req.url || "/", `http://${host}:${port}`);
       const method = req.method || "GET";
+      const requestPath = stripRouteBase(url.pathname, routeBasePath);
 
-      if (method === "GET" && url.pathname === "/health") {
+      if (method === "GET" && requestPath === "/health") {
         send(200, {
           ok: true,
           serviceId,
@@ -138,7 +170,7 @@ async function main() {
         return;
       }
 
-      if (method === "GET" && url.pathname === "/.well-known/presence.json") {
+      if (method === "GET" && requestPath === "/.well-known/presence.json") {
         if (!serviceDomain) {
           send(404, { ok: false, code: "ERR_SERVICE_DOMAIN_NOT_CONFIGURED" });
           return;
@@ -156,7 +188,7 @@ async function main() {
         return;
       }
 
-      if (method === "POST" && url.pathname === "/presence/link-sessions") {
+      if (method === "POST" && requestPath === "/presence/link-sessions") {
         const body = await readJson(req);
         const { session } = await presence.createLinkSession({
           serviceId,
@@ -179,7 +211,7 @@ async function main() {
         return;
       }
 
-      const completeMatch = url.pathname.match(/^\/presence\/link-sessions\/([^/]+)\/complete$/);
+      const completeMatch = requestPath.match(/^\/presence\/link-sessions\/([^/]+)\/complete$/);
       if (method === "POST" && completeMatch) {
         const body = await readJson(req);
         const result = await presence.completeLinkSession({
@@ -205,7 +237,7 @@ async function main() {
         return;
       }
 
-      const sessionMatch = url.pathname.match(/^\/presence\/link-sessions\/([^/]+)$/);
+      const sessionMatch = requestPath.match(/^\/presence\/link-sessions\/([^/]+)$/);
       if (method === "GET" && sessionMatch) {
         const session = await presence.linkageStore.getLinkSession(decodeURIComponent(sessionMatch[1]));
         if (!session) {
@@ -222,7 +254,7 @@ async function main() {
         return;
       }
 
-      const linkedNonceMatch = url.pathname.match(/^\/presence\/linked-accounts\/([^/]+)\/nonce$/);
+      const linkedNonceMatch = requestPath.match(/^\/presence\/linked-accounts\/([^/]+)\/nonce$/);
       if (method === "POST" && linkedNonceMatch) {
         const request = await presence.createLinkedProofRequest({
           accountId: decodeURIComponent(linkedNonceMatch[1]),
@@ -269,7 +301,7 @@ async function main() {
         }
       }
 
-      const pendingMatch = url.pathname.match(/^\/presence\/linked-accounts\/([^/]+)\/pending-proof-requests$/);
+      const pendingMatch = requestPath.match(/^\/presence\/linked-accounts\/([^/]+)\/pending-proof-requests$/);
       if (pendingMatch && method === "POST") {
         const request = await presence.createPendingProofRequest({
           accountId: decodeURIComponent(pendingMatch[1]),
@@ -333,7 +365,7 @@ async function main() {
         return;
       }
 
-      const pendingRequestMatch = url.pathname.match(/^\/presence\/pending-proof-requests\/([^/]+)$/);
+      const pendingRequestMatch = requestPath.match(/^\/presence\/pending-proof-requests\/([^/]+)$/);
       if (pendingRequestMatch && method === "GET") {
         const request = await presence.getPendingProofRequest({
           requestId: decodeURIComponent(pendingRequestMatch[1]),
@@ -357,7 +389,7 @@ async function main() {
         return;
       }
 
-      const respondPendingMatch = url.pathname.match(/^\/presence\/pending-proof-requests\/([^/]+)\/respond$/);
+      const respondPendingMatch = requestPath.match(/^\/presence\/pending-proof-requests\/([^/]+)\/respond$/);
       if (respondPendingMatch && method === "POST") {
         const body = await readJson(req);
         const result = await presence.respondToPendingProofRequest({
@@ -390,7 +422,7 @@ async function main() {
         return;
       }
 
-      const verifyMatch = url.pathname.match(/^\/presence\/linked-accounts\/([^/]+)\/verify$/);
+      const verifyMatch = requestPath.match(/^\/presence\/linked-accounts\/([^/]+)\/verify$/);
       if (method === "POST" && verifyMatch) {
         const body = await readJson(req);
         const nonceHeader = req.headers["x-presence-nonce"];
@@ -423,7 +455,7 @@ async function main() {
         return;
       }
 
-      const statusMatch = url.pathname.match(/^\/presence\/linked-accounts\/([^/]+)\/status$/);
+      const statusMatch = requestPath.match(/^\/presence\/linked-accounts\/([^/]+)\/status$/);
       if (method === "GET" && statusMatch) {
         const readiness = await presence.getLinkedAccountReadiness({
           accountId: decodeURIComponent(statusMatch[1]),
@@ -432,7 +464,7 @@ async function main() {
         return;
       }
 
-      const unlinkMatch = url.pathname.match(/^\/presence\/linked-accounts\/([^/]+)\/unlink$/);
+      const unlinkMatch = requestPath.match(/^\/presence\/linked-accounts\/([^/]+)\/unlink$/);
       if (method === "POST" && unlinkMatch) {
         const body = await readJson(req);
         const result = await presence.unlinkAccount({
@@ -455,7 +487,7 @@ async function main() {
         return;
       }
 
-      const revokeMatch = url.pathname.match(/^\/presence\/devices\/([^/]+)\/revoke$/);
+      const revokeMatch = requestPath.match(/^\/presence\/devices\/([^/]+)\/revoke$/);
       if (method === "POST" && revokeMatch) {
         const body = await readJson(req);
         const events = await presence.revokeDevice({
@@ -466,14 +498,14 @@ async function main() {
         return;
       }
 
-      if (method === "GET" && url.pathname === "/presence/audit-events") {
+      if (method === "GET" && requestPath === "/presence/audit-events") {
         const accountId = url.searchParams.get("accountId") || undefined;
         const events = await presence.listAuditEvents({ serviceId, accountId });
         send(200, createAuditEventsResponse(events));
         return;
       }
 
-      const deviceBindingsMatch = url.pathname.match(/^\/presence\/devices\/([^/]+)\/bindings$/);
+      const deviceBindingsMatch = requestPath.match(/^\/presence\/devices\/([^/]+)\/bindings$/);
       if (method === "GET" && deviceBindingsMatch) {
         const deviceIss = decodeURIComponent(deviceBindingsMatch[1]);
         const [device, bindings] = await Promise.all([
@@ -490,7 +522,7 @@ async function main() {
         return;
       }
 
-      const devicePushTokensMatch = url.pathname.match(/^\/presence\/devices\/([^/]+)\/push-tokens$/);
+      const devicePushTokensMatch = requestPath.match(/^\/presence\/devices\/([^/]+)\/push-tokens$/);
       if (method === "POST" && devicePushTokensMatch) {
         const deviceIss = decodeURIComponent(devicePushTokensMatch[1]);
         const body = await readJson(req);
