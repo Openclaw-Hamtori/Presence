@@ -2,16 +2,28 @@
 
 This is the canonical service integration path for Presence.
 
-Use this model everywhere:
+### Canonical product flow
 
-- link once via deeplink or QR
-- stay linked
-- when the service needs human proof, call `createLinkedProofRequest()` or `createPendingProofRequest()`
-- user opens Presence and taps proof
-- app submits PASS to the service backend
-- backend verifies and allows or denies the action
+The current primary product path is:
 
-Push/APNs is intentionally non-canonical and optional (best-effort wake signal only); the product path remains app-open hydration + request/response. If local app state and backend state disagree, the backend wins.
+`link once -> service requests PASS -> user opens Presence -> pending request hydrates -> user taps orb -> fresh proof -> server verify`
+
+In practice this maps to:
+
+1. User links once via QR/deeplink (`POST /presence/link-sessions` -> completion).
+2. The account becomes linked and persists on the backend.
+3. Later, when your service needs a human check, it creates a pending proof request (`POST /presence/linked-accounts/:accountId/pending-proof-requests`) and stores it server-side.
+4. User opens Presence (icon/notification/app link), which hydrates pending work.
+5. User taps the orb.
+6. Presence generates fresh proof bound to request nonce.
+7. Server verifies it and updates authoritative readiness (`POST /presence/pending-proof-requests/:requestId/respond`).
+
+This is also the path we use as the recommended integration standard.
+
+Push/APNs is not part of the canonical path. It is optional and experimental
+(best-effort wake only). Product correctness must work without it.
+
+If local app state and backend state disagree, the backend wins.
 
 ---
 
@@ -36,7 +48,6 @@ You need three moving parts:
    - opens Presence when proof is needed
    - gates access on backend readiness
 
----
 
 ## Endpoint surface
 
@@ -75,6 +86,48 @@ Recommended meaning:
 - `POST /presence/devices/:deviceIss/revoke` revokes a device across bindings.
 - `GET /presence/devices/:deviceIss/bindings` exposes authoritative bindings for device-centric hydration/admin views.
 - `GET /presence/audit-events` exposes lifecycle history for ops/debugging.
+
+## Server env + routing reality (happy path)
+
+If you use `presence-happy-path/app/server.cjs` or the same pattern, these settings are the source of most route confusion:
+
+- `ROUTE_BASE_PATH`
+- `PUBLIC_BASE_URL`
+- `PRESENCE_SERVICE_DOMAIN`
+
+### `ROUTE_BASE_PATH`
+
+The reference server strips this prefix from inbound request paths before matching routes.
+
+Example:
+- `ROUTE_BASE_PATH=/api` and request to `/api/presence/link-sessions`
+- internal `requestPath` becomes `/presence/link-sessions`
+- route handlers still register `/presence/*` paths
+
+This is for when your service is mounted under a proxy path (API gateway, Cloudflare, etc.) and lets you keep backend contracts stable.
+
+### `PUBLIC_BASE_URL`
+
+Used when generating links returned to mobile/UI via `rewriteLinkSessionForPublicBase()` and in helper endpoint absolutization logic.
+
+- Should be the public HTTPS/HTTP origin users and mobile actually reach (`https://presence.example.com`), not just the process bind host/port.
+- It is prefixed onto relative session/completion/proof-request paths.
+- If this is wrong, mobile may get unreachable callbacks even though server routes are valid.
+
+### `PRESENCE_SERVICE_DOMAIN` and `/.well-known/presence.json`
+
+This value drives trust metadata for deeplink validation:
+
+- `/.well-known/presence.json` is served as `https://{PRESENCE_SERVICE_DOMAIN}/.well-known/presence.json` only when `PRESENCE_SERVICE_DOMAIN` is set.
+- The SDK adds `service_domain` to link/deeplink metadata when provided.
+- `allowed_url_prefixes` from well-known must cover the absolute URLs you emit (e.g., `https://presence.example.com/presence`).
+- The app checks these URLs against well-known before it uses `nonce_url` / `verify_url` / `pending_url`.
+
+For the server-local path map:
+
+- Server-internal routes remain `/presence/*`.
+- Public links and trust checks should remain aligned to `PUBLIC_BASE_URL` + `/presence`.
+- Don’t mix `ROUTE_BASE_PATH` into `allowed_url_prefixes`; keep trust prefixes on the public API base that mobile receives.
 
 ---
 
@@ -412,9 +465,12 @@ So Presence on iOS should be designed around:
 
 Use these files together:
 
+- `docs/README.md`
+- `docs/presence-server-routing-guide.md`
 - `presence-sdk/examples/backend-completion-reference.ts`
 - `presence-sdk/examples/local-reference-server.js`
 - `presence-happy-path/app/server.cjs`
 - `presence-sdk/README.md`
 - `presence-mobile/README.md`
 - `docs/presence-public-architecture.md`
+- `docs/presence-pending-proof-request-architecture.md`

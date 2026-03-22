@@ -20,7 +20,7 @@ That split is intentional.
 
 The simplest current product description is:
 
-**Link once -> stay linked -> prove on demand**
+**`link once -> service requests PASS -> user opens Presence -> pending request hydrates -> user taps orb -> fresh proof -> server verify`**
 
 ---
 
