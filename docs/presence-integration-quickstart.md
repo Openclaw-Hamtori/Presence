@@ -6,7 +6,7 @@ Use this model everywhere:
 
 - link once via deeplink or QR
 - stay linked
-- when the service needs human proof, call `createLinkedProofRequest()`
+- when the service needs human proof, call `createLinkedProofRequest()` or `createPendingProofRequest()`
 - user opens Presence and taps proof
 - app submits PASS to the service backend
 - backend verifies and allows or denies the action
@@ -47,7 +47,11 @@ POST /presence/link-sessions
 GET  /presence/link-sessions/:sessionId
 POST /presence/link-sessions/:sessionId/complete
 POST /presence/linked-accounts/:accountId/nonce
+POST /presence/linked-accounts/:accountId/pending-proof-requests
+GET  /presence/linked-accounts/:accountId/pending-proof-requests
 POST /presence/linked-accounts/:accountId/verify
+GET  /presence/pending-proof-requests/:requestId
+POST /presence/pending-proof-requests/:requestId/respond
 GET  /presence/linked-accounts/:accountId/status
 POST /presence/linked-accounts/:accountId/unlink
 POST /presence/devices/:deviceIss/revoke
@@ -61,7 +65,11 @@ Recommended meaning:
 - `GET /presence/link-sessions/:sessionId` lets product UI poll or inspect session state.
 - `POST /presence/link-sessions/:sessionId/complete` verifies the first proof and persists the binding.
 - `POST /presence/linked-accounts/:accountId/nonce` is the canonical "service needs PASS now" endpoint.
+- `POST /presence/linked-accounts/:accountId/pending-proof-requests` creates a durable server-side pending request for a linked account.
+- `GET /presence/linked-accounts/:accountId/pending-proof-requests` lists active pending requests for a linked account.
 - `POST /presence/linked-accounts/:accountId/verify` verifies a PASS proof for an already-linked account.
+- `GET /presence/pending-proof-requests/:requestId` inspects one pending request by id.
+- `POST /presence/pending-proof-requests/:requestId/respond` verifies a PASS proof against the stored pending-request nonce.
 - `GET /presence/linked-accounts/:accountId/status` returns authoritative readiness for gating.
 - `POST /presence/linked-accounts/:accountId/unlink` removes the binding.
 - `POST /presence/devices/:deviceIss/revoke` revokes a device across bindings.
@@ -212,7 +220,7 @@ The stable wire label remains `flow: "reauth"` for this linked proof request sha
 
 ### `/.well-known/presence.json` contract
 
-If you emit `service_domain` plus public `nonce_url` or `verify_url` metadata to mobile, publish:
+If you emit `service_domain` plus public `nonce_url`, `verify_url`, or `pending_url` metadata to mobile, publish:
 
 ```text
 GET https://{service_domain}/.well-known/presence.json
@@ -225,7 +233,7 @@ Minimum contract:
   "version": "1",
   "service_id": "discord-bot",
   "allowed_url_prefixes": [
-    "https://presence.example.com/presence/linked-accounts/"
+    "https://presence.example.com/presence"
   ]
 }
 ```
@@ -233,8 +241,9 @@ Minimum contract:
 Backend rules:
 
 - `service_id` must exactly match the `service_id` you emit in deeplinks, QR payloads, and session metadata.
-- `allowed_url_prefixes` must cover every public absolute `nonce_url` and `verify_url` handed to mobile.
+- `allowed_url_prefixes` must cover every public absolute `nonce_url`, `verify_url`, `pending_url`, and pending-request respond/status URL handed to mobile.
 - `nonce_url`, `verify_url`, and `status_url` must already be public absolute URLs before you expose them to mobile; backend-relative paths are rejected at the mobile boundary.
+- if you expose pending proof request URLs, prefer a broad prefix like `https://presence.example.com/presence` so both linked-account and pending-request routes stay trusted under one well-known entry.
 - Mobile enforces the prefix check for `nonce_url` and `verify_url`; `status_url` still needs to be absolute and publicly reachable.
 - Use short-lived cache headers during rollout/debugging so stale trust metadata does not get pinned on device.
 
@@ -247,6 +256,30 @@ When `createLinkedProofRequest()` returns `ok: false` with `state: "recovery_pen
 - For `recovery_pending`, resume the relink/recovery UX instead of prompting for another ordinary PASS request. Reuse an existing relink session if you already saved one from an earlier `ERR_BINDING_RECOVERY_REQUIRED`; otherwise mint a fresh relink session tied to `request.binding.bindingId` before reopening Presence.
 - For `revoked`, treat the device as no longer trusted and drive relink or support review, not a normal reauth retry.
 - For `unlinked`, require a new initial link before the next protected action.
+
+### Pending proof requests
+
+If you want "open Presence and tap the orb" without issuing a fresh deeplink each time, add the pending proof request surface:
+
+```text
+POST /presence/linked-accounts/:accountId/pending-proof-requests
+GET  /presence/linked-accounts/:accountId/pending-proof-requests
+GET  /presence/pending-proof-requests/:requestId
+POST /presence/pending-proof-requests/:requestId/respond
+```
+
+Recommended backend mapping:
+
+- call `presence.createPendingProofRequest()` and return `createPendingProofRequestResponse()` from `POST /presence/linked-accounts/:accountId/pending-proof-requests`
+- call `presence.listPendingProofRequests()` and return `createPendingProofRequestListResponse()` from `GET /presence/linked-accounts/:accountId/pending-proof-requests`
+- call `presence.getPendingProofRequest()` and return `createPendingProofRequestResponse()` from `GET /presence/pending-proof-requests/:requestId`
+- call `presence.respondToPendingProofRequest()` from `POST /presence/pending-proof-requests/:requestId/respond`
+
+These routes keep the server authoritative:
+
+- the backend stores the pending request and its nonce
+- the app hydrates pending work from the backend rather than inventing local truth
+- the respond route verifies against the stored nonce and marks the request `verified`, `recovery_required`, `expired`, or `cancelled`
 
 ---
 
@@ -381,6 +414,7 @@ Use these files together:
 
 - `presence-sdk/examples/backend-completion-reference.ts`
 - `presence-sdk/examples/local-reference-server.js`
+- `presence-happy-path/app/server.cjs`
 - `presence-sdk/README.md`
 - `presence-mobile/README.md`
 - `docs/presence-public-architecture.md`

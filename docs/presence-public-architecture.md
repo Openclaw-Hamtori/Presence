@@ -69,6 +69,7 @@ The backend owns the authoritative state used for access decisions.
 It stores and exposes:
 - linked account bindings
 - linked devices
+- pending proof requests when the service uses durable app-open proof flow
 - latest verified PASS snapshot
 - readiness state
 - audit trail
@@ -113,10 +114,10 @@ Recommended rule:
 ### On-demand proof submission
 
 1. A linked service decides a human check is required
-2. Service issues a nonce for the linked account
-3. App opens the request and creates proof
-4. App submits proof to the verify endpoint
-5. Backend verifies and updates the latest snapshot
+2. Service either issues a linked-account nonce immediately or creates a durable pending proof request
+3. App opens the request directly or hydrates pending work from the backend
+4. App submits proof to the verify endpoint or the request-specific respond endpoint
+5. Backend verifies and updates the latest snapshot plus any pending request status
 6. Service allows or denies the action based on authoritative readiness
 
 ### Unlink / relink

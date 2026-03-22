@@ -191,6 +191,24 @@ export async function listPendingProofRequestsHandler(req: { params: { accountId
   });
 }
 
+export async function getPendingProofRequestHandler(req: { params: { requestId: string } }) {
+  const request = await presence.getPendingProofRequest({
+    requestId: req.params.requestId,
+  });
+
+  if (!request) {
+    return {
+      ok: false,
+      code: "ERR_PENDING_PROOF_REQUEST_NOT_FOUND",
+    };
+  }
+
+  return createPendingProofRequestResponse({
+    request,
+    contract: endpointContract,
+  });
+}
+
 export async function respondToPendingProofRequestHandler(req: { params: { requestId: string }; body: unknown }) {
   const result = await presence.respondToPendingProofRequest({
     requestId: req.params.requestId,

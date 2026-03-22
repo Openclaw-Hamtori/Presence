@@ -25,6 +25,7 @@ This package now models Presence more like a **real linked auth product flow**.
 What exists now:
 - one-time initial **link session** creation
 - explicit **linked proof request** creation for already-linked accounts
+- durable **pending proof request** creation/list/get/respond primitives
 - persistent **service binding** records per service/account
 - persistent **linked device** records keyed by `iss`
 - **unlink**, **device revoke**, and **relink/recovery** primitives
@@ -92,6 +93,9 @@ const endpointContract = {
   completeSessionPath: "/presence/link-sessions/:sessionId/complete",
   sessionStatusPath: "/presence/link-sessions/:sessionId",
   linkedNoncePath: "/presence/linked-accounts/:accountId/nonce",
+  linkedPendingProofRequestsPath: "/presence/linked-accounts/:accountId/pending-proof-requests",
+  pendingProofRequestPath: "/presence/pending-proof-requests/:requestId",
+  respondPendingProofRequestPath: "/presence/pending-proof-requests/:requestId/respond",
   verifyLinkedAccountPath: "/presence/linked-accounts/:accountId/verify",
   linkedStatusPath: "/presence/linked-accounts/:accountId/status",
   unlinkAccountPath: "/presence/linked-accounts/:accountId/unlink",
@@ -256,6 +260,28 @@ Return shape:
 `flow: "reauth"` is the stable wire label for this already-linked proof request. In product copy, describe it as "request PASS now" or "prove on demand" rather than a separate renewal mode.
 If you receive `recovery_pending`, `revoked`, or `unlinked`, stop the protected action and resume relink/recovery UX instead of issuing a substitute proof nonce. The canonical service handling and relink guidance live in `../docs/presence-integration-quickstart.md`.
 
+### Pending proof request helpers
+
+For the durable "open Presence and tap the orb" flow, use the pending proof request methods:
+
+- `createPendingProofRequest({ serviceId?, accountId, metadata? })`
+- `listPendingProofRequests({ serviceId?, accountId?, bindingId?, deviceIss?, statuses?, includeInactive? })`
+- `getPendingProofRequest({ requestId })`
+- `respondToPendingProofRequest({ requestId, body })`
+
+Recommended HTTP mapping:
+
+- return `createPendingProofRequestResponse()` from `POST /presence/linked-accounts/:accountId/pending-proof-requests`
+- return `createPendingProofRequestListResponse()` from `GET /presence/linked-accounts/:accountId/pending-proof-requests`
+- return `createPendingProofRequestResponse()` from `GET /presence/pending-proof-requests/:requestId`
+- call `respondToPendingProofRequest()` from `POST /presence/pending-proof-requests/:requestId/respond`
+
+This keeps server-authoritative truth intact:
+
+- the backend stores the pending request and its nonce
+- the app hydrates pending work from backend state
+- the respond route verifies against the stored nonce and marks the request terminal on success or recovery
+
 ### `getLinkedAccountReadiness({ serviceId?, accountId, now?, maxSnapshotAgeSeconds? })`
 
 Returns the service-side linked account readiness decision that should gate access.
@@ -347,7 +373,11 @@ POST /presence/link-sessions
 GET  /presence/link-sessions/:sessionId
 POST /presence/link-sessions/:sessionId/complete
 POST /presence/linked-accounts/:accountId/nonce
+POST /presence/linked-accounts/:accountId/pending-proof-requests
+GET  /presence/linked-accounts/:accountId/pending-proof-requests
 POST /presence/linked-accounts/:accountId/verify
+GET  /presence/pending-proof-requests/:requestId
+POST /presence/pending-proof-requests/:requestId/respond
 GET  /presence/linked-accounts/:accountId/status
 POST /presence/linked-accounts/:accountId/unlink
 POST /presence/devices/:deviceIss/revoke
@@ -361,9 +391,12 @@ The SDK now includes response helpers for these shapes:
 - `createRecoveryResponse()`
 - `createAuditEventsResponse()`
 - `createLinkedProofRequestResponse()`
+- `createPendingProofRequestResponse()`
+- `createPendingProofRequestListResponse()`
 - `createLinkedAccountReadinessResponse()`
 
 See `examples/backend-completion-reference.ts` for a practical handler layout.
+See `../presence-happy-path/app/server.cjs` for the repo-tracked CommonJS deploy source that matches the live VPS entrypoint shape.
 Use `../docs/presence-integration-quickstart.md` as the canonical flow/state guide.
 
 ## QR / deeplink completion architecture
@@ -380,17 +413,16 @@ Minimal reference model in this phase:
    - optional `binding_id`
    - optional `flow`
    - optional fallback `code`
-   - optional `nonce_url`, `verify_url`
-5. If the deeplink/session includes sync URLs like `nonce_url` or `verify_url`, mobile should validate them against `https://{service_domain}/.well-known/presence.json` before proof submission.
-   Relative `status_url`, `nonce_url`, and `verify_url` values must be rewritten to public absolute URLs before the link reaches mobile.
+   - optional `nonce_url`, `verify_url`, `pending_url`
+5. If the deeplink/session includes sync URLs like `nonce_url`, `verify_url`, or `pending_url`, mobile should validate them against `https://{service_domain}/.well-known/presence.json` before proof submission or pending-request hydration.
+   Relative `status_url`, `nonce_url`, `verify_url`, and `pending_url` values must be rewritten to public absolute URLs before the link reaches mobile.
 6. Mobile produces proof and posts to `session.completion.completionApiUrl` or the standardized completion endpoint.
-7. Later, when the service needs PASS for a linked account, backend calls `createLinkedProofRequest()` and returns a normalized `/presence/linked-accounts/:accountId/nonce` response containing:
-   - fresh nonce
-   - linked binding id
-   - verify/status endpoint metadata
-8. Mobile submits PASS to `verifyLinkedAccountApiUrl` for that linked account.
-9. Mobile may still retry failed linked PASS submissions on foreground/background wake as best-effort catch-up.
-10. Service calls `completeLinkSession()`, `verifyLinkedAccount()`, or `getLinkedAccountReadiness()` and returns a normalized linked/recovery/readiness payload.
+7. Later, when the service needs PASS for a linked account, backend either:
+   - calls `createLinkedProofRequest()` and returns a normalized `/presence/linked-accounts/:accountId/nonce` response containing a fresh nonce plus verify/status metadata
+   - or calls `createPendingProofRequest()` and exposes the pending proof request endpoints for app-open hydration
+8. Mobile submits PASS to `verifyLinkedAccountApiUrl` for linked nonce flows or to `/presence/pending-proof-requests/:requestId/respond` for pending-request flows.
+9. Mobile may still retry failed linked PASS submissions or pending request hydration on foreground/background wake as best-effort catch-up.
+10. Service calls `completeLinkSession()`, `verifyLinkedAccount()`, `respondToPendingProofRequest()`, or `getLinkedAccountReadiness()` and returns a normalized linked/recovery/readiness payload.
 
 This is enough to wire real product UX without building scanner/native camera stack yet.
 
@@ -416,11 +448,11 @@ Do not assume that a background-capable mobile app will keep PASS ready on a fix
 
 ## Trust metadata checklist
 
-If you emit `service_domain`, `nonce_url`, or `verify_url` in deeplinks or session completion metadata:
+If you emit `service_domain`, `nonce_url`, `verify_url`, or `pending_url` in deeplinks or session completion metadata:
 
 - `https://{service_domain}/.well-known/presence.json` must be publicly reachable over HTTPS
 - `service_id` in the well-known JSON must match the emitted `service_id`
-- `allowed_url_prefixes` must cover the emitted `nonce_url` and `verify_url`
+- `allowed_url_prefixes` must cover the emitted `nonce_url`, `verify_url`, `pending_url`, and any pending request respond/status URLs you hand to mobile
 - well-known responses should use cache headers that will not pin stale metadata during rollout or debugging
 
 `../docs/presence-integration-quickstart.md` includes the concrete `/.well-known/presence.json` contract and the cross-package field alias map used by mobile/test-app and sdk code.
@@ -450,10 +482,14 @@ cd ../presence-sdk && npm run build && npm test
 `npm test` now includes a local HTTP reference-server round-trip that exercises:
 - `POST /presence/link-sessions`
 - `POST /presence/link-sessions/:sessionId/complete`
+- `POST /presence/linked-accounts/:accountId/pending-proof-requests`
+- `GET /presence/linked-accounts/:accountId/pending-proof-requests`
+- `GET /presence/pending-proof-requests/:requestId`
+- `POST /presence/pending-proof-requests/:requestId/respond`
 - `POST /presence/linked-accounts/:accountId/nonce`
 - `POST /presence/linked-accounts/:accountId/verify`
 
-So you can verify the end-to-end linkage flow locally: create session -> app proof -> complete -> binding saved -> request PASS now -> verify linked account.
+So you can verify the end-to-end linkage flow locally: create session -> app proof -> complete -> binding saved -> create pending proof request -> respond -> request PASS now -> verify linked account.
 
 ---
 

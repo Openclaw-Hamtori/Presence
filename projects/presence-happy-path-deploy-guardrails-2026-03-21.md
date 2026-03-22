@@ -5,6 +5,10 @@ The live Noctu happy-path server was patched directly on the VPS to fix real pro
 
 This note is the deploy-side guardrail until the live server source is fully mirrored into a repo-tracked deploy artifact.
 
+Update on 2026-03-22:
+- repo-tracked live source now exists at `presence-happy-path/app/server.cjs`
+- pending proof request rollout steps live in `projects/presence-happy-path-pending-proof-redeploy-2026-03-22.md`
+
 ---
 
 ## Live service identity
@@ -52,6 +56,16 @@ Why:
 ### 3) Contract completeness
 Endpoint contract should include:
 - `deviceBindingsPath: route("/presence/devices/:deviceIss/bindings")`
+
+### 4) Pending proof request surface
+The live server should expose:
+- `POST /presence/linked-accounts/:accountId/pending-proof-requests`
+- `GET /presence/linked-accounts/:accountId/pending-proof-requests`
+- `GET /presence/pending-proof-requests/:requestId`
+- `POST /presence/pending-proof-requests/:requestId/respond`
+
+Related trust requirement:
+- `/.well-known/presence.json` should allow a broad prefix like `https://.../presence`, not only `/presence/linked-accounts/...`
 
 ---
 

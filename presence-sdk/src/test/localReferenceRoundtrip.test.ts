@@ -11,6 +11,8 @@ import {
   createCompletionSessionResponse,
   createCompletionSuccessResponse,
   createLinkedProofRequestResponse,
+  createPendingProofRequestResponse,
+  createPendingProofRequestListResponse,
   createRecoveryResponse,
   createLinkedAccountReadinessResponse,
 } from "../index.js";
@@ -129,7 +131,11 @@ async function main() {
     sessionStatusPath: "/presence/link-sessions/:sessionId",
     linkedNoncePath: "/presence/linked-accounts/:accountId/nonce",
     verifyLinkedAccountPath: "/presence/linked-accounts/:accountId/verify",
+    linkedPendingProofRequestsPath: "/presence/linked-accounts/:accountId/pending-proof-requests",
+    pendingProofRequestPath: "/presence/pending-proof-requests/:requestId",
+    respondPendingProofRequestPath: "/presence/pending-proof-requests/:requestId/respond",
     linkedStatusPath: "/presence/linked-accounts/:accountId/status",
+    unlinkAccountPath: "/presence/linked-accounts/:accountId/unlink",
   } as const;
 
   const server = createServer(async (req, res) => {
@@ -196,6 +202,101 @@ async function main() {
         return;
       }
 
+      const pendingMatch = url.pathname.match(/^\/presence\/linked-accounts\/([^/]+)\/pending-proof-requests$/);
+      if (pendingMatch && method === "POST") {
+        const request = await presence.createPendingProofRequest({
+          accountId: decodeURIComponent(pendingMatch[1]),
+        });
+        if (!request.ok) {
+          res.writeHead(request.state === "missing_binding" ? 404 : 409, { "content-type": "application/json" });
+          res.end(JSON.stringify({
+            ok: false,
+            code: request.state === "missing_binding" ? "ERR_BINDING_NOT_FOUND" : "ERR_LINKED_PROOF_UNAVAILABLE",
+            message: request.reason,
+            state: request.state,
+            bindingId: request.binding?.bindingId,
+          }));
+          return;
+        }
+
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify(createPendingProofRequestResponse({
+          request: request.request,
+          contract: endpointContract,
+        })));
+        return;
+      }
+
+      if (pendingMatch && method === "GET") {
+        const requests = await presence.listPendingProofRequests({
+          accountId: decodeURIComponent(pendingMatch[1]),
+        });
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify(createPendingProofRequestListResponse({
+          requests,
+          contract: endpointContract,
+        })));
+        return;
+      }
+
+      const pendingRequestMatch = url.pathname.match(/^\/presence\/pending-proof-requests\/([^/]+)$/);
+      if (pendingRequestMatch && method === "GET") {
+        const request = await presence.getPendingProofRequest({
+          requestId: decodeURIComponent(pendingRequestMatch[1]),
+        });
+        if (!request) {
+          res.writeHead(404, { "content-type": "application/json" });
+          res.end(JSON.stringify({ ok: false, code: "ERR_PENDING_PROOF_REQUEST_NOT_FOUND" }));
+          return;
+        }
+
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify(createPendingProofRequestResponse({
+          request,
+          contract: endpointContract,
+        })));
+        return;
+      }
+
+      const respondPendingMatch = url.pathname.match(/^\/presence\/pending-proof-requests\/([^/]+)\/respond$/);
+      if (respondPendingMatch && method === "POST") {
+        const body = await readJson(req);
+        const result = await presence.respondToPendingProofRequest({
+          requestId: decodeURIComponent(respondPendingMatch[1]),
+          body,
+        });
+        let payload;
+        if (result.verified && "binding" in result) {
+          payload = {
+            ok: true,
+            state: "linked",
+            binding: result.binding,
+            snapshot: result.snapshot,
+            request: result.request,
+          };
+        } else if (!result.verified && result.error === "ERR_BINDING_RECOVERY_REQUIRED") {
+          payload = createRecoveryResponse(result);
+        } else if (!result.verified) {
+          payload = {
+            ok: false,
+            code: result.error,
+            message: result.detail,
+            request: "request" in result ? result.request : undefined,
+          };
+        } else {
+          payload = {
+            ok: false,
+            code: "ERR_INVALID_FORMAT",
+            message: "pending proof request response missing binding snapshot",
+          };
+        }
+
+        const status = !payload.ok && payload.code === "ERR_BINDING_RECOVERY_REQUIRED" ? 409 : payload.ok ? 200 : 400;
+        res.writeHead(status, { "content-type": "application/json" });
+        res.end(JSON.stringify(payload));
+        return;
+      }
+
       const verifyMatch = url.pathname.match(/^\/presence\/linked-accounts\/([^/]+)\/verify$/);
       if (method === "POST" && verifyMatch) {
         const body = await readJson(req);
@@ -228,7 +329,8 @@ async function main() {
             message: "linked verification response missing binding snapshot",
           };
         }
-        res.writeHead(payload.ok ? 200 : 400, { "content-type": "application/json" });
+        const status = !payload.ok && payload.code === "ERR_BINDING_RECOVERY_REQUIRED" ? 409 : payload.ok ? 200 : 400;
+        res.writeHead(status, { "content-type": "application/json" });
         res.end(JSON.stringify(payload));
         return;
       }
@@ -295,6 +397,84 @@ async function main() {
     assert.equal(completed.ok, true);
     assert.equal(completed.binding.status, "linked");
 
+    const pendingCreateRes = await fetch(`${baseUrl}/presence/linked-accounts/acct-local-http/pending-proof-requests`, {
+      method: "POST",
+    });
+    assert.equal(pendingCreateRes.status, 200);
+    const pendingCreated = await pendingCreateRes.json() as {
+      ok: true;
+      proofRequest: {
+        requestId: string;
+        nonce: string;
+        status: string;
+        endpoints: {
+          respond: { path: string };
+          status?: { path: string };
+        };
+      };
+    };
+    assert.equal(pendingCreated.ok, true);
+    assert.equal(pendingCreated.proofRequest.status, "pending");
+
+    const pendingListRes = await fetch(`${baseUrl}/presence/linked-accounts/acct-local-http/pending-proof-requests`);
+    assert.equal(pendingListRes.status, 200);
+    const pendingList = await pendingListRes.json() as {
+      ok: true;
+      proofRequests: Array<{ requestId: string; status: string }>;
+    };
+    assert.equal(pendingList.ok, true);
+    assert.equal(pendingList.proofRequests.length, 1);
+    assert.equal(pendingList.proofRequests[0]?.requestId, pendingCreated.proofRequest.requestId);
+
+    const pendingStatusRes = await fetch(
+      `${baseUrl}/presence/pending-proof-requests/${encodeURIComponent(pendingCreated.proofRequest.requestId)}`
+    );
+    assert.equal(pendingStatusRes.status, 200);
+    const pendingStatus = await pendingStatusRes.json() as {
+      ok: true;
+      proofRequest: {
+        requestId: string;
+        status: string;
+      };
+    };
+    assert.equal(pendingStatus.ok, true);
+    assert.equal(pendingStatus.proofRequest.status, "pending");
+
+    const pendingRespondRes = await fetch(
+      `${baseUrl}/presence/pending-proof-requests/${encodeURIComponent(pendingCreated.proofRequest.requestId)}/respond`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(buildAndroidBody(
+          device.publicKeyDer,
+          device.privateKeyDer,
+          pendingCreated.proofRequest.nonce,
+        )),
+      }
+    );
+    assert.equal(pendingRespondRes.status, 200);
+    const pendingResponded = await pendingRespondRes.json() as {
+      ok: true;
+      state: string;
+      request: {
+        status: string;
+        completedAt?: number;
+      };
+    };
+    assert.equal(pendingResponded.ok, true);
+    assert.equal(pendingResponded.state, "linked");
+    assert.equal(pendingResponded.request.status, "verified");
+    assert.ok(pendingResponded.request.completedAt);
+
+    const pendingListAfterRes = await fetch(`${baseUrl}/presence/linked-accounts/acct-local-http/pending-proof-requests`);
+    assert.equal(pendingListAfterRes.status, 200);
+    const pendingListAfter = await pendingListAfterRes.json() as {
+      ok: true;
+      proofRequests: Array<{ requestId: string }>;
+    };
+    assert.equal(pendingListAfter.ok, true);
+    assert.equal(pendingListAfter.proofRequests.length, 0);
+
     const proofRequestRes = await fetch(`${baseUrl}/presence/linked-accounts/acct-local-http/nonce`, {
       method: "POST",
     });
@@ -359,7 +539,7 @@ async function main() {
     const protectedStaleRes = await fetch(`${baseUrl}/protected/acct-local-http`);
     assert.equal(protectedStaleRes.status, 403);
 
-    console.log("  ✓ local reference server round-trip (create -> complete -> binding saved -> verify linked account)");
+    console.log("  ✓ local reference server round-trip (create -> complete -> pending request -> linked verify)");
   } finally {
     (presence as unknown as { verify: typeof presence.verify }).verify = originalVerify;
     await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
