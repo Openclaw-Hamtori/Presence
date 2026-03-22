@@ -2,6 +2,7 @@
 
 #import <React/RCTBundleURLProvider.h>
 #import <React/RCTLinkingManager.h>
+#import <UIKit/UIKit.h>
 #import "Presence-Swift.h"
 
 @implementation AppDelegate
@@ -11,6 +12,7 @@
   [PresenceBackgroundRefresh registerBackgroundTasks];
   [PresenceBackgroundRefresh schedulePersistedRefreshIfNeeded];
   [PresenceHealthKit registerObservers];
+  [PresencePushNotifications configure];
   self.moduleName = @"PresenceTestApp";
   // You can add your custom initial props in the dictionary below.
   // They will be passed down to the ViewController used by React Native.
@@ -41,6 +43,24 @@
 - (BOOL)application:(UIApplication *)application continueUserActivity:(NSUserActivity *)userActivity restorationHandler:(void (^)(NSArray<id<UIUserActivityRestoring>> * _Nullable))restorationHandler
 {
   return [RCTLinkingManager application:application continueUserActivity:userActivity restorationHandler:restorationHandler];
+}
+
+- (void)application:(UIApplication *)application didRegisterForRemoteNotificationsWithDeviceToken:(NSData *)deviceToken
+{
+  [PresencePushNotifications didRegisterForRemoteNotifications:deviceToken];
+}
+
+- (void)application:(UIApplication *)application didFailToRegisterForRemoteNotificationsWithError:(NSError *)error
+{
+  [PresencePushNotifications didFailToRegisterForRemoteNotifications:error];
+}
+
+- (void)application:(UIApplication *)application
+didReceiveRemoteNotification:(NSDictionary *)userInfo
+fetchCompletionHandler:(void (^)(UIBackgroundFetchResult))completionHandler
+{
+  [PresencePushNotifications handleRemoteNotification:userInfo source:@"remote_notification"];
+  completionHandler(UIBackgroundFetchResultNoData);
 }
 
 @end

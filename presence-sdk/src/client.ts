@@ -33,8 +33,15 @@ import type {
   BindingMutationResult,
   LinkageAuditEvent,
   LinkageStore,
+  DevicePushToken,
+  DevicePushTokenEnvironment,
+  DevicePushTokenPlatform,
   PendingProofRequest,
   PendingProofRequestStatus,
+  PendingProofSignal,
+  PendingProofSignalDispatch,
+  RegisterDevicePushTokenOptions,
+  RegisterDevicePushTokenResult,
   ServiceBinding,
 } from "./types.js";
 import {
@@ -362,14 +369,102 @@ export class PresenceClient {
       return nextRequest;
     });
 
+    const requestWithSignal = await this.dispatchPendingProofSignal({
+      request,
+      binding: linkedRequest.binding,
+    });
+
     return {
       ok: true,
       state: "linked",
       serviceId: linkedRequest.serviceId,
       accountId: linkedRequest.accountId,
       binding: linkedRequest.binding,
-      request,
+      request: requestWithSignal,
     };
+  }
+
+  async registerDevicePushToken(
+    options: RegisterDevicePushTokenOptions
+  ): Promise<RegisterDevicePushTokenResult> {
+    const deviceIss = options.deviceIss.trim();
+    const token = normalizePushToken(options.token);
+    const platform = options.platform ?? "ios_apns";
+    const environment = options.environment ?? "development";
+    const bundleId = normalizeOptionalString(options.bundleId);
+    const confirmedAt = options.confirmedAt ?? Math.floor(Date.now() / 1000);
+
+    if (!deviceIss) {
+      throw new Error("deviceIss is required for registerDevicePushToken");
+    }
+    if (!token) {
+      throw new Error("token is required for registerDevicePushToken");
+    }
+
+    return this.runStoreMutation(async (store) => {
+      const device = await store.getLinkedDevice(deviceIss);
+      if (!device) {
+        throw new Error(`linked device not found: ${deviceIss}`);
+      }
+
+      const nextPushTokens = [...(device.pushTokens ?? [])];
+      const replacedTokens: DevicePushToken[] = [];
+      let registeredToken: DevicePushToken | null = null;
+
+      for (let index = 0; index < nextPushTokens.length; index += 1) {
+        const current = nextPushTokens[index];
+        if (!samePushTokenSlot(current, { platform, environment, bundleId })) {
+          continue;
+        }
+
+        if (current.token === token) {
+          registeredToken = {
+            ...current,
+            status: "active",
+            invalidatedAt: undefined,
+            lastConfirmedAt: confirmedAt,
+          };
+          nextPushTokens[index] = registeredToken;
+          continue;
+        }
+
+        if (current.status === "active") {
+          const invalidated = {
+            ...current,
+            status: "invalidated" as const,
+            invalidatedAt: confirmedAt,
+          };
+          nextPushTokens[index] = invalidated;
+          replacedTokens.push(invalidated);
+        }
+      }
+
+      if (!registeredToken) {
+        registeredToken = {
+          tokenId: randomId("pptok"),
+          platform,
+          token,
+          environment,
+          bundleId,
+          status: "active",
+          registeredAt: confirmedAt,
+          lastConfirmedAt: confirmedAt,
+        };
+        nextPushTokens.push(registeredToken);
+      }
+
+      const nextDevice = {
+        ...device,
+        pushTokens: sortDevicePushTokens(nextPushTokens),
+      };
+      await store.saveLinkedDevice(nextDevice);
+
+      return {
+        device: nextDevice,
+        pushToken: registeredToken,
+        replacedTokens,
+      };
+    });
   }
 
   async getPendingProofRequest(params: {
@@ -919,6 +1014,102 @@ export class PresenceClient {
     return this.linkageStore.listAuditEvents(filter);
   }
 
+  private async dispatchPendingProofSignal(params: {
+    request: PendingProofRequest;
+    binding: ServiceBinding;
+  }): Promise<PendingProofRequest> {
+    const signal = createPendingProofSignal(params.request);
+    const attemptedAt = Math.floor(Date.now() / 1000);
+    const configuredProvider = this.config.pendingProofSignalTransport;
+
+    if (!configuredProvider) {
+      return this.savePendingProofSignalResult(params.request, signal, {
+        signalId: signal.signalId,
+        state: "not_configured",
+        provider: "none",
+        targetCount: 0,
+        attemptedAt,
+      });
+    }
+
+    const device = await this.linkageStore.getLinkedDevice(params.request.deviceIss);
+    if (!device) {
+      return this.savePendingProofSignalResult(params.request, signal, {
+        signalId: signal.signalId,
+        state: "dispatch_failed",
+        provider: "custom",
+        targetCount: 0,
+        attemptedAt,
+        error: `linked device missing: ${params.request.deviceIss}`,
+      });
+    }
+
+    const activeTargets = (device.pushTokens ?? []).filter((pushToken) => pushToken.status === "active");
+    if (activeTargets.length === 0) {
+      return this.savePendingProofSignalResult(params.request, signal, {
+        signalId: signal.signalId,
+        state: "no_registered_targets",
+        provider: "custom",
+        targetCount: 0,
+        attemptedAt,
+      });
+    }
+
+    try {
+      const transportResult = await configuredProvider.deliver({
+        request: params.request,
+        binding: params.binding,
+        device,
+        signal,
+        targets: activeTargets,
+      });
+
+      return this.savePendingProofSignalResult(params.request, signal, {
+        signalId: signal.signalId,
+        state: "dispatched",
+        provider: transportResult?.provider ?? "custom",
+        targetCount: transportResult?.targetCount ?? activeTargets.length,
+        attemptedAt,
+        deliveredAt: transportResult?.deliveredAt ?? attemptedAt,
+        providerMessageId: transportResult?.providerMessageId,
+      });
+    } catch (error) {
+      return this.savePendingProofSignalResult(params.request, signal, {
+        signalId: signal.signalId,
+        state: "dispatch_failed",
+        provider: "custom",
+        targetCount: activeTargets.length,
+        attemptedAt,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  private async savePendingProofSignalResult(
+    request: PendingProofRequest,
+    signal: PendingProofSignal,
+    signalDispatch: PendingProofSignalDispatch
+  ): Promise<PendingProofRequest> {
+    return this.runStoreMutation(async (store) => {
+      const current = await store.getPendingProofRequest(request.id);
+      if (!current) {
+        return {
+          ...request,
+          signal,
+          signalDispatch,
+        };
+      }
+
+      const nextRequest = {
+        ...current,
+        signal,
+        signalDispatch,
+      };
+      await store.savePendingProofRequest(nextRequest);
+      return nextRequest;
+    });
+  }
+
   private async ensurePendingProofRequestFreshWithStore(
     store: LinkageStore,
     request: PendingProofRequest,
@@ -980,4 +1171,50 @@ export class PresenceClient {
     }
     return mutator(this.linkageStore);
   }
+}
+
+function normalizePushToken(token: string): string {
+  return token.trim().replace(/\s+/g, "").toLowerCase();
+}
+
+function normalizeOptionalString(value?: string): string | undefined {
+  const normalized = value?.trim();
+  return normalized ? normalized : undefined;
+}
+
+function samePushTokenSlot(
+  token: DevicePushToken,
+  params: {
+    platform: DevicePushTokenPlatform;
+    environment: DevicePushTokenEnvironment;
+    bundleId?: string;
+  }
+): boolean {
+  return token.platform === params.platform
+    && token.environment === params.environment
+    && (token.bundleId ?? undefined) === (params.bundleId ?? undefined);
+}
+
+function sortDevicePushTokens(tokens: DevicePushToken[]): DevicePushToken[] {
+  return [...tokens].sort((a, b) => {
+    if (a.status !== b.status) {
+      return a.status === "active" ? -1 : 1;
+    }
+    return b.lastConfirmedAt - a.lastConfirmedAt;
+  });
+}
+
+function createPendingProofSignal(request: PendingProofRequest): PendingProofSignal {
+  return {
+    version: "1",
+    signalId: randomId("psig"),
+    kind: "pending_proof_request.available",
+    serviceId: request.serviceId,
+    accountId: request.accountId,
+    bindingId: request.bindingId,
+    deviceIss: request.deviceIss,
+    requestId: request.id,
+    requestedAt: request.requestedAt,
+    expiresAt: request.expiresAt,
+  };
 }

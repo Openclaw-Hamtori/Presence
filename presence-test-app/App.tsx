@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  AppState,
+  AppStateStatus,
   SafeAreaView,
   View,
   Text,
@@ -19,6 +21,14 @@ import {
   Clipboard,
 } from "react-native";
 import { usePresenceState } from "./src/ui/usePresenceState";
+import {
+  addPushNotificationListener,
+  consumeInitialPushNotificationResponse,
+  ensurePushNotificationsRegistered,
+  extractPendingProofWakeSignal,
+  type PresencePendingProofWakeSignal,
+  type PresencePushTokenRegistration,
+} from "./src/pushNotifications";
 import {
   loadPresenceState,
   savePresenceState,
@@ -92,6 +102,10 @@ type LinkedProofRequestState =
 type RecentVerifiedProofState =
   | { serviceId: string | null; expiresAt: number }
   | null;
+type PendingPushWakeState = {
+  signal: PresencePendingProofWakeSignal;
+  source: string;
+};
 
 function nowTime(): string {
   return new Date().toISOString().slice(11, 19);
@@ -466,12 +480,23 @@ export default function App() {
   const [serviceContentHeight, setServiceContentHeight] = useState(0);
   const [serviceScrollOffset, setServiceScrollOffset] = useState(0);
   const currentDeviceIss = presence.state?.linkedDevice?.iss;
+  const currentDeviceIssRef = useRef<string | undefined>(currentDeviceIss);
+  const effectiveServiceBindingsRef = useRef<ServiceBinding[]>([]);
+  const pendingPushWakeRef = useRef<PendingPushWakeState | null>(null);
+  const pendingPushTokenRef = useRef<PresencePushTokenRegistration | null>(null);
+  const uploadedPushRegistrationSignatureRef = useRef<string | null>(null);
+  const pushRegistrationAttemptedDevicesRef = useRef<Set<string>>(new Set());
+  const appStateRef = useRef<AppStateStatus>(AppState.currentState);
 
   const addLog = useCallback((msg: string) => {
     const line = `[${nowTime()}] ${msg}`;
     console.log(`[PresenceApp] ${line}`);
     setLogEntries((prev) => [line, ...prev].slice(0, MAX_LOG_ENTRIES));
   }, []);
+
+  useEffect(() => {
+    currentDeviceIssRef.current = currentDeviceIss;
+  }, [currentDeviceIss]);
 
   useEffect(() => {
     if (copyLogsStatus === "idle") return;
@@ -668,7 +693,7 @@ export default function App() {
     });
   }, [activateEnvelope]);
 
-  const hydrateAuthoritativeBindings = useCallback(async (deviceIss: string, source: string) => {
+  const hydrateAuthoritativeBindings = useCallback(async (deviceIss: string, source: string): Promise<ServiceBinding[]> => {
     setHydratingServiceBindings(true);
     setServiceBindingsHydrationError(null);
     try {
@@ -697,7 +722,7 @@ export default function App() {
         });
         await persistAuthoritativeBindings(deviceIss, recoveredBindings);
         addLog(`↻ Recovered ${recoveredBindings.length} bindings from device endpoint (${source})`);
-        return;
+        return recoveredBindings;
       } catch (deviceEndpointError) {
         addLog(`ℹ️ Device bindings endpoint unavailable (${source}) — ${deviceEndpointError instanceof Error ? deviceEndpointError.message : String(deviceEndpointError)}`);
       }
@@ -740,8 +765,10 @@ export default function App() {
       });
       await persistAuthoritativeBindings(deviceIss, recoveredBindings);
       addLog(`↻ Recovered ${recoveredBindings.length} bindings via audit fallback (${source})`);
+      return recoveredBindings;
     } catch (error) {
       setServiceBindingsHydrationError(error instanceof Error ? error.message : String(error));
+      return localBindingsForHydrationRef.current.filter((binding) => binding.linkedDeviceIss === deviceIss);
     } finally {
       setHydratingServiceBindings(false);
     }
@@ -775,6 +802,90 @@ export default function App() {
     }
   }, [addLog, presence.refresh]);
 
+  const syncPushTokenWithServer = useCallback(async (
+    registration: PresencePushTokenRegistration
+  ) => {
+    const deviceIss = currentDeviceIssRef.current;
+    if (!deviceIss) {
+      pendingPushTokenRef.current = registration;
+      addLog(`ℹ️ cached APNs token until linked device is available`);
+      return;
+    }
+
+    const signature = [
+      deviceIss,
+      registration.token,
+      registration.environment,
+      registration.bundleId ?? "-",
+    ].join(":");
+    if (uploadedPushRegistrationSignatureRef.current === signature) {
+      return;
+    }
+
+    const response = await fetch(
+      `${PRESENCE_DEMO_API_BASE_URL}/devices/${encodeURIComponent(deviceIss)}/push-tokens`,
+      {
+        method: "POST",
+        headers: {
+          accept: "application/json",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          token: registration.token,
+          environment: registration.environment,
+          bundleId: registration.bundleId,
+        }),
+      }
+    );
+    const raw = await response.text();
+    const parsed = raw ? JSON.parse(raw) : null;
+    if (!response.ok) {
+      throw new Error(parsed?.message ?? `request failed (${response.status})`);
+    }
+
+    uploadedPushRegistrationSignatureRef.current = signature;
+    pendingPushTokenRef.current = null;
+    addLog(
+      `↻ registered APNs token for ${deviceIss} (${registration.environment}${registration.bundleId ? ` ${registration.bundleId}` : ""})`
+    );
+  }, [addLog]);
+
+  const runForegroundHydration = useCallback(async (source: string) => {
+    const deviceIss = currentDeviceIssRef.current;
+    if (!deviceIss) {
+      return;
+    }
+
+    const bindings = await hydrateAuthoritativeBindings(deviceIss, source);
+    const nextBindings = bindings.length > 0 ? bindings : effectiveServiceBindingsRef.current;
+    if (nextBindings.length > 0) {
+      await hydratePendingProofRequests(nextBindings, source);
+    }
+  }, [hydrateAuthoritativeBindings, hydratePendingProofRequests]);
+
+  const handlePendingProofWake = useCallback(async (
+    signal: PresencePendingProofWakeSignal,
+    source: string
+  ) => {
+    const deviceIss = currentDeviceIssRef.current;
+    if (!deviceIss) {
+      pendingPushWakeRef.current = { signal, source };
+      addLog(`🔔 queued pending-proof wake until linked device is available`);
+      return;
+    }
+
+    if (signal.deviceIss && signal.deviceIss !== deviceIss) {
+      addLog(`ℹ️ ignored pending-proof wake for other device ${signal.deviceIss}`);
+      return;
+    }
+
+    addLog(
+      `🔔 pending-proof wake source=${source} request=${signal.requestId} service=${signal.serviceId}`
+    );
+    pendingPushWakeRef.current = null;
+    await runForegroundHydration(source);
+  }, [addLog, runForegroundHydration]);
+
   useEffect(() => {
     if (!showService) return;
     const indicatorTimer = setTimeout(() => {
@@ -792,6 +903,96 @@ export default function App() {
     if (!deviceIss) return;
     void hydrateAuthoritativeBindings(deviceIss, "presence_state_change");
   }, [hydrateAuthoritativeBindings, presence.state?.linkedDevice?.iss]);
+
+  useEffect(() => {
+    const pendingRegistration = pendingPushTokenRef.current;
+    if (!currentDeviceIss || !pendingRegistration) {
+      return;
+    }
+    void syncPushTokenWithServer(pendingRegistration).catch((error) => {
+      addLog(`ℹ️ push token registration failed — ${error instanceof Error ? error.message : String(error)}`);
+    });
+  }, [addLog, currentDeviceIss, syncPushTokenWithServer]);
+
+  useEffect(() => {
+    const pendingWake = pendingPushWakeRef.current;
+    if (!currentDeviceIss || !pendingWake) {
+      return;
+    }
+    void handlePendingProofWake(pendingWake.signal, `${pendingWake.source}:buffered`);
+  }, [currentDeviceIss, handlePendingProofWake]);
+
+  useEffect(() => {
+    if (!currentDeviceIss || pushRegistrationAttemptedDevicesRef.current.has(currentDeviceIss)) {
+      return;
+    }
+    pushRegistrationAttemptedDevicesRef.current.add(currentDeviceIss);
+    void ensurePushNotificationsRegistered({ prompt: true })
+      .then((result) => {
+        addLog(
+          `↻ push registration status=${result.status} requested=${result.registrationRequested ? "yes" : "no"}`
+        );
+      })
+      .catch((error) => {
+        addLog(`ℹ️ push registration unavailable — ${error instanceof Error ? error.message : String(error)}`);
+      });
+  }, [addLog, currentDeviceIss]);
+
+  useEffect(() => {
+    let active = true;
+
+    void consumeInitialPushNotificationResponse()
+      .then((event) => {
+        if (!active || !event) {
+          return;
+        }
+        const signal = extractPendingProofWakeSignal(event.payload);
+        if (signal) {
+          void handlePendingProofWake(signal, event.source);
+        }
+      })
+      .catch(() => undefined);
+
+    const unsubscribe = addPushNotificationListener({
+      onTokenRegistered: (registration) => {
+        addLog(`📲 APNs token registered (${registration.environment})`);
+        void syncPushTokenWithServer(registration).catch((error) => {
+          addLog(`ℹ️ push token registration failed — ${error instanceof Error ? error.message : String(error)}`);
+        });
+      },
+      onRegistrationError: (error) => {
+        addLog(`ℹ️ APNs registration failed — ${error.message}`);
+      },
+      onNotificationReceived: (event) => {
+        const signal = extractPendingProofWakeSignal(event.payload);
+        if (signal) {
+          void handlePendingProofWake(signal, event.source);
+        }
+      },
+      onNotificationResponse: (event) => {
+        const signal = extractPendingProofWakeSignal(event.payload);
+        if (signal) {
+          void handlePendingProofWake(signal, event.source);
+        }
+      },
+    });
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [addLog, handlePendingProofWake, syncPushTokenWithServer]);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (nextState: AppStateStatus) => {
+      const previousState = appStateRef.current;
+      appStateRef.current = nextState;
+
+      if ((previousState === "background" || previousState === "inactive") && nextState === "active") {
+        void runForegroundHydration("app_foreground");
+      }
+    });
+    return () => subscription.remove();
+  }, [runForegroundHydration]);
 
   const proveOptions = useMemo(() => (openedEnvelope ? envelopeToProveOptions(openedEnvelope) : null), [openedEnvelope]);
   const effectiveServiceBindings = useMemo(() => {
@@ -814,6 +1015,10 @@ export default function App() {
       ).serviceBindings
     );
   }, [currentDeviceIss, hydratedServiceBindings, localBindingsForHydration, presence.state]);
+
+  useEffect(() => {
+    effectiveServiceBindingsRef.current = effectiveServiceBindings;
+  }, [effectiveServiceBindings]);
   const activePendingProofRequests = useMemo(
     () => (
       presence.state

@@ -16,10 +16,18 @@ import type {
   LinkSessionStatus,
   ServiceBindingStatus,
   PendingProofRequestStatus,
+  DevicePushTokenPlatform,
+  DevicePushTokenEnvironment,
+  DevicePushTokenStatus,
   LinkSession,
   LinkedDevice,
+  DevicePushToken,
   ServiceBinding,
   PendingProofRequest,
+  PendingProofSignalKind,
+  PendingProofSignalDispatchState,
+  PendingProofSignal,
+  PendingProofSignalDispatch,
   PresenceSnapshot,
   CreateLinkSessionOptions,
   CreateLinkSessionResult,
@@ -130,6 +138,7 @@ export interface PresenceClientConfig {
   androidPackageName?: string;
   nonceTtlSeconds?: number;
   requireExplicitPlatform?: boolean;
+  pendingProofSignalTransport?: PendingProofSignalTransport;
   logger?: {
     warn?: (msg: string) => void;
   };
@@ -176,14 +185,58 @@ export interface PendingProofRequestReady {
 
 export type CreatePendingProofRequestResult = PendingProofRequestReady | LinkedProofRequestUnavailable;
 
+export interface RegisterDevicePushTokenOptions {
+  deviceIss: string;
+  token: string;
+  platform?: DevicePushTokenPlatform;
+  environment?: DevicePushTokenEnvironment;
+  bundleId?: string;
+  confirmedAt?: number;
+}
+
+export interface RegisterDevicePushTokenResult {
+  device: LinkedDevice;
+  pushToken: DevicePushToken;
+  replacedTokens: DevicePushToken[];
+}
+
+export interface PendingProofSignalTransportPayload {
+  request: PendingProofRequest;
+  binding: ServiceBinding;
+  device: LinkedDevice;
+  signal: PendingProofSignal;
+  targets: DevicePushToken[];
+}
+
+export interface PendingProofSignalTransportResult {
+  provider?: string;
+  deliveredAt?: number;
+  providerMessageId?: string;
+  targetCount?: number;
+}
+
+export interface PendingProofSignalTransport {
+  deliver(
+    params: PendingProofSignalTransportPayload
+  ): Promise<PendingProofSignalTransportResult | void>;
+}
+
 export type {
   LinkSessionStatus,
   ServiceBindingStatus,
   PendingProofRequestStatus,
+  DevicePushTokenPlatform,
+  DevicePushTokenEnvironment,
+  DevicePushTokenStatus,
   LinkSession,
   LinkedDevice,
+  DevicePushToken,
   ServiceBinding,
   PendingProofRequest,
+  PendingProofSignalKind,
+  PendingProofSignalDispatchState,
+  PendingProofSignal,
+  PendingProofSignalDispatch,
   PresenceSnapshot,
   LinkageStore,
   BindingPolicy,

@@ -8,6 +8,8 @@ import type {
   LinkedAccountReadiness,
   PendingProofRequest,
   PendingProofRequestStatus,
+  PendingProofSignal,
+  PendingProofSignalDispatch,
 } from "./types.js";
 
 /**
@@ -138,6 +140,8 @@ export interface PresencePendingProofRequestDescriptor {
   issuedAt: number;
   expiresAt: number;
   status: PendingProofRequestStatus;
+  signal?: PendingProofSignal;
+  signalDispatch?: PendingProofSignalDispatch;
   endpoints: {
     respond: CompletionEndpointDescriptor;
     status?: CompletionEndpointDescriptor;
@@ -459,6 +463,8 @@ export function createPendingProofRequestDescriptor(params: {
     issuedAt: request.requestedAt,
     expiresAt: request.expiresAt,
     status: request.status,
+    signal: request.signal,
+    signalDispatch: request.signalDispatch,
     endpoints: {
       respond: { method: "POST", path: respondPath },
       status: statusPath ? { method: "GET", path: statusPath } : undefined,

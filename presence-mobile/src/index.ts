@@ -25,6 +25,14 @@ export {
 export { buildPresenceLinkUrl, parsePresenceLinkUrl } from "./deeplink";
 export type { LinkCompletionEnvelope } from "./deeplink";
 export { getInitialPresenceLink, subscribeToPresenceLinks } from "./ui/connectionLinking";
+export {
+  isPushNotificationsSupported,
+  getPushAuthorizationStatus,
+  ensurePushNotificationsRegistered,
+  consumeInitialPushNotificationResponse,
+  addPushNotificationListener,
+  extractPendingProofWakeSignal,
+} from "./pushNotifications";
 
 export {
   isHealthKitAvailable,
@@ -63,6 +71,14 @@ export type {
   PendingProofRequestSubmissionResult,
 } from "./sync/pendingProofRequests";
 export type { LinkedBindingSyncJob, LinkedBindingSyncJobKind } from "./sync/queue";
+export type {
+  PresencePushAuthorizationStatus,
+  PresencePushRegistrationRequestResult,
+  PresencePushTokenRegistration,
+  PresencePushRegistrationError,
+  PresencePushNotificationEvent,
+  PresencePendingProofWakeSignal,
+} from "./pushNotifications";
 
 export type {
   PresenceAttestation,

@@ -435,6 +435,98 @@ function buildAndroidBody(
     });
     assert.equal(listResponse.proofRequests.length, 1);
     assert.equal(listResponse.proofRequests[0]?.status, "pending");
+    assert.equal(pending.request.signal?.kind, "pending_proof_request.available");
+    assert.equal(pending.request.signalDispatch?.state, "not_configured");
+  });
+
+  await test("registerDevicePushToken() stores an active APNs target on the linked device", async () => {
+    const store = new InMemoryLinkageStore();
+    const client = new PresenceClient({ silent: true, linkageStore: store, serviceId: "svc" });
+    const now = Math.floor(Date.now() / 1000);
+    await store.saveLinkedDevice({
+      iss: "presence:device:push",
+      platform: "ios",
+      firstLinkedAt: now,
+      lastVerifiedAt: now,
+      lastAttestedAt: now,
+      trustState: "active",
+    });
+
+    const registration = await client.registerDevicePushToken({
+      deviceIss: "presence:device:push",
+      token: "AA BB CC DD",
+      environment: "development",
+      bundleId: "com.presence.testapp",
+    });
+
+    assert.equal(registration.pushToken.platform, "ios_apns");
+    assert.equal(registration.pushToken.token, "aabbccdd");
+    assert.equal(registration.pushToken.status, "active");
+    assert.equal(registration.device.pushTokens?.length, 1);
+    assert.equal(registration.device.pushTokens?.[0]?.bundleId, "com.presence.testapp");
+  });
+
+  await test("createPendingProofRequest() dispatches a push signal when an active token and transport exist", async () => {
+    const store = new InMemoryLinkageStore();
+    const deliveries: Array<{ requestId: string; targetCount: number }> = [];
+    const client = new PresenceClient({
+      silent: true,
+      linkageStore: store,
+      serviceId: "svc",
+      pendingProofSignalTransport: {
+        async deliver({ signal, targets }) {
+          deliveries.push({ requestId: signal.requestId, targetCount: targets.length });
+          return {
+            provider: "test-transport",
+            deliveredAt: NOW,
+            providerMessageId: `msg:${signal.signalId}`,
+          };
+        },
+      },
+    });
+    const now = Math.floor(Date.now() / 1000);
+    await store.saveLinkedDevice({
+      iss: "presence:device:push-dispatch",
+      platform: "ios",
+      firstLinkedAt: now,
+      lastVerifiedAt: now,
+      lastAttestedAt: now,
+      trustState: "active",
+    });
+    await client.registerDevicePushToken({
+      deviceIss: "presence:device:push-dispatch",
+      token: "feedface",
+      environment: "development",
+      bundleId: "com.presence.testapp",
+    });
+    await store.saveServiceBinding({
+      bindingId: "pbind_pending_push",
+      serviceId: "svc",
+      accountId: "acct-pending-push",
+      deviceIss: "presence:device:push-dispatch",
+      createdAt: now,
+      updatedAt: now,
+      status: "linked",
+      lastLinkedAt: now,
+      lastVerifiedAt: now,
+      lastAttestedAt: now,
+    });
+
+    const pending = await client.createPendingProofRequest({
+      accountId: "acct-pending-push",
+    });
+    assert.equal(pending.ok, true);
+    if (!pending.ok) {
+      throw new Error("expected pending proof request");
+    }
+
+    assert.deepEqual(deliveries, [{
+      requestId: pending.request.id,
+      targetCount: 1,
+    }]);
+    assert.equal(pending.request.signalDispatch?.state, "dispatched");
+    assert.equal(pending.request.signalDispatch?.provider, "test-transport");
+    assert.equal(pending.request.signalDispatch?.providerMessageId?.startsWith("msg:"), true);
   });
 
   await test("respondToPendingProofRequest() marks the pending request verified after a successful linked verification", async () => {

@@ -41,6 +41,14 @@ export { ensureDeviceKey, deleteDeviceKey, deriveIss } from "./crypto/index";
 // ─── UI ───────────────────────────────────────────────────────────────────────
 export { usePresenceState } from "./ui/usePresenceState";
 export type { UsePresenceStateResult, PresenceHookPhase } from "./ui/usePresenceState";
+export {
+  isPushNotificationsSupported,
+  getPushAuthorizationStatus,
+  ensurePushNotificationsRegistered,
+  consumeInitialPushNotificationResponse,
+  addPushNotificationListener,
+  extractPendingProofWakeSignal,
+} from "./pushNotifications";
 export { usePresenceBackgroundSync } from "./ui/usePresenceBackgroundSync";
 export {
   isBackgroundRefreshSupported,
@@ -69,6 +77,14 @@ export type {
   PendingProofRequestSubmissionResult,
 } from "./sync/pendingProofRequests";
 export type { LinkedBindingSyncJob, LinkedBindingSyncJobKind } from "./sync/queue";
+export type {
+  PresencePushAuthorizationStatus,
+  PresencePushRegistrationRequestResult,
+  PresencePushTokenRegistration,
+  PresencePushRegistrationError,
+  PresencePushNotificationEvent,
+  PresencePendingProofWakeSignal,
+} from "./pushNotifications";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 export type {

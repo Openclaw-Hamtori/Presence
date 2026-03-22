@@ -54,6 +54,31 @@ function absolutize(baseUrl, value) {
   return `${baseUrl}${value}`;
 }
 
+function resolvePendingProofSignalTransport() {
+  const transportMode = (process.env.PRESENCE_PUSH_TRANSPORT || "").trim().toLowerCase();
+  if (transportMode !== "log") {
+    return undefined;
+  }
+
+  return {
+    async deliver({ signal, targets }) {
+      const deliveredAt = Math.floor(Date.now() / 1000);
+      console.log(
+        `[presence-happy-path] pending-proof signal request=${signal.requestId} service=${signal.serviceId} targets=${targets.length}`
+      );
+      console.log(
+        `[presence-happy-path] pending-proof signal payload=${JSON.stringify({ presence_signal: signal })}`
+      );
+      return {
+        provider: "log",
+        deliveredAt,
+        providerMessageId: `log:${signal.signalId}`,
+        targetCount: targets.length,
+      };
+    },
+  };
+}
+
 async function main() {
   const port = Number(process.env.PORT || 8787);
   const host = process.env.HOST || "127.0.0.1";
@@ -73,6 +98,7 @@ async function main() {
     linkageStore: new FileSystemLinkageStore(storePath),
     iosAppId,
     bindingPolicy: { allowReplacementOnMismatch: true },
+    pendingProofSignalTransport: resolvePendingProofSignalTransport(),
   });
 
   const endpointContract = {
@@ -462,6 +488,38 @@ async function main() {
             .sort((a, b) => (b.lastVerifiedAt || b.lastLinkedAt || 0) - (a.lastVerifiedAt || a.lastLinkedAt || 0)),
         });
         return;
+      }
+
+      const devicePushTokensMatch = url.pathname.match(/^\/presence\/devices\/([^/]+)\/push-tokens$/);
+      if (method === "POST" && devicePushTokensMatch) {
+        const deviceIss = decodeURIComponent(devicePushTokensMatch[1]);
+        const body = await readJson(req);
+
+        try {
+          const registration = await presence.registerDevicePushToken({
+            deviceIss,
+            token: String(body.token || ""),
+            platform: "ios_apns",
+            environment: body.environment === "production" ? "production" : "development",
+            bundleId: body.bundleId ? String(body.bundleId) : undefined,
+          });
+          send(200, {
+            ok: true,
+            device: registration.device,
+            pushToken: registration.pushToken,
+            replacedTokens: registration.replacedTokens,
+          });
+          return;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          const notFound = message.startsWith("linked device not found:");
+          send(notFound ? 404 : 400, {
+            ok: false,
+            code: notFound ? "ERR_DEVICE_NOT_FOUND" : "ERR_PUSH_TOKEN_INVALID",
+            message,
+          });
+          return;
+        }
       }
 
       send(404, { ok: false, code: "ERR_NOT_FOUND" });

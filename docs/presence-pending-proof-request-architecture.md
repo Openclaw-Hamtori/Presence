@@ -148,6 +148,75 @@ Instead of forcing the app to reconstruct the older `verify + x-presence-nonce` 
 
 The legacy linked proof request path remains supported for explicit deeplink/session-driven flows.
 
+### 5. Treat push as a wake signal, never as proof state
+
+Push is an additive wake path for pending proof requests, not a second source of truth.
+
+Canonical signal payload:
+
+- `version: "1"`
+- `kind: "pending_proof_request.available"`
+- `signalId`
+- `serviceId`
+- `accountId`
+- `bindingId`
+- `deviceIss`
+- `requestId`
+- `requestedAt`
+- `expiresAt`
+
+Transport rule:
+
+- APNs payload may carry the signal under `presence_signal`
+- notification UI copy may mention the service/account
+- app logic must ignore alert/body text as truth and re-hydrate from the server
+
+Server dispatch rule:
+
+- creating a pending proof request persists the request first
+- then the server attempts best-effort wake delivery through a pluggable push transport
+- delivery success/failure is recorded as request delivery metadata only
+- request verification semantics are unchanged if push dispatch is unavailable or fails
+
+### 6. Register device push targets separately from binding sync
+
+Push routing is device-level state, not request state and not binding truth.
+
+Additive device registration endpoint:
+
+- `POST /presence/devices/:deviceIss/push-tokens`
+
+Registration payload:
+
+- `token`
+- `environment: "development" | "production"`
+- optional `bundleId`
+
+Semantics:
+
+- the app uploads the latest APNs token after link / app open when a linked device exists
+- the backend stores active push targets on the linked device record
+- a newer token for the same app/environment invalidates the older active token
+- provider wiring later consumes this stored device-level target set
+
+### 7. Converge all wake sources into the same hydration path
+
+The app should not have separate logic for:
+
+- foreground receipt of a push
+- notification tap launch / resume
+- user opening the app from the icon
+
+All of those paths should do the same thing:
+
+1. identify the currently linked device
+2. hydrate authoritative bindings from the server
+3. fetch pending proof requests for those bindings
+4. select the actionable request locally
+5. wait for explicit orb tap to produce proof
+
+If a push arrives before local state is fully loaded, the app may queue the wake hint briefly, but still must hydrate from the server before presenting any request UI.
+
 ## Request lifecycle
 
 ### Initial link
@@ -186,6 +255,10 @@ The legacy linked proof request path remains supported for explicit deeplink/ses
 
 - `PendingProofRequestStatus`
 - `PendingProofRequest`
+- `LinkedDevice.pushTokens[]`
+- `PendingProofSignal`
+- `PendingProofSignalDispatch`
+- `PendingProofSignalTransport`
 - store methods for save/get/list pending proof requests
 
 ### Additive endpoints
@@ -198,6 +271,8 @@ The legacy linked proof request path remains supported for explicit deeplink/ses
   - inspect a single pending proof request
 - `POST /presence/pending-proof-requests/:requestId/respond`
   - verify proof against the stored nonce and resolve the request
+- `POST /presence/devices/:deviceIss/push-tokens`
+  - register or refresh the device’s current APNs target metadata
 
 ### Existing endpoints retained
 
@@ -294,9 +369,10 @@ Trigger pending request hydration on:
 
 ### Phase 2: user-visible wake-up affordances
 
-- service push notification with user-visible alert
-- notification tap deep-links into Presence
-- optional universal link from service web/app surfaces to open Presence directly
+- add device push-token registration from mobile to backend
+- add pending-proof signal transport interface and delivery bookkeeping
+- add notification receive / tap handling in app and converge them onto authoritative hydration
+- keep provider-specific APNs sending behind a narrow server transport adapter
 
 ### Phase 3: prioritization and UX hardening
 
@@ -314,7 +390,7 @@ Trigger pending request hydration on:
 
 ## Implementation started in this repo
 
-This pass begins Phase 1 only.
+This pass now covers Phase 1 plus the push-driven foundation slice of Phase 2.
 
 Implemented foundation:
 
@@ -324,10 +400,16 @@ Implemented foundation:
 - app/test-app local pending request persistence and foreground sync scaffolding
 - app-side binding recovery now keeps `/devices/:deviceIss/bindings` bindings-only and follows it with explicit pending-proof hydration against `GET /presence/linked-accounts/:accountId/pending-proof-requests`
 - orb can consume a pending proof request directly when no fresh envelope is open
+- linked devices can now register APNs token metadata with `POST /presence/devices/:deviceIss/push-tokens`
+- pending proof requests now carry explicit signal payload + delivery bookkeeping so push transport state is inspectable but non-authoritative
+- the reference backend now exposes a pluggable pending-proof signal transport hook; a log transport is available for local validation
+- the iOS test app now has a native push bridge for authorization, APNs registration, foreground receipt, notification tap, and initial launch payload handoff to JS
+- app foreground, push receive, and push tap now all converge on the same authoritative binding + pending-request hydration path
 
 Still intentionally not implemented in this pass:
 
-- APNs/user-visible notification delivery
+- real APNs provider credentials/signing, entitlements, and production delivery wiring
+- notification UX polish beyond the wake/hydration contract
 - universal-link routing for pending request launch
 - request prioritization UI beyond "first active request"
 - native secure-storage hardening beyond current local persistence model

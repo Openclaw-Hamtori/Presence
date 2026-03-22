@@ -6,6 +6,11 @@ export type LinkSessionStatus = "pending" | "consumed" | "expired" | "cancelled"
 export type ServiceBindingStatus = "linked" | "revoked" | "unlinked" | "reauth_required" | "recovery_pending";
 export type LinkedDeviceTrustState = "active" | "revoked" | "recovery_pending";
 export type PendingProofRequestStatus = "pending" | "verified" | "recovery_required" | "expired" | "cancelled";
+export type DevicePushTokenPlatform = "ios_apns";
+export type DevicePushTokenEnvironment = "development" | "production";
+export type DevicePushTokenStatus = "active" | "invalidated";
+export type PendingProofSignalKind = "pending_proof_request.available";
+export type PendingProofSignalDispatchState = "not_configured" | "no_registered_targets" | "dispatched" | "dispatch_failed";
 export type BindingRecoveryAction = "reauth" | "relink" | "contact_support";
 export type LinkCompletionMethod = "qr" | "deeplink" | "manual_code";
 export type BindingEventType =
@@ -46,7 +51,20 @@ export interface LinkedDevice {
   trustState: LinkedDeviceTrustState;
   revokedAt?: number;
   recoveryStartedAt?: number;
+  pushTokens?: DevicePushToken[];
   metadata?: Record<string, string>;
+}
+
+export interface DevicePushToken {
+  tokenId: string;
+  platform: DevicePushTokenPlatform;
+  token: string;
+  environment: DevicePushTokenEnvironment;
+  bundleId?: string;
+  status: DevicePushTokenStatus;
+  registeredAt: number;
+  lastConfirmedAt: number;
+  invalidatedAt?: number;
 }
 
 export interface PresenceSnapshot {
@@ -110,7 +128,33 @@ export interface PendingProofRequest {
   status: PendingProofRequestStatus;
   completedAt?: number;
   recoveryReason?: string;
+  signal?: PendingProofSignal;
+  signalDispatch?: PendingProofSignalDispatch;
   metadata?: Record<string, string>;
+}
+
+export interface PendingProofSignal {
+  version: "1";
+  signalId: string;
+  kind: PendingProofSignalKind;
+  serviceId: string;
+  accountId: string;
+  bindingId: string;
+  deviceIss: string;
+  requestId: string;
+  requestedAt: number;
+  expiresAt: number;
+}
+
+export interface PendingProofSignalDispatch {
+  signalId: string;
+  state: PendingProofSignalDispatchState;
+  provider: string;
+  targetCount: number;
+  attemptedAt: number;
+  deliveredAt?: number;
+  providerMessageId?: string;
+  error?: string;
 }
 
 export interface LinkCompletion {
@@ -346,6 +390,22 @@ function cloneLinkCompletion(completion?: LinkCompletion): LinkCompletion | unde
   return completion ? { ...completion } : undefined;
 }
 
+function cloneDevicePushToken(token: DevicePushToken): DevicePushToken {
+  return {
+    ...token,
+  };
+}
+
+function clonePendingProofSignal(signal?: PendingProofSignal): PendingProofSignal | undefined {
+  return signal ? { ...signal } : undefined;
+}
+
+function clonePendingProofSignalDispatch(
+  dispatch?: PendingProofSignalDispatch
+): PendingProofSignalDispatch | undefined {
+  return dispatch ? { ...dispatch } : undefined;
+}
+
 function clonePresenceSnapshot(snapshot?: PresenceSnapshot): PresenceSnapshot | undefined {
   if (!snapshot) return undefined;
   return {
@@ -365,6 +425,7 @@ function cloneLinkSession(session: LinkSession): LinkSession {
 function cloneLinkedDevice(device: LinkedDevice): LinkedDevice {
   return {
     ...device,
+    pushTokens: device.pushTokens?.map((token) => cloneDevicePushToken(token)),
     metadata: cloneMetadata(device.metadata),
   };
 }
@@ -380,6 +441,8 @@ function cloneServiceBinding(binding: ServiceBinding): ServiceBinding {
 function clonePendingProofRequest(request: PendingProofRequest): PendingProofRequest {
   return {
     ...request,
+    signal: clonePendingProofSignal(request.signal),
+    signalDispatch: clonePendingProofSignalDispatch(request.signalDispatch),
     metadata: cloneMetadata(request.metadata),
   };
 }
