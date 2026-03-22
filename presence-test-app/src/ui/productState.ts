@@ -8,10 +8,11 @@ function formatLinkedServiceLabel(count: number): string {
 
 function formatProductSummary(params: {
   linkedServiceCount: number;
-  requestState: "active" | "verifying" | "expired" | "none";
+  requestState: "active" | "verifying" | "verified" | "expired" | "none";
 }): string {
   const linkedSummary = formatLinkedServiceLabel(params.linkedServiceCount);
   if (params.requestState === "verifying") return `Verifying request · ${linkedSummary}`;
+  if (params.requestState === "verified") return `Recently verified · ${linkedSummary}`;
   if (params.requestState === "active") return `Active request · ${linkedSummary}`;
   if (params.requestState === "expired") return `Expired request · ${linkedSummary}`;
   return `No active request · ${linkedSummary}`;
@@ -43,6 +44,7 @@ export function getProductState(params: {
   linkedServiceCount: number;
   requestedServiceId?: string | null;
   requestedProofStatus?: RequestedProofUiStatus | null;
+  recentVerifiedServiceId?: string | null;
 }) {
   const {
     phase,
@@ -52,6 +54,7 @@ export function getProductState(params: {
     linkedServiceCount,
     requestedServiceId,
     requestedProofStatus,
+    recentVerifiedServiceId,
   } = params;
   const requestSummary = requestedServiceId ? ` for ${requestedServiceId}` : "";
   const hasLocalPass = !!pass && phase !== "not_ready" && phase !== "error" && !hasRecovery;
@@ -110,6 +113,21 @@ export function getProductState(params: {
       detail: "A linked service needs recovery or relink before it can accept proof from this device.",
       action: "Open the next service request to relink this device.",
       summary: noRequestSummary,
+    };
+  }
+
+  if (!requestedServiceId && recentVerifiedServiceId) {
+    const verifiedSummary = recentVerifiedServiceId ? ` for ${recentVerifiedServiceId}` : "";
+    return {
+      label: "PASS",
+      tone: "success" as const,
+      heading: "PASS verified",
+      detail: `Presence just completed server verification${verifiedSummary}. No active request remains.`,
+      action: "This PASS signal stays visible briefly, then returns to IDLE.",
+      summary: formatProductSummary({
+        linkedServiceCount,
+        requestState: "verified",
+      }),
     };
   }
 

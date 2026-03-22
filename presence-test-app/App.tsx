@@ -82,11 +82,15 @@ const MONO_FONT = Platform.OS === "ios" ? "Menlo" : "monospace";
 const SYNC_LOG_CHUNK_SIZE = 4;
 const MAX_LOG_ENTRIES = 240;
 const COPY_STATUS_RESET_MS = 1800;
+const RECENT_VERIFIED_PASS_HOLD_MS = 10_000;
 // Keep pending-proof hydration on the publicly readable /presence-demo/presence surface until the trust contract changes end-to-end.
 const PRESENCE_DEMO_API_BASE_URL = "https://noctu.link/presence-demo/presence";
 
 type LinkedProofRequestState =
   | { requestKey: string; status: RequestedProofUiStatus }
+  | null;
+type RecentVerifiedProofState =
+  | { serviceId: string | null; expiresAt: number }
   | null;
 
 function nowTime(): string {
@@ -449,6 +453,7 @@ export default function App() {
   const [scannerBusy, setScannerBusy] = useState(false);
   const [submittingLinkedProof, setSubmittingLinkedProof] = useState(false);
   const [linkedProofRequestState, setLinkedProofRequestState] = useState<LinkedProofRequestState>(null);
+  const [recentVerifiedProof, setRecentVerifiedProof] = useState<RecentVerifiedProofState>(null);
   const [logEntries, setLogEntries] = useState<string[]>([`[${nowTime()}] App started — platform: ${Platform.OS}`]);
   const [copyLogsStatus, setCopyLogsStatus] = useState<"idle" | "copied" | "failed">("idle");
   const [hydratedServiceBindings, setHydratedServiceBindings] = useState<HydratedBindingCache | null>(null);
@@ -473,6 +478,28 @@ export default function App() {
     const timeout = setTimeout(() => setCopyLogsStatus("idle"), COPY_STATUS_RESET_MS);
     return () => clearTimeout(timeout);
   }, [copyLogsStatus]);
+
+  useEffect(() => {
+    if (!recentVerifiedProof) return;
+    const remainingMs = recentVerifiedProof.expiresAt - Date.now();
+    if (remainingMs <= 0) {
+      setRecentVerifiedProof(null);
+      return;
+    }
+    const timeout = setTimeout(() => {
+      setRecentVerifiedProof((current) => (
+        current?.expiresAt === recentVerifiedProof.expiresAt ? null : current
+      ));
+    }, remainingMs);
+    return () => clearTimeout(timeout);
+  }, [recentVerifiedProof]);
+
+  const rememberRecentVerifiedProof = useCallback((serviceId?: string | null) => {
+    setRecentVerifiedProof({
+      serviceId: serviceId ?? null,
+      expiresAt: Date.now() + RECENT_VERIFIED_PASS_HOLD_MS,
+    });
+  }, []);
 
   const runLocalMeasurement = useCallback(async () => {
     const measurement = await presence.measure();
@@ -600,6 +627,7 @@ export default function App() {
     setShowConnection(true);
     setLocalError(null);
     setLinkedProofRequestState(null);
+    setRecentVerifiedProof(null);
     const normalizedServiceDomain = debugNormalizeServiceDomain(parsed.serviceDomain);
     const envelopeSync = syncFromEnvelope(parsed);
     addLog(`🔎 ${source} parse session=${parsed.sessionId} service=${parsed.serviceId ?? "-"}`);
@@ -885,6 +913,13 @@ export default function App() {
         ? presence.state.activeLinkSession.serviceId
         : null
     );
+  const recentVerifiedServiceId = presence.phase === "ready"
+    && !openedEnvelope
+    && !currentPendingProofRequest
+    && !!recentVerifiedProof
+    && recentVerifiedProof.expiresAt > Date.now()
+      ? recentVerifiedProof?.serviceId ?? null
+      : null;
   const productState = getProductState({
     phase: presence.phase,
     pass: presence.state?.pass,
@@ -893,6 +928,7 @@ export default function App() {
     linkedServiceCount: recentServiceBindings.length,
     requestedServiceId,
     requestedProofStatus,
+    recentVerifiedServiceId,
   });
   const productTone = colorForProductTone(productState.tone);
   const serviceScrollTrackVisible = serviceContentHeight > serviceViewportHeight + 8;
@@ -1001,6 +1037,7 @@ export default function App() {
   };
 
   const handleApprove = async () => {
+    setRecentVerifiedProof(null);
     const currentEnvelope = openedEnvelope;
     const pendingRequest = currentPendingProofRequest;
     const pendingBinding = currentPendingRequestedBinding;
@@ -1036,6 +1073,7 @@ export default function App() {
 
         if (result.status === "verified") {
           setLocalError(null);
+          rememberRecentVerifiedProof(pendingRequest.serviceId);
           if (requestKey) {
             setLinkedProofRequestState(null);
           }
@@ -1127,6 +1165,7 @@ export default function App() {
 
         if (result.status === "verified") {
           setLocalError(null);
+          rememberRecentVerifiedProof(openedRequestedBinding.serviceId);
           if (requestKey) {
             setLinkedProofRequestState(null);
           }
@@ -1236,6 +1275,7 @@ export default function App() {
   const handleMeasure = async () => {
     addLog("→ run local-only check");
     setLinkedProofRequestState(null);
+    setRecentVerifiedProof(null);
     const result = await runLocalMeasurement();
     if (!result) {
       setLocalError(presence.error?.message ?? "Could not complete the measurement.");

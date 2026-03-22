@@ -57,6 +57,41 @@ test("getProductState() holds FAIL after linked proof verification fails even if
   assert.match(state.action, /submit proof/i);
 });
 
+test("getProductState() shows PASS briefly after server-verified success when no request remains", () => {
+  const state = getProductState({
+    phase: "ready",
+    pass: true,
+    hasLocalMeasurement: true,
+    hasRecovery: false,
+    linkedServiceCount: 2,
+    requestedServiceId: null,
+    requestedProofStatus: null,
+    recentVerifiedServiceId: "presence-demo",
+  });
+
+  assert.equal(state.label, "PASS");
+  assert.equal(state.heading, "PASS verified");
+  assert.match(state.detail, /completed server verification/i);
+  assert.match(state.summary, /Recently verified/i);
+});
+
+test("getProductState() does not let a recent verified proof override a new active request", () => {
+  const state = getProductState({
+    phase: "ready",
+    pass: true,
+    hasLocalMeasurement: true,
+    hasRecovery: false,
+    linkedServiceCount: 2,
+    requestedServiceId: "presence-demo",
+    requestedProofStatus: null,
+    recentVerifiedServiceId: "presence-demo",
+  });
+
+  assert.equal(state.label, "IDLE");
+  assert.equal(state.heading, "Ready to submit proof");
+  assert.match(state.detail, /nothing is server-verified yet/i);
+});
+
 test("getProductState() treats requestless local success as local-only instead of PASS", () => {
   const state = getProductState({
     phase: "ready",
