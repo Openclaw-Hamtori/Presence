@@ -29,8 +29,10 @@ What is already in the reference stack as of this writing:
 
 Current limitations preventing true self-host production credibility:
 
-- Reference persistence is still mostly file-backed; durable shared state under concurrency is incomplete.
+- Reference persistence is still mostly file-backed (`FileSystemLinkageStore`); durable shared state under concurrency is incomplete.
+- A `RedisLinkageStore` exists in `presence-sdk` and serializes all entities over a Redis-like client, but it uses a full-blob read/write pattern — no row-level atomicity or transactional nonce safety.
 - Nonce/request lifecycle is not fully decoupled for long-lived reliability across restart/pod churn.
+- `InMemoryTofuStore` (used by `PresenceClient` for Android TOFU) is not persistent; a restart discards all first-seen public keys.
 - Authz/authn boundaries between public app APIs, operator actions, and service requests still need hardening.
 - Operational controls, alerting hooks, and tenant-safe isolation are still lightweight.
 
@@ -73,7 +75,7 @@ If we do not fix these first, adding more app polish will not increase productio
 ### 2) Two-level request model
 
 - `linked account request nonce` (existing): short-lived proof challenge.
-- `pending proof request` (new): durable record spanning app-open delay and operator lifecycle.
+- `pending proof request` (existing API, needs durability): the API surface and state type (`pending | verified | recovery_required | expired | cancelled`) are already implemented; what is missing is durable, shared persistence and enforced state machine transitions.
 
 The pending request must survive restarts and be idempotently consumed.
 
@@ -95,12 +97,15 @@ The pending request must survive restarts and be idempotently consumed.
 **Primary goal:** replace reference file defaults with production-credible persistence and deterministic lifecycle semantics.
 
 - Implement repository-level store abstraction in `presence-sdk` with at least one production adapter (Postgres/SQLite first-class choice; MySQL later optional).
+- Align on schema naming with the existing SQLite design (`projects/presence-sqlite-design-2026-03-21.md`) before implementation. Current domain model uses `ServiceBinding`, not "linked account" — table names must reflect the actual data model.
 - Add/solidify schemas:
-  - `linked_accounts`
+  - `service_bindings` (not `linked_accounts` — a binding is scoped to (serviceId, accountId, deviceIss))
+  - `link_sessions`
   - `linked_devices`
   - `pending_proof_requests`
   - `nonce_store` (or nonce table) with single-use + expiry semantics
-  - `proof_events` / audit log index
+  - `tofu_store` with per-iss public key and revocation semantics (currently `InMemoryTofuStore` in `PresenceClient` — non-persistent, loses all Android TOFU entries on restart)
+  - `audit_events` (not `proof_events` — matches existing `LinkageAuditEvent` type)
 - Ensure **nonce state is durable/shared**, not ephemeral:
   - issuance, single-use marking, and verification reads should be atomic transactionally.
   - duplicate consumption must fail safely.
