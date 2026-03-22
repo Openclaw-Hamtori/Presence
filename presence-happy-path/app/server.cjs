@@ -84,6 +84,19 @@ function stripRouteBase(pathname, basePath) {
   return pathname;
 }
 
+function normalizePushToken(value) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const normalized = value.replace(/[^0-9a-fA-F]/g, "").toLowerCase();
+  if (normalized.length < 64 || normalized.length % 2 === 1) {
+    return null;
+  }
+
+  return normalized;
+}
+
 function resolvePendingProofSignalTransport() {
   const transportMode = (process.env.PRESENCE_PUSH_TRANSPORT || "").trim().toLowerCase();
   if (transportMode !== "log") {
@@ -526,13 +539,24 @@ async function main() {
       if (method === "POST" && devicePushTokensMatch) {
         const deviceIss = decodeURIComponent(devicePushTokensMatch[1]);
         const body = await readJson(req);
+        const environment = body.environment === "production" ? "production" : "development";
+        const normalizedToken = normalizePushToken(body?.token);
+
+        if (!normalizedToken) {
+          send(400, {
+            ok: false,
+            code: "ERR_PUSH_TOKEN_INVALID",
+            message: "Invalid APNs token format",
+          });
+          return;
+        }
 
         try {
           const registration = await presence.registerDevicePushToken({
             deviceIss,
-            token: String(body.token || ""),
+            token: normalizedToken,
             platform: "ios_apns",
-            environment: body.environment === "production" ? "production" : "development",
+            environment,
             bundleId: body.bundleId ? String(body.bundleId) : undefined,
           });
           send(200, {
