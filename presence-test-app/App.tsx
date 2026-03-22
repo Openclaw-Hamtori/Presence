@@ -931,6 +931,7 @@ export default function App() {
     recentVerifiedServiceId,
   });
   const productTone = colorForProductTone(productState.tone);
+  const showActiveRequestHint = !!requestedServiceId && !recentVerifiedServiceId && requestedProofStatus !== "expired";
   const serviceScrollTrackVisible = serviceContentHeight > serviceViewportHeight + 8;
   const serviceScrollThumbHeight = serviceScrollTrackVisible
     ? Math.max(36, (serviceViewportHeight * serviceViewportHeight) / Math.max(serviceContentHeight, 1))
@@ -1326,6 +1327,9 @@ export default function App() {
             <View style={[styles.statePill, styles.statePillLight, { borderColor: productTone }]}>
               <Text style={[styles.stateLabel, { color: productTone }]}>{productState.label}</Text>
             </View>
+            {showActiveRequestHint ? (
+              <Text style={styles.topRequestHint}>Active request</Text>
+            ) : null}
           </View>
         </View>
 
@@ -1676,6 +1680,12 @@ const styles = StyleSheet.create({
   topRightCompact: {
     alignItems: "flex-end",
     justifyContent: "center",
+    gap: 6,
+  },
+  topRequestHint: {
+    color: C.subtext,
+    fontSize: 11,
+    fontWeight: "600",
   },
   wordmarkWrap: {
     gap: 2,
