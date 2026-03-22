@@ -97,29 +97,51 @@ function normalizePushToken(value) {
   return normalized;
 }
 
-function resolvePendingProofSignalTransport() {
+function resolvePendingProofSignalTransport({ iosAppId }) {
   const transportMode = (process.env.PRESENCE_PUSH_TRANSPORT || "").trim().toLowerCase();
-  if (transportMode !== "log") {
-    return undefined;
+
+  if (transportMode === "log") {
+    return {
+      async deliver({ signal, targets }) {
+        const deliveredAt = Math.floor(Date.now() / 1000);
+        console.log(
+          `[presence-happy-path] pending-proof signal request=${signal.requestId} service=${signal.serviceId} targets=${targets.length}`
+        );
+        console.log(
+          `[presence-happy-path] pending-proof signal payload=${JSON.stringify({ presence_signal: signal })}`
+        );
+        return {
+          provider: "log",
+          deliveredAt,
+          providerMessageId: `log:${signal.signalId}`,
+          targetCount: targets.length,
+        };
+      },
+    };
   }
 
-  return {
-    async deliver({ signal, targets }) {
-      const deliveredAt = Math.floor(Date.now() / 1000);
-      console.log(
-        `[presence-happy-path] pending-proof signal request=${signal.requestId} service=${signal.serviceId} targets=${targets.length}`
-      );
-      console.log(
-        `[presence-happy-path] pending-proof signal payload=${JSON.stringify({ presence_signal: signal })}`
-      );
+  if (transportMode === "apns") {
+    try {
+      const { createApnsPendingProofSignalTransport } = require("./pending-proof-apns-transport.cjs");
+      return createApnsPendingProofSignalTransport(process.env, {
+        defaultTopic: iosAppId,
+        logger: {
+          warn: (message) => console.warn(`[presence-happy-path] ${message}`),
+          error: (message) => console.error(`[presence-happy-path] ${message}`),
+        },
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`[presence-happy-path] APNs transport disabled: ${message}`);
       return {
-        provider: "log",
-        deliveredAt,
-        providerMessageId: `log:${signal.signalId}`,
-        targetCount: targets.length,
+        async deliver() {
+          throw new Error(message);
+        },
       };
-    },
-  };
+    }
+  }
+
+  return undefined;
 }
 
 async function main() {
@@ -142,7 +164,7 @@ async function main() {
     linkageStore: new FileSystemLinkageStore(storePath),
     iosAppId,
     bindingPolicy: { allowReplacementOnMismatch: true },
-    pendingProofSignalTransport: resolvePendingProofSignalTransport(),
+    pendingProofSignalTransport: resolvePendingProofSignalTransport({ iosAppId }),
   });
 
   const endpointContract = {
@@ -592,6 +614,11 @@ async function main() {
   console.log(`[presence-happy-path] listening on ${publicBaseUrl}`);
   console.log(`[presence-happy-path] public Presence API base: ${publicPresenceApiBaseUrl}`);
   console.log(`[presence-happy-path] linkage store: ${storePath}`);
+  console.log(
+    `[presence-happy-path] pending-proof push transport: ${
+      process.env.PRESENCE_PUSH_TRANSPORT || "off"
+    }`
+  );
   if (serviceDomainWellKnownUrl) {
     console.log(
       `[presence-happy-path] service-domain trust metadata: ${serviceDomainWellKnownUrl} -> allowed_url_prefixes includes ${publicPresenceApiBaseUrl}`
