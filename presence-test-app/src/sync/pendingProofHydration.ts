@@ -19,7 +19,7 @@ function buildCanonicalBindingSync(params: {
 
   const apiBaseUrl = normalizePresenceApiBaseUrl(params.apiBaseUrl);
   const encodedAccountId = encodeURIComponent(params.accountId);
-  const serviceDomain = new URL(apiBaseUrl).host;
+  const serviceDomain = apiBaseUrl.replace(/^https?:\/\//, "").split("/")[0];
 
   return {
     serviceDomain,

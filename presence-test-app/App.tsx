@@ -1323,11 +1323,9 @@ export default function App() {
             <Text style={styles.qrIcon}>⌁</Text>
           </TouchableOpacity>
           <View style={styles.topRightCompact}>
-            <View style={[styles.statePill, styles.statePillLight, { borderColor: productTone }]}> 
-              <View style={[styles.stateDot, { backgroundColor: productTone }]} />
+            <View style={[styles.statePill, styles.statePillLight, { borderColor: productTone }]}>
               <Text style={[styles.stateLabel, { color: productTone }]}>{productState.label}</Text>
             </View>
-            <Text style={styles.topMeta}>{productState.summary}</Text>
           </View>
         </View>
 
@@ -1343,12 +1341,6 @@ export default function App() {
               : null}
             <Image source={ORB_IMAGE} style={styles.heroImage} resizeMode="contain" />
           </TouchableOpacity>
-        </View>
-
-        <View style={styles.productStatusCard}>
-          <Text style={[styles.productStatusHeading, { color: productTone }]}>{productState.heading}</Text>
-          <Text style={styles.productStatusDetail}>{productState.detail}</Text>
-          <Text style={styles.productStatusAction}>{productState.action}</Text>
         </View>
 
         {(localError || presence.error) && (
@@ -1683,11 +1675,7 @@ const styles = StyleSheet.create({
   },
   topRightCompact: {
     alignItems: "flex-end",
-    gap: 8,
-  },
-  topMeta: {
-    color: C.subtext,
-    fontSize: 12,
+    justifyContent: "center",
   },
   wordmarkWrap: {
     gap: 2,
@@ -1740,35 +1728,8 @@ const styles = StyleSheet.create({
     position: "absolute",
     zIndex: 1,
   },
-  productStatusCard: {
-    backgroundColor: C.surface,
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: C.border,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    gap: 6,
-  },
-  productStatusHeading: {
-    fontSize: 15,
-    fontWeight: "700",
-    letterSpacing: -0.2,
-  },
-  productStatusDetail: {
-    color: C.text,
-    fontSize: 13,
-    lineHeight: 19,
-  },
-  productStatusAction: {
-    color: C.subtext,
-    fontSize: 12,
-    lineHeight: 18,
-  },
   statePill: {
     alignSelf: "flex-start",
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
     borderWidth: 1,
     borderRadius: 999,
     paddingVertical: 8,
@@ -1776,11 +1737,6 @@ const styles = StyleSheet.create({
   },
   statePillLight: {
     backgroundColor: "#FFFFFF",
-  },
-  stateDot: {
-    width: 9,
-    height: 9,
-    borderRadius: 999,
   },
   stateLabel: {
     fontSize: 13,
