@@ -20,12 +20,19 @@ The repo-tracked deploy source is now:
 
 - `presence-happy-path/app/server.cjs`
 
+Canonical public contract for this redeploy:
+
+- public Presence API base for mobile-facing/trust-facing sync URLs: `https://noctu.link/presence-demo/presence`
+- `service_domain` remains host-only: `noctu.link`
+- host-root trust metadata used by mobile: `https://noctu.link/.well-known/presence.json`
+- required `allowed_url_prefixes`: `["https://noctu.link/presence-demo/presence"]`
+
 ## What changed in the server source
 
 The tracked `server.cjs` now intentionally exposes the live happy-path surface, including:
 
 - persistent storage root under `var/presence`
-- `/.well-known/presence.json` with `allowed_url_prefixes: ["${PUBLIC_BASE_URL}/presence"]`
+- `/.well-known/presence.json` payload generation from `PUBLIC_BASE_URL`, which for Noctu must be `https://noctu.link/presence-demo` so the emitted allowed prefix is `https://noctu.link/presence-demo/presence`
 - linked proof request routes
 - pending proof request create/list/get/respond routes
 - linked status / unlink / device revoke / device bindings / audit routes
@@ -77,6 +84,8 @@ cp server.cjs server.cjs.bak.$(date +%Y%m%d-%H%M%S)
 
 npm install ./presence-verifier-0.1.0.tgz ./presence-sdk-0.1.0.tgz
 
+systemctl show presence-happy-path.service --property=Environment --no-pager
+
 node --check server.cjs
 
 sudo systemctl restart presence-happy-path.service
@@ -87,6 +96,7 @@ Notes:
 
 - install both tarballs together so `presence-sdk` resolves against the local `presence-verifier` tarball instead of drifting to whatever the host last had
 - do not patch `node_modules/presence-sdk` in place; the repo-tracked `server.cjs` plus tarball reinstall is the canonical path now
+- before restart, confirm the unit/environment still sets `PUBLIC_BASE_URL=https://noctu.link/presence-demo`; if it drifts to `https://noctu.link`, the server will emit the wrong public sync URLs and wrong allowed prefix
 
 ## Smoke checks after restart
 
@@ -94,7 +104,7 @@ Basic health and trust metadata:
 
 ```bash
 curl -sSf https://noctu.link/presence-demo/health
-curl -sSf https://noctu.link/presence-demo/.well-known/presence.json
+curl -sSf https://noctu.link/.well-known/presence.json
 ```
 
 Route-existence checks that do not require a real proof:
@@ -111,7 +121,9 @@ Expected behavior:
 
 - create on a nonexistent account returns `404` with `ERR_BINDING_NOT_FOUND`
 - get on an unknown request id returns `404` with `ERR_PENDING_PROOF_REQUEST_NOT_FOUND`
-- `/.well-known/presence.json` returns a prefix broad enough to cover both `/presence/linked-accounts/...` and `/presence/pending-proof-requests/...`
+- `https://noctu.link/.well-known/presence.json` returns `allowed_url_prefixes: ["https://noctu.link/presence-demo/presence"]`
+- that prefix is broad enough to cover both `/presence-demo/presence/linked-accounts/...` and `/presence-demo/presence/pending-proof-requests/...`
+- if the well-known payload instead advertises `https://noctu.link/presence`, mobile trust validation will still reject recovered binding sync URLs during hydration
 
 If you have a real linked account available, confirm the live create/get path:
 
@@ -130,6 +142,7 @@ This redeploy only proves the live server can now create, expose, and resolve pe
 It does **not** by itself prove:
 
 - the mobile app has already been redeployed to hydrate/use the pending request surface in production
+- the host-root `https://noctu.link/.well-known/presence.json` has actually been updated/redeployed to the matching allowed prefix
 - a real device has completed `/presence/pending-proof-requests/:requestId/respond` end to end against the redeployed server
 
 Those are follow-up live validation steps after the VPS rollout.

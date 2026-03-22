@@ -58,7 +58,9 @@ async function main() {
   const host = process.env.HOST || "127.0.0.1";
   const serviceId = process.env.PRESENCE_SERVICE_ID || "demo-service";
   const publicBaseUrl = (process.env.PUBLIC_BASE_URL || `http://${host}:${port}`).replace(/\/$/, "");
+  const publicPresenceApiBaseUrl = `${publicBaseUrl}/presence`;
   const serviceDomain = process.env.PRESENCE_SERVICE_DOMAIN || "";
+  const serviceDomainWellKnownUrl = serviceDomain ? `https://${serviceDomain}/.well-known/presence.json` : null;
   const storageRoot = process.env.PRESENCE_STORAGE_ROOT || join(process.cwd(), "var", "presence");
   mkdirSync(storageRoot, { recursive: true });
   const storePath = fileLinkageStorePath(storageRoot);
@@ -114,7 +116,7 @@ async function main() {
         res.end(JSON.stringify({
           version: "1",
           service_id: serviceId,
-          allowed_url_prefixes: [`${publicBaseUrl}/presence`],
+          allowed_url_prefixes: [publicPresenceApiBaseUrl],
         }, null, 2));
         return;
       }
@@ -465,9 +467,12 @@ async function main() {
 
   await new Promise((resolve) => server.listen(port, host, resolve));
   console.log(`[presence-happy-path] listening on ${publicBaseUrl}`);
+  console.log(`[presence-happy-path] public Presence API base: ${publicPresenceApiBaseUrl}`);
   console.log(`[presence-happy-path] linkage store: ${storePath}`);
-  if (serviceDomain) {
-    console.log(`[presence-happy-path] trust metadata: ${publicBaseUrl}/.well-known/presence.json`);
+  if (serviceDomainWellKnownUrl) {
+    console.log(
+      `[presence-happy-path] service-domain trust metadata: ${serviceDomainWellKnownUrl} -> allowed_url_prefixes includes ${publicPresenceApiBaseUrl}`
+    );
   }
 }
 

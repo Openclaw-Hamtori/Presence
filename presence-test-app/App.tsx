@@ -82,6 +82,7 @@ const MONO_FONT = Platform.OS === "ios" ? "Menlo" : "monospace";
 const SYNC_LOG_CHUNK_SIZE = 4;
 const MAX_LOG_ENTRIES = 240;
 const COPY_STATUS_RESET_MS = 1800;
+// Keep pending-proof hydration on the publicly readable /presence-demo/presence surface until the trust contract changes end-to-end.
 const PRESENCE_DEMO_API_BASE_URL = "https://noctu.link/presence-demo/presence";
 
 type LinkedProofRequestState =

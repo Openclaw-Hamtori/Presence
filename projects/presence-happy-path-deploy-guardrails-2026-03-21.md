@@ -16,6 +16,8 @@ Update on 2026-03-22:
 - systemd unit: `presence-happy-path.service`
 - working dir: `/home/openclaw/presence-happy-path/app`
 - entry file: `/home/openclaw/presence-happy-path/app/server.cjs`
+- canonical public Presence API base for mobile/trust/public sync: `https://noctu.link/presence-demo/presence`
+- canonical trust metadata URL for `service_domain=noctu.link`: `https://noctu.link/.well-known/presence.json`
 
 Systemd definition currently points to:
 - `ExecStart=/usr/bin/node /home/openclaw/presence-happy-path/app/server.cjs`
@@ -65,7 +67,9 @@ The live server should expose:
 - `POST /presence/pending-proof-requests/:requestId/respond`
 
 Related trust requirement:
-- `/.well-known/presence.json` should allow a broad prefix like `https://.../presence`, not only `/presence/linked-accounts/...`
+- `https://noctu.link/.well-known/presence.json` must advertise `allowed_url_prefixes: ["https://noctu.link/presence-demo/presence"]`
+- do not advertise `https://noctu.link/presence`; mobile hydrated sync URLs live under `/presence-demo/presence/...`
+- the prefix should stay broad enough to cover both linked-account and pending-proof-request routes, not only `/linked-accounts/...`
 
 ---
 
@@ -75,10 +79,13 @@ Before replacing or regenerating live `server.cjs`:
 - [ ] Confirm the new source still uses persistent storage, not `mkdtempSync(tmpdir())`
 - [ ] Confirm `GET /presence/devices/:deviceIss/bindings` route exists
 - [ ] Confirm endpoint contract includes `deviceBindingsPath`
+- [ ] Confirm `PUBLIC_BASE_URL=https://noctu.link/presence-demo` for the happy-path deployment so the emitted public API base is `https://noctu.link/presence-demo/presence`
+- [ ] Confirm host-root trust metadata at `https://noctu.link/.well-known/presence.json` advertises `allowed_url_prefixes: ["https://noctu.link/presence-demo/presence"]`
 - [ ] Run syntax check: `node --check server.cjs`
 - [ ] Restart service: `sudo systemctl restart presence-happy-path.service`
 - [ ] Verify unit health: `systemctl status presence-happy-path.service`
 - [ ] Verify endpoint:
+  - `curl https://noctu.link/.well-known/presence.json`
   - `curl https://noctu.link/presence-demo/presence/audit-events`
   - `curl https://noctu.link/presence-demo/presence/devices/<deviceIss>/bindings`
 
