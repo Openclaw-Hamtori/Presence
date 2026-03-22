@@ -45,6 +45,7 @@ export function getProductState(params: {
   requestedServiceId?: string | null;
   requestedProofStatus?: RequestedProofUiStatus | null;
   recentVerifiedServiceId?: string | null;
+  connectedServiceId?: string | null;
 }) {
   const {
     phase,
@@ -55,6 +56,7 @@ export function getProductState(params: {
     requestedServiceId,
     requestedProofStatus,
     recentVerifiedServiceId,
+    connectedServiceId,
   } = params;
   const requestSummary = requestedServiceId ? ` for ${requestedServiceId}` : "";
   const hasLocalPass = !!pass && phase !== "not_ready" && phase !== "error" && !hasRecovery;
@@ -62,6 +64,17 @@ export function getProductState(params: {
     linkedServiceCount,
     requestState: "none",
   });
+
+  if (connectedServiceId) {
+    return {
+      label: "CONNECTED!",
+      tone: "success" as const,
+      heading: `Linked to ${connectedServiceId}`,
+      detail: "Presence linked successfully and is ready for service requests.",
+      action: "This CONNECTED! label is shown briefly, then returns to IDLE.",
+      summary: noRequestSummary,
+    };
+  }
 
   if (requestedServiceId && requestedProofStatus === "submitting") {
     return {

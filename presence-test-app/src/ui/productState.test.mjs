@@ -75,6 +75,23 @@ test("getProductState() shows PASS briefly after server-verified success when no
   assert.match(state.summary, /Recently verified/i);
 });
 
+test("getProductState() shows CONNECTED! briefly after initial link success", () => {
+  const state = getProductState({
+    phase: "ready",
+    pass: false,
+    hasLocalMeasurement: false,
+    hasRecovery: false,
+    linkedServiceCount: 1,
+    requestedServiceId: null,
+    requestedProofStatus: null,
+    connectedServiceId: "presence-demo",
+  });
+
+  assert.equal(state.label, "CONNECTED!");
+  assert.equal(state.heading, "Linked to presence-demo");
+  assert.match(state.action, /briefly/i);
+});
+
 test("getProductState() does not let a recent verified proof override a new active request", () => {
   const state = getProductState({
     phase: "ready",

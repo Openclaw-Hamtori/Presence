@@ -106,6 +106,7 @@ const SYNC_LOG_CHUNK_SIZE = 4;
 const MAX_LOG_ENTRIES = 240;
 const COPY_STATUS_RESET_MS = 1800;
 const RECENT_VERIFIED_PASS_HOLD_MS = 10_000;
+const INITIAL_LINK_CONNECTED_HOLD_MS = 10_000;
 // Keep pending-proof hydration on the publicly readable /presence-demo/presence surface until the trust contract changes end-to-end.
 const PRESENCE_DEMO_API_BASE_URL = "https://noctu.link/presence-demo/presence";
 
@@ -113,6 +114,9 @@ type LinkedProofRequestState =
   | { requestKey: string; status: RequestedProofUiStatus }
   | null;
 type RecentVerifiedProofState =
+  | { serviceId: string | null; expiresAt: number }
+  | null;
+type RecentConnectedLinkState =
   | { serviceId: string | null; expiresAt: number }
   | null;
 type PendingPushWakeState = {
@@ -521,6 +525,7 @@ export default function App() {
   const [submittingLinkedProof, setSubmittingLinkedProof] = useState(false);
   const [linkedProofRequestState, setLinkedProofRequestState] = useState<LinkedProofRequestState>(null);
   const [recentVerifiedProof, setRecentVerifiedProof] = useState<RecentVerifiedProofState>(null);
+  const [recentConnectedLink, setRecentConnectedLink] = useState<RecentConnectedLinkState>(null);
   const [logEntries, setLogEntries] = useState<string[]>([`[${nowTime()}] App started — platform: ${Platform.OS}`]);
   const [copyLogsStatus, setCopyLogsStatus] = useState<"idle" | "copied" | "failed">("idle");
   const [hydratedServiceBindings, setHydratedServiceBindings] = useState<HydratedBindingCache | null>(null);
@@ -601,10 +606,32 @@ export default function App() {
     return () => clearTimeout(timeout);
   }, [recentVerifiedProof]);
 
+  useEffect(() => {
+    if (!recentConnectedLink) return;
+    const remainingMs = recentConnectedLink.expiresAt - Date.now();
+    if (remainingMs <= 0) {
+      setRecentConnectedLink(null);
+      return;
+    }
+    const timeout = setTimeout(() => {
+      setRecentConnectedLink((current) => (
+        current?.expiresAt === recentConnectedLink.expiresAt ? null : current
+      ));
+    }, remainingMs);
+    return () => clearTimeout(timeout);
+  }, [recentConnectedLink]);
+
   const rememberRecentVerifiedProof = useCallback((serviceId?: string | null) => {
     setRecentVerifiedProof({
       serviceId: serviceId ?? null,
       expiresAt: Date.now() + RECENT_VERIFIED_PASS_HOLD_MS,
+    });
+  }, []);
+
+  const rememberRecentConnectedLink = useCallback((serviceId?: string | null) => {
+    setRecentConnectedLink({
+      serviceId: serviceId ?? null,
+      expiresAt: Date.now() + INITIAL_LINK_CONNECTED_HOLD_MS,
     });
   }, []);
 
@@ -918,10 +945,17 @@ export default function App() {
 
   const syncPushTokenWithServer = useCallback(async (
     registration: PresencePushTokenRegistration,
-    source: string
+    source: string,
+    options: { deviceIss?: string | null; requireLinkedBinding?: boolean } = {}
   ) => {
-    const deviceIss = currentDeviceIssRef.current;
-    if (!deviceIss || !hasLinkedBindingForCurrentDevice) {
+    const deviceIss = options.deviceIss ?? currentDeviceIssRef.current;
+    if (!deviceIss) {
+      addLog(`ℹ️ cached APNs token until a device id is available (${source})`);
+      return;
+    }
+
+    const shouldRequireLinkedBinding = options.requireLinkedBinding !== false;
+    if (shouldRequireLinkedBinding && !hasLinkedBindingForCurrentDevice) {
       addLog("ℹ️ cached APNs token until a linked service is confirmed");
       return;
     }
@@ -1283,6 +1317,12 @@ export default function App() {
     && recentVerifiedProof.expiresAt > Date.now()
       ? recentVerifiedProof?.serviceId ?? null
       : null;
+  const recentConnectedServiceId = !openedEnvelope
+    && !currentPendingProofRequest
+    && !!recentConnectedLink
+    && recentConnectedLink.expiresAt > Date.now()
+      ? recentConnectedLink?.serviceId ?? null
+      : null;
   const productState = getProductState({
     phase: presence.phase,
     pass: presence.state?.pass,
@@ -1292,6 +1332,7 @@ export default function App() {
     requestedServiceId,
     requestedProofStatus,
     recentVerifiedServiceId,
+    connectedServiceId: recentConnectedServiceId,
   });
   const productTone = colorForProductTone(productState.tone);
   const showActiveRequestHint = !!requestedServiceId && !recentVerifiedServiceId && requestedProofStatus !== "expired";
@@ -1617,7 +1658,8 @@ export default function App() {
         return;
       }
 
-      const seedResult = await seedConfirmedBinding(parsed as CompletionSuccessResponse, currentEnvelope);
+      const completionResult = parsed as CompletionSuccessResponse;
+      const seedResult = await seedConfirmedBinding(completionResult, currentEnvelope);
       if (!seedResult.ok) {
         setLocalError(seedResult.message);
         addLog(`❌ completion seed rejected — ${seedResult.message}`);
@@ -1625,6 +1667,23 @@ export default function App() {
         return;
       }
 
+      const connectedServiceId = completionResult.binding?.serviceId ?? currentEnvelope?.serviceId ?? "presence-demo";
+      const linkedDeviceIss = completionResult.binding?.deviceIss ?? currentDeviceIss;
+      const completionToken = getLatestPushToken(pushSetupStateRef.current);
+      if (linkedDeviceIss && completionToken) {
+        void syncPushTokenWithServer(
+          completionToken,
+          "link_completion",
+          {
+            deviceIss: linkedDeviceIss,
+            requireLinkedBinding: false,
+          }
+        ).catch((error) => {
+          addLog(`ℹ️ push token registration failed (link_completion) — ${error instanceof Error ? error.message : String(error)}`);
+        });
+      }
+
+      rememberRecentConnectedLink(connectedServiceId);
       clearConnectSession();
       addLog(`✅ completion ${response.status} — binding saved on server${seedResult.seeded ? " and seeded locally" : ""}`);
       addLog(`   response: ${truncateJson(parsed, 500)}`);
