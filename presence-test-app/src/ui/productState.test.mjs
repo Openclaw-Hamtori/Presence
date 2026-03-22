@@ -158,6 +158,40 @@ test("getProductState() surfaces expired request state explicitly", () => {
   assert.match(state.action, /fresh service request/i);
 });
 
+test("getProductState() ignores expired proof state when no actionable request is active", () => {
+  const state = getProductState({
+    phase: "ready",
+    pass: true,
+    hasLocalMeasurement: true,
+    hasRecovery: false,
+    linkedServiceCount: 1,
+    requestedServiceId: null,
+    requestedProofStatus: "expired",
+    hasActionableRequestedProof: false,
+  });
+
+  assert.equal(state.label, "IDLE");
+  assert.equal(state.heading, "No active request");
+  assert.match(state.summary, /No active request/i);
+});
+
+test("getProductState() ignores stale failed state when no actionable request is active", () => {
+  const state = getProductState({
+    phase: "ready",
+    pass: true,
+    hasLocalMeasurement: true,
+    hasRecovery: false,
+    linkedServiceCount: 1,
+    requestedServiceId: null,
+    requestedProofStatus: "failed",
+    hasActionableRequestedProof: false,
+  });
+
+  assert.equal(state.label, "IDLE");
+  assert.equal(state.heading, "No active request");
+  assert.match(state.summary, /No active request/i);
+});
+
 test("getProductState() keeps a newly loaded request idle until a local check actually runs", () => {
   const state = getProductState({
     phase: "ready",

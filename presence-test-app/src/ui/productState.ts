@@ -46,6 +46,7 @@ export function getProductState(params: {
   requestedProofStatus?: RequestedProofUiStatus | null;
   recentVerifiedServiceId?: string | null;
   connectedServiceId?: string | null;
+  hasActionableRequestedProof?: boolean;
 }) {
   const {
     phase,
@@ -57,7 +58,9 @@ export function getProductState(params: {
     requestedProofStatus,
     recentVerifiedServiceId,
     connectedServiceId,
+    hasActionableRequestedProof = true,
   } = params;
+  const hasActionableRequest = hasActionableRequestedProof;
   const requestSummary = requestedServiceId ? ` for ${requestedServiceId}` : "";
   const hasLocalPass = !!pass && phase !== "not_ready" && phase !== "error" && !hasRecovery;
   const noRequestSummary = formatProductSummary({
@@ -76,7 +79,7 @@ export function getProductState(params: {
     };
   }
 
-  if (requestedServiceId && requestedProofStatus === "submitting") {
+  if (requestedServiceId && hasActionableRequest && requestedProofStatus === "submitting") {
     return {
       label: "IDLE",
       tone: "warn" as const,
@@ -90,7 +93,7 @@ export function getProductState(params: {
     };
   }
 
-  if (requestedServiceId && requestedProofStatus === "failed") {
+  if (requestedServiceId && hasActionableRequest && requestedProofStatus === "failed") {
     return {
       label: "FAIL",
       tone: "warn" as const,
@@ -104,7 +107,7 @@ export function getProductState(params: {
     };
   }
 
-  if (requestedServiceId && requestedProofStatus === "expired") {
+  if (requestedServiceId && hasActionableRequest && requestedProofStatus === "expired") {
     return {
       label: "FAIL",
       tone: "warn" as const,

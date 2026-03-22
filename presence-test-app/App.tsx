@@ -1339,21 +1339,16 @@ export default function App() {
       .join("|"),
     [effectiveServiceBindings]
   );
-  const requestedProofStatus = currentRequestedProofKey && linkedProofRequestState?.requestKey === currentRequestedProofKey
+  const hasActionableRequestedProof = !!openedEnvelope || !!currentPendingProofRequest;
+  const requestedProofStatus = hasActionableRequestedProof && currentRequestedProofKey && linkedProofRequestState?.requestKey === currentRequestedProofKey
     ? linkedProofRequestState.status
-    : latestExpiredPendingProofRequest
+    : hasActionableRequestedProof && latestExpiredPendingProofRequest
       ? "expired"
-      : !openedEnvelope && !currentPendingProofRequest && presence.state?.activeLinkSession?.status === "expired"
-        ? "expired"
-        : null;
+      : null;
   const requestedServiceId = openedEnvelope?.serviceId
     ?? currentPendingProofRequest?.serviceId
-    ?? latestExpiredPendingProofRequest?.serviceId
-    ?? (
-      !openedEnvelope && !currentPendingProofRequest && presence.state?.activeLinkSession?.status === "expired"
-        ? presence.state.activeLinkSession.serviceId
-        : null
-    );
+    ?? (hasActionableRequestedProof ? latestExpiredPendingProofRequest?.serviceId : null)
+    ?? null;
   const recentVerifiedServiceId = presence.phase === "ready"
     && !openedEnvelope
     && !currentPendingProofRequest
@@ -1377,6 +1372,7 @@ export default function App() {
     requestedProofStatus,
     recentVerifiedServiceId,
     connectedServiceId: recentConnectedServiceId,
+    hasActionableRequestedProof,
   });
   const productTone = colorForProductTone(productState.tone);
   const showActiveRequestHint = !!requestedServiceId && !recentVerifiedServiceId && requestedProofStatus !== "expired";
