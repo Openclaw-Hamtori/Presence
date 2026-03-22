@@ -1,3 +1,4 @@
+import { randomBytes } from "crypto";
 import { mkdir, open, readFile, rename, rm, stat, unlink } from "fs/promises";
 import { basename, dirname, join } from "path";
 import type { PresenceVerifyResult, VerifierSuccess } from "./types.js";
@@ -789,7 +790,7 @@ export class FileSystemLinkageStore implements LinkageStore {
   }
 
   private tempFilePath(): string {
-    const token = `${process.pid}.${Date.now()}.${Math.random().toString(16).slice(2)}`;
+    const token = randomBytes(12).toString("hex");
     return join(dirname(this.filePath), `.${basename(this.filePath)}.${token}.tmp`);
   }
 
@@ -888,5 +889,5 @@ export function fileLinkageStorePath(baseDir: string): string {
 }
 
 export function randomId(prefix: string): string {
-  return `${prefix}_${Math.random().toString(36).slice(2, 10)}`;
+  return `${prefix}_${randomBytes(8).toString("hex")}`;
 }

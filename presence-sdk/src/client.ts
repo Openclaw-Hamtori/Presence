@@ -156,6 +156,25 @@ export class PresenceClient {
     return this.managedNonces;
   }
 
+  private async ensurePendingProofNonceDurability(serviceId: string, accountId: string, nonce: string): Promise<void> {
+    const requests = await this.linkageStore.listPendingProofRequests({
+      serviceId,
+      accountId,
+      statuses: ["pending"],
+    });
+
+    const now = Math.floor(Date.now() / 1000);
+    const pending = requests.find((request) => request.nonce === nonce && request.expiresAt > now);
+    if (!pending) {
+      return;
+    }
+
+    // Backward-compatible, durable verification across server restarts:
+    // pending proof requests are persisted in the linkage store, so rehydrate
+    // the ephemeral nonce store at verification time to keep canonical pushless flow intact.
+    this.nonceIssuer.issue(nonce, pending.requestedAt);
+  }
+
   private _checkNonce(attestation: unknown, nonce: string): PresenceVerifyResult | null {
     if (
       typeof attestation === "object" &&
@@ -709,6 +728,8 @@ export class PresenceClient {
         recoveryAction: "relink",
       };
     }
+
+    await this.ensurePendingProofNonceDurability(serviceId, bindingKey.accountId, bindingKey.nonce);
 
     const verification = await this.verify(body, bindingKey.nonce);
     if (!verification.verified) {

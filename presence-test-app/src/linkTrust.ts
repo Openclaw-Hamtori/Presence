@@ -8,7 +8,9 @@ import { err, ok } from "./types/index";
  * First-pass trust model for session-provided sync URLs:
  * - fetch `https://{serviceDomain}/.well-known/presence.json`
  * - require the advertised `service_id` to match the session/service payload
- * - require `nonce_url` / `verify_url` to fall under an allowed prefix
+ * - require `nonce_url` / `verify_url` / `status_url` / `pending_url` to fall under an allowed prefix
+ * - `presence.local` is a convenience host only for SDK demo completions; production links should
+ *   resolve from service-domain metadata via HTTPS .well-known
  *
  * The cache is intentionally in-memory only so trust metadata expires on app restart.
  */
@@ -38,6 +40,7 @@ const DEMO_WELL_KNOWN: PresenceWellKnownDocument = {
     "https://demo.presence.local/presence/verify",
     "https://demo.presence.local/presence/linked-accounts",
     "https://demo.presence.local/presence/pending-proof-requests",
+    "https://demo.presence.local/presence/link-sessions",
   ],
 };
 
@@ -86,6 +89,7 @@ export async function validateBindingSyncConfiguration(params: {
     serviceDomain: params.sync?.serviceDomain,
     nonceUrl: params.sync?.nonceUrl,
     verifyUrl: params.sync?.verifyUrl,
+    statusUrl: params.sync?.statusUrl,
     pendingRequestsUrl: params.sync?.pendingRequestsUrl,
   });
 }
@@ -131,6 +135,7 @@ async function validateServiceSyncTargets(params: {
     ["nonce_url", params.nonceUrl],
     ["verify_url", params.verifyUrl],
     ["pending_url", params.pendingRequestsUrl],
+    ["status_url", statusUrl],
   ].filter((entry): entry is [string, string] => typeof entry[1] === "string" && entry[1].trim().length > 0);
 
   if (syncTargets.length === 0) {

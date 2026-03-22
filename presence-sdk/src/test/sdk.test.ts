@@ -589,6 +589,64 @@ function buildAndroidBody(
     assert.ok(savedRequest?.completedAt);
   });
 
+  await test("verifyLinkedAccount() rehydrates pending-proof nonce from persisted request", async () => {
+    const store = new InMemoryLinkageStore();
+    const serviceId = "svc";
+    const accountId = "acct-pending-restart";
+    const now = Math.floor(Date.now() / 1000);
+    const binding = {
+      bindingId: "pbind-pending-restart",
+      serviceId,
+      accountId,
+      deviceIss: "presence:device:pending-restart",
+      createdAt: now,
+      updatedAt: now,
+      status: "linked" as const,
+      lastLinkedAt: now,
+      lastVerifiedAt: now,
+      lastAttestedAt: now,
+    };
+
+    await store.saveServiceBinding(binding);
+
+    const bootstrap = new PresenceClient({ silent: true, linkageStore: store, serviceId });
+    const request = await bootstrap.createPendingProofRequest({ accountId });
+    assert.equal(request.ok, true);
+    if (!request.ok) {
+      throw new Error("expected pending proof request");
+    }
+
+    const restarted = new PresenceClient({ silent: true, linkageStore: store, serviceId });
+    const restartedNonceStore = (restarted as unknown as { managedNonces: { nonceStore: { isValid: (nonce: string, now: number) => Promise<boolean> } } }).managedNonces;
+    const beforeValid = await restartedNonceStore.nonceStore.isValid(request.request.nonce, now);
+    assert.equal(beforeValid, false);
+
+    (restarted as unknown as { verify: (body: unknown, nonce: string) => Promise<unknown> }).verify = async () => ({
+      verified: true as const,
+      pol_version: "1.0" as const,
+      iss: binding.deviceIss,
+      iat: NOW,
+      state_created_at: STATE_CREATED,
+      state_valid_until: STATE_VALID_UNTIL,
+      human: true as const,
+      pass: true as const,
+      signals: ["heart_rate"] as const,
+      nonce: request.request.nonce,
+    });
+
+    const result = await restarted.verifyLinkedAccount(
+      { ok: true },
+      {
+        accountId,
+        nonce: request.request.nonce,
+      }
+    );
+
+    assert.equal(result.verified, true);
+    const afterValid = await restartedNonceStore.nonceStore.isValid(request.request.nonce, Math.floor(Date.now() / 1000));
+    assert.equal(afterValid, true);
+  });
+
   await test("completeLinkSession() persists Android platform metadata from parsed request", async () => {
     const store = new InMemoryLinkageStore();
     const client = new PresenceClient({ silent: true, linkageStore: store, serviceId: "svc" });

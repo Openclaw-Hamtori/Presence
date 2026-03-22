@@ -36,15 +36,38 @@ interface ConnectionFlowScreenProps {
 
 const DEMO_SERVICE_DOMAIN = "demo.presence.local";
 
+function randomBytes(length: number): Uint8Array {
+  const cryptoApi = (globalThis as { crypto?: { getRandomValues: (bytes: Uint8Array) => void } }).crypto;
+  if (cryptoApi?.getRandomValues) {
+    const output = new Uint8Array(length);
+    cryptoApi.getRandomValues(output);
+    return output;
+  }
+
+  const fallback = new Uint8Array(length);
+  for (let i = 0; i < length; i += 1) {
+    fallback[i] = Math.floor(Math.random() * 256);
+  }
+
+  return fallback;
+}
+
+function randomBase64Url(length: number): string {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+  const bytes = randomBytes(length);
+  let output = "";
+  for (let i = 0; i < bytes.length; i += 1) {
+    output += chars[bytes[i] % chars.length];
+  }
+  return output;
+}
+
 function randomId(prefix: string): string {
-  return `${prefix}_${Math.random().toString(36).slice(2, 10)}`;
+  return `${prefix}_${randomBase64Url(10)}`;
 }
 
 function randomNonce(): string {
-  const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_";
-  let value = "";
-  for (let i = 0; i < 43; i += 1) value += chars[Math.floor(Math.random() * chars.length)];
-  return value;
+  return randomBase64Url(43);
 }
 
 async function defaultCreateMockSession(): Promise<MockLinkServiceSession> {
@@ -58,7 +81,7 @@ async function defaultCreateMockSession(): Promise<MockLinkServiceSession> {
     bindingId: undefined,
     flow: "initial_link",
     nonce: randomNonce(),
-    recoveryCode: Math.random().toString(36).slice(2, 8).toUpperCase(),
+    recoveryCode: randomBase64Url(8).toUpperCase().slice(0, 6),
     returnUrl: "presence://complete",
   };
 }
