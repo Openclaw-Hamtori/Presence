@@ -125,10 +125,11 @@ The app stores that on the linked binding after the initial link completes.
 When the app enters the foreground, it:
 
 1. loads linked bindings from secure local persistence
-2. validates the service sync URLs against `/.well-known/presence.json`
-3. fetches pending proof requests from each linked binding’s `pendingRequestsUrl`
-4. persists the resulting pending request descriptors locally
-5. renders the highest-priority pending request as the orb’s current action target
+2. if it first rehydrates bindings from `GET /presence/devices/:deviceIss/bindings`, it keeps that response bindings-only and then reconstructs or reuses the canonical linked-account pending-proof endpoint from the known public Presence API base plus `accountId`
+3. validates the service sync URLs against `/.well-known/presence.json`
+4. fetches pending proof requests from each linked binding’s `pendingRequestsUrl`
+5. persists the resulting pending request descriptors locally
+6. renders the highest-priority pending request as the orb’s current action target
 
 This makes "open app and tap orb" work even if the service did not send a fresh deeplink for that request.
 
@@ -321,6 +322,7 @@ Implemented foundation:
 - initial link completion metadata now carries `pending_url`
 - reference backend/example endpoints for pending proof requests
 - app/test-app local pending request persistence and foreground sync scaffolding
+- app-side binding recovery now keeps `/devices/:deviceIss/bindings` bindings-only and follows it with explicit pending-proof hydration against `GET /presence/linked-accounts/:accountId/pending-proof-requests`
 - orb can consume a pending proof request directly when no fresh envelope is open
 
 Still intentionally not implemented in this pass:

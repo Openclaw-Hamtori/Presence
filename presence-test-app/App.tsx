@@ -46,6 +46,10 @@ import {
   submitPendingProofRequest,
 } from "./src/sync/pendingProofRequests";
 import {
+  hydrateBindingWithCanonicalSync,
+  selectPendingProofRequestsForBindings,
+} from "./src/sync/pendingProofHydration";
+import {
   resolveRequestedLinkedBinding,
   syncFromEnvelope,
 } from "./src/sync/requestedBinding";
@@ -78,6 +82,7 @@ const MONO_FONT = Platform.OS === "ios" ? "Menlo" : "monospace";
 const SYNC_LOG_CHUNK_SIZE = 4;
 const MAX_LOG_ENTRIES = 240;
 const COPY_STATUS_RESET_MS = 1800;
+const PRESENCE_DEMO_API_BASE_URL = "https://noctu.link/presence-demo/presence";
 
 type LinkedProofRequestState =
   | { requestKey: string; status: RequestedProofUiStatus }
@@ -230,6 +235,7 @@ function describeBindingSync(sync: ServiceBinding["sync"] | undefined): string {
     `nonce_url=${normalized?.nonceUrl ? "present" : "missing"}`,
     `verify_url=${normalized?.verifyUrl ? "present" : "missing"}`,
     `status_url=${normalized?.statusUrl ? "present" : "missing"}`,
+    `pending_url=${normalized?.pendingRequestsUrl ? "present" : "missing"}`,
   ].join(" ");
 }
 
@@ -364,7 +370,7 @@ function toServiceBindingFromRecord(
 
   // Backend payloads use `deviceIss`; app-local state stores the same value as
   // `linkedDeviceIss` to distinguish the local binding view from the SDK model.
-  return {
+  return hydrateBindingWithCanonicalSync({
     bindingId: binding.bindingId,
     serviceId: binding.serviceId,
     accountId: binding.accountId,
@@ -373,7 +379,7 @@ function toServiceBindingFromRecord(
     lastVerifiedAt: binding.lastVerifiedAt,
     status: binding.status as ServiceBinding["status"],
     sync: normalizeBindingSyncMetadata(sync),
-  };
+  }, PRESENCE_DEMO_API_BASE_URL);
 }
 
 function toServiceBindingFromStatus(response: LinkedAccountStatusResponse): ServiceBinding | null {
@@ -483,7 +489,7 @@ export default function App() {
       `   state: created=${measurement.state?.stateCreatedAt ?? '-'} validUntil=${measurement.state?.stateValidUntil ?? '-'} measured=${measurement.state?.lastMeasuredAt ?? '-'} phase=${measurement.state?.status ?? '-'}`
     );
     return measurement;
-  }, [addLog, presence]);
+  }, [addLog, presence.measure]);
 
   const hydratedBindingsForCurrentDevice = useMemo(() => {
     if (!currentDeviceIss || hydratedServiceBindings?.deviceIss !== currentDeviceIss) {
@@ -639,11 +645,11 @@ export default function App() {
     try {
       const localBindings = localBindingsForHydrationRef.current;
       try {
-        const deviceBindings = await fetchJson<DeviceBindingsResponse>(`https://noctu.link/presence-demo/presence/devices/${encodeURIComponent(deviceIss)}/bindings`);
+        const deviceBindings = await fetchJson<DeviceBindingsResponse>(`${PRESENCE_DEMO_API_BASE_URL}/devices/${encodeURIComponent(deviceIss)}/bindings`);
         const recoveredBindings = preserveLocalBindingSyncMetadata(
           deviceBindings.bindings
           .filter((binding) => binding.deviceIss === deviceIss)
-          .map((binding) => ({
+          .map((binding) => hydrateBindingWithCanonicalSync({
             bindingId: binding.bindingId,
             serviceId: binding.serviceId,
             accountId: binding.accountId,
@@ -651,7 +657,7 @@ export default function App() {
             linkedAt: binding.lastLinkedAt ?? binding.createdAt ?? binding.updatedAt ?? Math.floor(Date.now() / 1000),
             lastVerifiedAt: binding.lastVerifiedAt,
             status: binding.status,
-          })),
+          }, PRESENCE_DEMO_API_BASE_URL)),
           localBindings,
           deviceIss
         );
@@ -667,7 +673,7 @@ export default function App() {
         addLog(`ℹ️ Device bindings endpoint unavailable (${source}) — ${deviceEndpointError instanceof Error ? deviceEndpointError.message : String(deviceEndpointError)}`);
       }
 
-      const audit = await fetchJson<AuditEventsResponse>("https://noctu.link/presence-demo/presence/audit-events");
+      const audit = await fetchJson<AuditEventsResponse>(`${PRESENCE_DEMO_API_BASE_URL}/audit-events`);
       const recentAccounts = new Map<string, number>();
       for (const event of audit.events) {
         if (event.deviceIss !== deviceIss) continue;
@@ -685,7 +691,7 @@ export default function App() {
           await Promise.all(
             orderedAccountIds.map(async (accountId) => {
               try {
-                const status = await fetchJson<LinkedAccountStatusResponse>(`https://noctu.link/presence-demo/presence/linked-accounts/${encodeURIComponent(accountId)}/status`);
+                const status = await fetchJson<LinkedAccountStatusResponse>(`${PRESENCE_DEMO_API_BASE_URL}/linked-accounts/${encodeURIComponent(accountId)}/status`);
                 const binding = toServiceBindingFromStatus(status);
                 return binding?.linkedDeviceIss === deviceIss ? binding : null;
               } catch {
@@ -725,6 +731,7 @@ export default function App() {
         state: currentState,
         bindings,
       });
+      await presence.refresh();
       const activeCount = result.requests.filter((request) => request.status === "pending").length;
       addLog(`↻ Synced ${activeCount} pending proof requests (${source})`);
       for (const error of result.errors) {
@@ -737,7 +744,7 @@ export default function App() {
     } finally {
       setSyncingPendingRequests(false);
     }
-  }, [addLog]);
+  }, [addLog, presence.refresh]);
 
   useEffect(() => {
     if (!showService) return;
@@ -779,8 +786,17 @@ export default function App() {
     );
   }, [currentDeviceIss, hydratedServiceBindings, localBindingsForHydration, presence.state]);
   const activePendingProofRequests = useMemo(
-    () => (presence.state ? getActivePendingProofRequests(presence.state) : []),
-    [presence.state]
+    () => (
+      presence.state
+        ? selectPendingProofRequestsForBindings({
+            requests: getActivePendingProofRequests(presence.state),
+            bindings: effectiveServiceBindings,
+            deviceIss: currentDeviceIss,
+            statuses: ["pending"],
+          })
+        : []
+    ),
+    [currentDeviceIss, effectiveServiceBindings, presence.state]
   );
   const currentPendingProofRequest = useMemo<PendingProofRequest | null>(
     () => (!openedEnvelope ? activePendingProofRequests[0] ?? null : null),
@@ -791,9 +807,14 @@ export default function App() {
       if (openedEnvelope || currentPendingProofRequest) {
         return null;
       }
-      return (presence.state?.pendingProofRequests ?? []).find((request) => request.status === "expired") ?? null;
+      return selectPendingProofRequestsForBindings({
+        requests: presence.state?.pendingProofRequests ?? [],
+        bindings: effectiveServiceBindings,
+        deviceIss: currentDeviceIss,
+        statuses: ["expired"],
+      })[0] ?? null;
     },
-    [currentPendingProofRequest, openedEnvelope, presence.state?.pendingProofRequests]
+    [currentDeviceIss, currentPendingProofRequest, effectiveServiceBindings, openedEnvelope, presence.state?.pendingProofRequests]
   );
   const openedRequestedBinding = useMemo(
     () => resolveRequestedLinkedBinding(openedEnvelope, effectiveServiceBindings),
