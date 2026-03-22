@@ -36,7 +36,7 @@ test("getProductState() does not show PASS while linked proof is still being ver
     requestedProofStatus: "submitting",
   });
 
-  assert.equal(state.label, "VERIFY");
+  assert.equal(state.label, "IDLE");
   assert.equal(state.heading, "Submitting proof");
   assert.match(state.detail, /reserved for server-verified success/i);
 });
@@ -68,13 +68,13 @@ test("getProductState() treats requestless local success as local-only instead o
     requestedProofStatus: null,
   });
 
-  assert.equal(state.label, "LOCAL");
+  assert.equal(state.label, "IDLE");
   assert.equal(state.heading, "No active request");
   assert.match(state.detail, /nothing has been server-verified/i);
   assert.match(state.summary, /No active request/i);
 });
 
-test("getProductState() shows READY instead of PASS when a request exists but only local measurement succeeded", () => {
+test("getProductState() keeps a request in IDLE when only local measurement succeeded", () => {
   const state = getProductState({
     phase: "ready",
     pass: true,
@@ -85,7 +85,7 @@ test("getProductState() shows READY instead of PASS when a request exists but on
     requestedProofStatus: null,
   });
 
-  assert.equal(state.label, "READY");
+  assert.equal(state.label, "IDLE");
   assert.equal(state.heading, "Ready to submit proof");
   assert.match(state.detail, /nothing is server-verified yet/i);
 });
@@ -101,7 +101,39 @@ test("getProductState() surfaces expired request state explicitly", () => {
     requestedProofStatus: "expired",
   });
 
-  assert.equal(state.label, "EXPIRED");
+  assert.equal(state.label, "FAIL");
   assert.equal(state.heading, "Request expired");
   assert.match(state.action, /fresh service request/i);
+});
+
+test("getProductState() keeps a newly loaded request idle until a local check actually runs", () => {
+  const state = getProductState({
+    phase: "ready",
+    pass: false,
+    hasLocalMeasurement: false,
+    hasRecovery: false,
+    linkedServiceCount: 1,
+    requestedServiceId: "presence-demo",
+    requestedProofStatus: null,
+  });
+
+  assert.equal(state.label, "IDLE");
+  assert.equal(state.heading, "Request loaded");
+  assert.match(state.action, /run a local check/i);
+});
+
+test("getProductState() treats requestless local measurement failure as FAIL", () => {
+  const state = getProductState({
+    phase: "not_ready",
+    pass: false,
+    hasLocalMeasurement: true,
+    hasRecovery: false,
+    linkedServiceCount: 0,
+    requestedServiceId: null,
+    requestedProofStatus: null,
+  });
+
+  assert.equal(state.label, "FAIL");
+  assert.equal(state.heading, "Local check failed");
+  assert.match(state.detail, /nothing was submitted to a server/i);
 });

@@ -3,6 +3,7 @@
 const { createServer } = require("http");
 const { mkdirSync } = require("fs");
 const { join } = require("path");
+const { resolvePresenceServerConfig } = require("./presence-config.cjs");
 
 function loadPresenceSdk() {
   try {
@@ -56,6 +57,7 @@ function absolutize(baseUrl, value) {
 async function main() {
   const port = Number(process.env.PORT || 8787);
   const host = process.env.HOST || "127.0.0.1";
+  const { iosAppId, iosAppIdSource } = resolvePresenceServerConfig(process.env);
   const serviceId = process.env.PRESENCE_SERVICE_ID || "demo-service";
   const publicBaseUrl = (process.env.PUBLIC_BASE_URL || `http://${host}:${port}`).replace(/\/$/, "");
   const publicPresenceApiBaseUrl = `${publicBaseUrl}/presence`;
@@ -69,6 +71,7 @@ async function main() {
     silent: true,
     serviceId,
     linkageStore: new FileSystemLinkageStore(storePath),
+    iosAppId,
     bindingPolicy: { allowReplacementOnMismatch: true },
   });
 
@@ -99,7 +102,13 @@ async function main() {
       const method = req.method || "GET";
 
       if (method === "GET" && url.pathname === "/health") {
-        send(200, { ok: true, serviceId, serviceDomain: serviceDomain || undefined, storePath });
+        send(200, {
+          ok: true,
+          serviceId,
+          serviceDomain: serviceDomain || undefined,
+          storePath,
+          iosAppIdSource,
+        });
         return;
       }
 

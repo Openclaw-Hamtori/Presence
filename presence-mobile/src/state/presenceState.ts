@@ -100,7 +100,7 @@ export async function clearPresenceState(): Promise<void> {
 
 /**
  * Internal timing status. Product-facing UI should generally collapse raw
- * scheduler states into PASS / FAIL while handling recovery separately.
+ * scheduler states into IDLE / FAIL / PASS while handling recovery separately.
  */
 export function computeStateStatus(state: PresenceState): PresenceStateStatus {
   const now = Math.floor(Date.now() / 1000);

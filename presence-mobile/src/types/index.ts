@@ -63,7 +63,7 @@ export interface PresenceBindingSync {
 
 /**
  * Internal local state status used by scheduling/debug logic.
- * Product UI should present PASS / FAIL / recovery instead of these raw values.
+ * Product UI should collapse these raw values into IDLE / FAIL / PASS semantics.
  */
 export type PresenceStateStatus =
   | "uninitialized"

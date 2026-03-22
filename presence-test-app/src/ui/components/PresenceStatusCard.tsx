@@ -49,21 +49,14 @@ export function PresenceStatusCard({ presence, fetchNonce }: PresenceStatusCardP
     && phase !== "not_ready"
     && phase !== "error"
     && phase !== "recovery_pending";
-  const statusLabel = phase === "proving"
-    ? "VERIFY"
-    : phase === "measuring"
-      ? hasServiceRequest
-        ? "CHECK"
-        : "LOCAL"
-      : phase === "recovery_pending"
-        ? "FAIL"
-        : hasServiceRequest
-          ? hasLocalPass
-            ? "READY"
-            : "REQUEST"
-          : hasLocalPass
-            ? "LOCAL"
-            : "IDLE";
+  const hasFailingLocalResult = !!hasLocalMeasurement
+    && !hasLocalPass
+    && phase !== "measuring"
+    && phase !== "proving"
+    && phase !== "uninitialized";
+  const statusLabel = phase === "recovery_pending" || phase === "error" || hasFailingLocalResult
+    ? "FAIL"
+    : "IDLE";
   const topRightText = phase === "recovery_pending"
     ? "Recovery needed"
     : phase === "proving"
@@ -75,11 +68,13 @@ export function PresenceStatusCard({ presence, fetchNonce }: PresenceStatusCardP
         : hasServiceRequest
           ? hasLocalPass
             ? "Request ready"
-            : "Request loaded"
+            : hasLocalMeasurement
+              ? "Request blocked"
+              : "Request loaded"
           : hasLocalPass
             ? "No active request"
             : hasLocalMeasurement
-              ? "Local-only result"
+              ? "Local check failed"
               : "No active request";
   const isFailStatus = statusLabel === "FAIL";
 

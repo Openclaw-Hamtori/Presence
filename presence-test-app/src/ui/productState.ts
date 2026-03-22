@@ -62,7 +62,7 @@ export function getProductState(params: {
 
   if (requestedServiceId && requestedProofStatus === "submitting") {
     return {
-      label: "VERIFY",
+      label: "IDLE",
       tone: "warn" as const,
       heading: "Submitting proof",
       detail: `Presence is submitting proof${requestSummary}. PASS is reserved for server-verified success.`,
@@ -90,7 +90,7 @@ export function getProductState(params: {
 
   if (requestedServiceId && requestedProofStatus === "expired") {
     return {
-      label: "EXPIRED",
+      label: "FAIL",
       tone: "warn" as const,
       heading: "Request expired",
       detail: `The latest request${requestSummary} expired before Presence could finish verification.`,
@@ -116,7 +116,7 @@ export function getProductState(params: {
   if (phase === "measuring") {
     if (requestedServiceId) {
       return {
-        label: "CHECK",
+        label: "IDLE",
         tone: "warn" as const,
         heading: "Checking this device",
         detail: `Presence is running a local on-device check${requestSummary}. This only prepares proof and does not mean the server verified PASS.`,
@@ -129,7 +129,7 @@ export function getProductState(params: {
     }
 
     return {
-      label: "LOCAL",
+      label: "IDLE",
       tone: "warn" as const,
       heading: "No active request",
       detail: "Presence is running a local-only check. Nothing from this check is being submitted or server-verified.",
@@ -140,7 +140,7 @@ export function getProductState(params: {
 
   if (phase === "proving") {
     return {
-      label: "VERIFY",
+      label: "IDLE",
       tone: "warn" as const,
       heading: requestedServiceId ? "Submitting proof" : "Creating proof",
       detail: requestedServiceId
@@ -157,11 +157,25 @@ export function getProductState(params: {
   if (requestedServiceId) {
     if (hasLocalPass) {
       return {
-        label: "READY",
+        label: "IDLE",
         tone: "warn" as const,
         heading: "Ready to submit proof",
         detail: `A local check passed${requestSummary}, but nothing is server-verified yet.`,
         action: "Tap the orb to submit proof to the requesting service.",
+        summary: formatProductSummary({
+          linkedServiceCount,
+          requestState: "active",
+        }),
+      };
+    }
+
+    if (!hasLocalMeasurement && phase !== "error") {
+      return {
+        label: "IDLE",
+        tone: "warn" as const,
+        heading: "Request loaded",
+        detail: `A service request${requestSummary} is active, but this device has not completed a fresh local check yet.`,
+        action: "Tap the orb to run a local check before submitting proof.",
         summary: formatProductSummary({
           linkedServiceCount,
           requestState: "active",
@@ -184,7 +198,7 @@ export function getProductState(params: {
 
   if (hasLocalPass) {
     return {
-      label: "LOCAL",
+      label: "IDLE",
       tone: "warn" as const,
       heading: "No active request",
       detail: linkedServiceCount > 0
@@ -210,9 +224,9 @@ export function getProductState(params: {
 
   if (hasLocalMeasurement) {
     return {
-      label: "IDLE",
+      label: "FAIL",
       tone: "warn" as const,
-      heading: "No active request",
+      heading: "Local check failed",
       detail: "The latest local-only check did not qualify, and nothing was submitted to a server.",
       action: linkedServiceCount > 0
         ? "Wait for a linked service request, then run a fresh local check."
