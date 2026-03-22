@@ -44,3 +44,7 @@ Canonical meaning:
 4. Add pending-proof request surface for app-hydrated proof taps.
 5. Add service-domain trust metadata + HTTPS `/.well-known/presence.json`.
 6. Make push transport optional (off by default).
+
+## Production roadmap
+
+- `docs/presence-next-stage-roadmap.md`: priorities for moving from stabilized reference implementation to self-hostable, operator-grade stack.
