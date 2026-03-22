@@ -67,6 +67,9 @@ Important:
 - `ROUTE_BASE_PATH=` (empty)
 - `PUBLIC_BASE_URL=http://127.0.0.1:8787`
 - `PRESENCE_SERVICE_DOMAIN` unset until HTTPS and `.well-known` are available
+- `PRESENCE_ALLOW_REPLACEMENT_ON_MISMATCH=true` (server creates a relink recovery session when a verified proof arrives from an unexpected device)
+
+For stricter recovery, set `PRESENCE_ALLOW_REPLACEMENT_ON_MISMATCH=false` in dev or production to require explicit re-auth rather than relink-on-mismatch.
 
 ## Reference implementations
 

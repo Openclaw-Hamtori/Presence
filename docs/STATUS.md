@@ -36,6 +36,8 @@ _Last updated: 2026-03-22_
 
 ## 4) Remaining follow-ups / backlog
 - Confirm **real-device end-to-end completion** of pending-proof request RESPOND route against live server (`/presence/pending-proof-requests/:requestId/respond`) after latest push-token/setup and route-base fixes.
+  - Partial validation captured in `projects/presence-pending-proof-respond-live-validation-2026-03-22.md` (route existence and missing/request-error handling for `create/list/get/respond`).
+  - Outstanding: single-session real-device `respond` happy-path replay with a known `requestId` and linked account/device pair.
 - Finish **reliable APNs live delivery path** (token flow + notification wake + app hydration evidence) with same linked account/device used on-device.
 - Close remaining validation gap around **relink/unlink and stale-link cleanup** on fresh sessions in long-running manual runs.
 - Finish operational hardening path to a durable canonical store choice (SQLite/WAL design referenced in `projects/presence-sqlite-design-2026-03-21.md`).

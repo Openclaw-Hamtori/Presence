@@ -157,13 +157,18 @@ async function main() {
   const storageRoot = process.env.PRESENCE_STORAGE_ROOT || join(process.cwd(), "var", "presence");
   mkdirSync(storageRoot, { recursive: true });
   const storePath = fileLinkageStorePath(storageRoot);
+  // Keep mismatch replacement enabled by default for the happy-path demo/server:
+  // it keeps recovery recoverable via relink flow without changing server runtime.
+  // Set PRESENCE_ALLOW_REPLACEMENT_ON_MISMATCH=false for stricter behavior.
+  const allowReplacementOnMismatch =
+    (process.env.PRESENCE_ALLOW_REPLACEMENT_ON_MISMATCH ?? "true") !== "false";
 
   const presence = new PresenceClient({
     silent: true,
     serviceId,
     linkageStore: new FileSystemLinkageStore(storePath),
     iosAppId,
-    bindingPolicy: { allowReplacementOnMismatch: true },
+    bindingPolicy: { allowReplacementOnMismatch },
     pendingProofSignalTransport: resolvePendingProofSignalTransport({ iosAppId }),
   });
 
