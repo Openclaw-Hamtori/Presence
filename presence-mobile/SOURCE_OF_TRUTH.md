@@ -48,6 +48,7 @@
 - `presence-test-app/src/backgroundRefresh.ts` re-exports [`presence-mobile/src/backgroundRefresh.ts`](/Users/chaesung/Desktop/Presence_GPT/presence-mobile/src/backgroundRefresh.ts).
 - `presence-test-app/src/deeplink.ts` re-exports [`presence-mobile/src/deeplink.ts`](/Users/chaesung/Desktop/Presence_GPT/presence-mobile/src/deeplink.ts).
 - `presence-test-app/src/health/pass.ts` re-exports [`presence-mobile/src/health/pass.ts`](/Users/chaesung/Desktop/Presence_GPT/presence-mobile/src/health/pass.ts).
+- `presence-test-app/src/pushRegistrationState.ts` re-exports [`presence-mobile/src/pushRegistrationState.ts`](/Users/chaesung/Desktop/Presence_GPT/presence-mobile/src/pushRegistrationState.ts).
 - `presence-test-app/src/qrScanner.ts` re-exports [`presence-mobile/src/qrScanner.ts`](/Users/chaesung/Desktop/Presence_GPT/presence-mobile/src/qrScanner.ts).
 - `presence-test-app/src/sync/queue.ts` re-exports [`presence-mobile/src/sync/queue.ts`](/Users/chaesung/Desktop/Presence_GPT/presence-mobile/src/sync/queue.ts).
 - `presence-test-app/src/types/index.ts` re-exports [`presence-mobile/src/types/index.ts`](/Users/chaesung/Desktop/Presence_GPT/presence-mobile/src/types/index.ts).

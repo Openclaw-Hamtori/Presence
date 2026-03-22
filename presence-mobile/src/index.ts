@@ -33,6 +33,18 @@ export {
   addPushNotificationListener,
   extractPendingProofWakeSignal,
 } from "./pushNotifications";
+export {
+  createEmptyPushSetupState,
+  loadPushSetupState,
+  savePushSetupState,
+  notePushAuthorizationStatus,
+  notePushTokenReceived,
+  notePushUploadAttempt,
+  notePushUploadConfirmed,
+  isPushUploadConfirmed,
+  getLatestPushToken,
+  pushRegistrationSignature,
+} from "./pushRegistrationState";
 
 export {
   isHealthKitAvailable,
@@ -79,6 +91,11 @@ export type {
   PresencePushNotificationEvent,
   PresencePendingProofWakeSignal,
 } from "./pushNotifications";
+export type {
+  StoredPushTokenRegistration,
+  DevicePushSetupState,
+  PresencePushSetupState,
+} from "./pushRegistrationState";
 
 export type {
   PresenceAttestation,

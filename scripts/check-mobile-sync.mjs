@@ -20,6 +20,7 @@ const reexportBridges = {
   "backgroundRefresh.ts": "../../presence-mobile/src/backgroundRefresh",
   "deeplink.ts": "../../presence-mobile/src/deeplink",
   "health/pass.ts": "../../../presence-mobile/src/health/pass",
+  "pushRegistrationState.ts": "../../presence-mobile/src/pushRegistrationState",
   "pushNotifications.ts": "../../presence-mobile/src/pushNotifications",
   "qrScanner.ts": "../../presence-mobile/src/qrScanner",
   "sync/pendingProofRequests.ts": "../../../presence-mobile/src/sync/pendingProofRequests",

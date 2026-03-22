@@ -30,6 +30,19 @@ import {
   type PresencePushTokenRegistration,
 } from "./src/pushNotifications";
 import {
+  createEmptyPushSetupState,
+  getLatestPushToken,
+  isPushUploadConfirmed,
+  loadPushSetupState,
+  notePushAuthorizationStatus,
+  notePushTokenReceived,
+  notePushUploadAttempt,
+  notePushUploadConfirmed,
+  pushRegistrationSignature,
+  savePushSetupState,
+  type PresencePushSetupState,
+} from "./src/pushRegistrationState";
+import {
   loadPresenceState,
   savePresenceState,
   addOrUpdateServiceBinding,
@@ -187,7 +200,16 @@ interface LinkedAccountStatusResponse {
 
 interface DeviceBindingsResponse {
   ok: true;
-  device?: { iss?: string } | null;
+  device?: {
+    iss?: string;
+    pushTokens?: Array<{
+      token?: string;
+      environment?: "development" | "production";
+      bundleId?: string;
+      status?: "active" | "invalidated";
+      lastConfirmedAt?: number;
+    }>;
+  } | null;
   bindings: Array<{
     bindingId: string;
     serviceId: string;
@@ -296,6 +318,37 @@ function buildLogExport(params: {
     "",
     ...[...params.entries].reverse(),
   ].join("\n");
+}
+
+function buildPushTokenKey(registration: PresencePushTokenRegistration | null): string | null {
+  if (!registration) return null;
+  return [
+    registration.token,
+    registration.environment,
+    registration.bundleId ?? "-",
+  ].join(":");
+}
+
+function matchesActiveServerPushToken(
+  registration: PresencePushTokenRegistration,
+  candidate: NonNullable<NonNullable<DeviceBindingsResponse["device"]>["pushTokens"]>[number] | null | undefined
+): boolean {
+  if (!candidate || candidate.status !== "active") {
+    return false;
+  }
+
+  const candidateToken = typeof candidate.token === "string"
+    ? candidate.token.replace(/[^0-9a-f]/gi, "").toLowerCase()
+    : null;
+  const candidateBundleId = typeof candidate.bundleId === "string" && candidate.bundleId.trim().length > 0
+    ? candidate.bundleId.trim()
+    : undefined;
+
+  return (
+    candidateToken === registration.token
+    && (candidate.environment === "production" ? "production" : "development") === registration.environment
+    && candidateBundleId === registration.bundleId
+  );
 }
 
 function findMatchingBinding(
@@ -475,16 +528,17 @@ export default function App() {
   const [serviceBindingsHydrationError, setServiceBindingsHydrationError] = useState<string | null>(null);
   const [syncingPendingRequests, setSyncingPendingRequests] = useState(false);
   const [pendingRequestsSyncError, setPendingRequestsSyncError] = useState<string | null>(null);
+  const [pushSetupState, setPushSetupState] = useState<PresencePushSetupState>(createEmptyPushSetupState());
   const serviceScrollRef = useRef<ScrollView | null>(null);
   const [serviceViewportHeight, setServiceViewportHeight] = useState(0);
   const [serviceContentHeight, setServiceContentHeight] = useState(0);
   const [serviceScrollOffset, setServiceScrollOffset] = useState(0);
   const currentDeviceIss = presence.state?.linkedDevice?.iss;
   const currentDeviceIssRef = useRef<string | undefined>(currentDeviceIss);
+  const pushSetupStateRef = useRef<PresencePushSetupState>(createEmptyPushSetupState());
   const effectiveServiceBindingsRef = useRef<ServiceBinding[]>([]);
   const pendingPushWakeRef = useRef<PendingPushWakeState | null>(null);
-  const pendingPushTokenRef = useRef<PresencePushTokenRegistration | null>(null);
-  const uploadedPushRegistrationSignatureRef = useRef<string | null>(null);
+  const pushRegistrationInFlightSignatureRef = useRef<string | null>(null);
   const pushRegistrationAttemptedDevicesRef = useRef<Set<string>>(new Set());
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
 
@@ -494,9 +548,37 @@ export default function App() {
     setLogEntries((prev) => [line, ...prev].slice(0, MAX_LOG_ENTRIES));
   }, []);
 
+  const updatePushSetupState = useCallback(async (
+    updater: (state: PresencePushSetupState) => PresencePushSetupState
+  ): Promise<PresencePushSetupState> => {
+    const next = updater(pushSetupStateRef.current);
+    pushSetupStateRef.current = next;
+    setPushSetupState(next);
+    await savePushSetupState(next);
+    return next;
+  }, []);
+
   useEffect(() => {
     currentDeviceIssRef.current = currentDeviceIss;
   }, [currentDeviceIss]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void loadPushSetupState()
+      .then((loaded) => {
+        if (cancelled) {
+          return;
+        }
+        pushSetupStateRef.current = loaded;
+        setPushSetupState(loaded);
+      })
+      .catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (copyLogsStatus === "idle") return;
@@ -556,6 +638,20 @@ export default function App() {
       mergeServiceBindings([...(presence.state?.serviceBindings ?? []), ...hydratedBindingsForCurrentDevice])
     ),
     [hydratedBindingsForCurrentDevice, presence.state?.serviceBindings]
+  );
+  const hasLinkedBindingForCurrentDevice = useMemo(
+    () => !!currentDeviceIss && localBindingsForHydration.some((binding) => (
+      binding.linkedDeviceIss === currentDeviceIss && isActiveBinding(binding)
+    )),
+    [currentDeviceIss, localBindingsForHydration]
+  );
+  const storedPushToken = useMemo(
+    () => getLatestPushToken(pushSetupState),
+    [pushSetupState]
+  );
+  const storedPushTokenKey = useMemo(
+    () => buildPushTokenKey(storedPushToken),
+    [storedPushToken]
   );
   const localBindingsForHydrationRef = useRef<ServiceBinding[]>(localBindingsForHydration);
 
@@ -700,6 +796,24 @@ export default function App() {
       const localBindings = localBindingsForHydrationRef.current;
       try {
         const deviceBindings = await fetchJson<DeviceBindingsResponse>(`${PRESENCE_DEMO_API_BASE_URL}/devices/${encodeURIComponent(deviceIss)}/bindings`);
+        const latestRegistration = getLatestPushToken(pushSetupStateRef.current);
+        const matchingServerToken = latestRegistration
+          ? deviceBindings.device?.pushTokens?.find((token) => matchesActiveServerPushToken(latestRegistration, token))
+          : undefined;
+        if (latestRegistration && matchingServerToken) {
+          const alreadyConfirmed = isPushUploadConfirmed(pushSetupStateRef.current, {
+            deviceIss,
+            registration: latestRegistration,
+          });
+          await updatePushSetupState((state) => notePushUploadConfirmed(state, {
+            deviceIss,
+            registration: latestRegistration,
+            confirmedAt: matchingServerToken.lastConfirmedAt,
+          }));
+          if (!alreadyConfirmed) {
+            addLog(`↻ confirmed APNs token from device record (${source})`);
+          }
+        }
         const recoveredBindings = preserveLocalBindingSyncMetadata(
           deviceBindings.bindings
           .filter((binding) => binding.deviceIss === deviceIss)
@@ -772,7 +886,7 @@ export default function App() {
     } finally {
       setHydratingServiceBindings(false);
     }
-  }, [addLog, persistAuthoritativeBindings]);
+  }, [addLog, persistAuthoritativeBindings, updatePushSetupState]);
 
   const hydratePendingProofRequests = useCallback(async (bindings: ServiceBinding[], source: string) => {
     const currentState = await loadPresenceState();
@@ -803,52 +917,91 @@ export default function App() {
   }, [addLog, presence.refresh]);
 
   const syncPushTokenWithServer = useCallback(async (
-    registration: PresencePushTokenRegistration
+    registration: PresencePushTokenRegistration,
+    source: string
   ) => {
     const deviceIss = currentDeviceIssRef.current;
-    if (!deviceIss) {
-      pendingPushTokenRef.current = registration;
-      addLog(`ℹ️ cached APNs token until linked device is available`);
+    if (!deviceIss || !hasLinkedBindingForCurrentDevice) {
+      addLog("ℹ️ cached APNs token until a linked service is confirmed");
       return;
     }
 
-    const signature = [
+    if (isPushUploadConfirmed(pushSetupStateRef.current, { deviceIss, registration })) {
+      return;
+    }
+
+    const signature = pushRegistrationSignature({
       deviceIss,
-      registration.token,
-      registration.environment,
-      registration.bundleId ?? "-",
-    ].join(":");
-    if (uploadedPushRegistrationSignatureRef.current === signature) {
+      registration,
+    });
+    if (pushRegistrationInFlightSignatureRef.current === signature) {
       return;
     }
 
-    const response = await fetch(
-      `${PRESENCE_DEMO_API_BASE_URL}/devices/${encodeURIComponent(deviceIss)}/push-tokens`,
-      {
-        method: "POST",
-        headers: {
-          accept: "application/json",
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({
-          token: registration.token,
-          environment: registration.environment,
-          bundleId: registration.bundleId,
-        }),
-      }
-    );
-    const raw = await response.text();
-    const parsed = raw ? JSON.parse(raw) : null;
-    if (!response.ok) {
-      throw new Error(parsed?.message ?? `request failed (${response.status})`);
-    }
+    pushRegistrationInFlightSignatureRef.current = signature;
+    await updatePushSetupState((state) => notePushUploadAttempt(state, {
+      deviceIss,
+      registration,
+    }));
 
-    uploadedPushRegistrationSignatureRef.current = signature;
-    pendingPushTokenRef.current = null;
-    addLog(
-      `↻ registered APNs token for ${deviceIss} (${registration.environment}${registration.bundleId ? ` ${registration.bundleId}` : ""})`
-    );
-  }, [addLog]);
+    try {
+      const response = await fetch(
+        `${PRESENCE_DEMO_API_BASE_URL}/devices/${encodeURIComponent(deviceIss)}/push-tokens`,
+        {
+          method: "POST",
+          headers: {
+            accept: "application/json",
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            token: registration.token,
+            environment: registration.environment,
+            bundleId: registration.bundleId,
+          }),
+        }
+      );
+      const raw = await response.text();
+      const parsed = raw ? JSON.parse(raw) : null;
+      if (!response.ok) {
+        throw new Error(parsed?.message ?? `request failed (${response.status})`);
+      }
+
+      await updatePushSetupState((state) => notePushUploadConfirmed(state, {
+        deviceIss,
+        registration,
+        confirmedAt: parsed?.pushToken?.lastConfirmedAt,
+      }));
+      addLog(
+        `↻ registered APNs token for ${deviceIss} (${registration.environment}${registration.bundleId ? ` ${registration.bundleId}` : ""}) via ${source}`
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await updatePushSetupState((state) => notePushUploadAttempt(state, {
+        deviceIss,
+        registration,
+        error: message,
+      }));
+      throw error;
+    } finally {
+      pushRegistrationInFlightSignatureRef.current = null;
+    }
+  }, [addLog, hasLinkedBindingForCurrentDevice, updatePushSetupState]);
+
+  const maybeSyncStoredPushToken = useCallback(async (source: string) => {
+    const deviceIss = currentDeviceIssRef.current;
+    const registration = getLatestPushToken(pushSetupStateRef.current);
+    if (!deviceIss || !hasLinkedBindingForCurrentDevice || !registration) {
+      return;
+    }
+    if (isPushUploadConfirmed(pushSetupStateRef.current, { deviceIss, registration })) {
+      return;
+    }
+    try {
+      await syncPushTokenWithServer(registration, source);
+    } catch (error) {
+      addLog(`ℹ️ push token registration failed (${source}) — ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }, [addLog, hasLinkedBindingForCurrentDevice, syncPushTokenWithServer]);
 
   const runForegroundHydration = useCallback(async (source: string) => {
     const deviceIss = currentDeviceIssRef.current;
@@ -905,14 +1058,11 @@ export default function App() {
   }, [hydrateAuthoritativeBindings, presence.state?.linkedDevice?.iss]);
 
   useEffect(() => {
-    const pendingRegistration = pendingPushTokenRef.current;
-    if (!currentDeviceIss || !pendingRegistration) {
+    if (!currentDeviceIss || !hasLinkedBindingForCurrentDevice || !storedPushTokenKey) {
       return;
     }
-    void syncPushTokenWithServer(pendingRegistration).catch((error) => {
-      addLog(`ℹ️ push token registration failed — ${error instanceof Error ? error.message : String(error)}`);
-    });
-  }, [addLog, currentDeviceIss, syncPushTokenWithServer]);
+    void maybeSyncStoredPushToken("linked_device_available");
+  }, [currentDeviceIss, hasLinkedBindingForCurrentDevice, maybeSyncStoredPushToken, storedPushTokenKey]);
 
   useEffect(() => {
     const pendingWake = pendingPushWakeRef.current;
@@ -923,12 +1073,13 @@ export default function App() {
   }, [currentDeviceIss, handlePendingProofWake]);
 
   useEffect(() => {
-    if (!currentDeviceIss || pushRegistrationAttemptedDevicesRef.current.has(currentDeviceIss)) {
+    if (!currentDeviceIss || !hasLinkedBindingForCurrentDevice || pushRegistrationAttemptedDevicesRef.current.has(currentDeviceIss)) {
       return;
     }
     pushRegistrationAttemptedDevicesRef.current.add(currentDeviceIss);
     void ensurePushNotificationsRegistered({ prompt: true })
-      .then((result) => {
+      .then(async (result) => {
+        await updatePushSetupState((state) => notePushAuthorizationStatus(state, result.status));
         addLog(
           `↻ push registration status=${result.status} requested=${result.registrationRequested ? "yes" : "no"}`
         );
@@ -936,7 +1087,7 @@ export default function App() {
       .catch((error) => {
         addLog(`ℹ️ push registration unavailable — ${error instanceof Error ? error.message : String(error)}`);
       });
-  }, [addLog, currentDeviceIss]);
+  }, [addLog, currentDeviceIss, hasLinkedBindingForCurrentDevice, updatePushSetupState]);
 
   useEffect(() => {
     let active = true;
@@ -956,9 +1107,15 @@ export default function App() {
     const unsubscribe = addPushNotificationListener({
       onTokenRegistered: (registration) => {
         addLog(`📲 APNs token registered (${registration.environment})`);
-        void syncPushTokenWithServer(registration).catch((error) => {
-          addLog(`ℹ️ push token registration failed — ${error instanceof Error ? error.message : String(error)}`);
-        });
+        void updatePushSetupState((state) => notePushTokenReceived(state, registration))
+          .then(() => {
+            if (!hasLinkedBindingForCurrentDevice) {
+              addLog("ℹ️ cached APNs token until a linked service is confirmed");
+            }
+          })
+          .catch((error) => {
+            addLog(`ℹ️ push token persistence failed — ${error instanceof Error ? error.message : String(error)}`);
+          });
       },
       onRegistrationError: (error) => {
         addLog(`ℹ️ APNs registration failed — ${error.message}`);
@@ -980,7 +1137,7 @@ export default function App() {
       active = false;
       unsubscribe();
     };
-  }, [addLog, handlePendingProofWake, syncPushTokenWithServer]);
+  }, [addLog, handlePendingProofWake, hasLinkedBindingForCurrentDevice, updatePushSetupState]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (nextState: AppStateStatus) => {
@@ -988,11 +1145,12 @@ export default function App() {
       appStateRef.current = nextState;
 
       if ((previousState === "background" || previousState === "inactive") && nextState === "active") {
+        void maybeSyncStoredPushToken("app_foreground");
         void runForegroundHydration("app_foreground");
       }
     });
     return () => subscription.remove();
-  }, [runForegroundHydration]);
+  }, [maybeSyncStoredPushToken, runForegroundHydration]);
 
   const proveOptions = useMemo(() => (openedEnvelope ? envelopeToProveOptions(openedEnvelope) : null), [openedEnvelope]);
   const effectiveServiceBindings = useMemo(() => {
