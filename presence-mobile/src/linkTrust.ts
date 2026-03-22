@@ -67,6 +67,27 @@ export async function validateBindingSyncConfiguration(params: {
   });
 }
 
+export async function validateTrustedServiceUrl(params: {
+  serviceId?: string;
+  serviceDomain?: string;
+  label: string;
+  url?: string;
+}): Promise<Result<void>> {
+  const rawUrl = params.url?.trim();
+  if (!rawUrl) {
+    return err(
+      "ERR_SERVICE_TRUST_INVALID",
+      `${params.label} is missing for ${params.serviceId?.trim() || "the linked service"}.`
+    );
+  }
+
+  return validateServiceUrlTargets({
+    serviceId: params.serviceId,
+    serviceDomain: params.serviceDomain,
+    targets: [[params.label, rawUrl]],
+  });
+}
+
 async function validateServiceSyncTargets(params: {
   serviceId?: string;
   serviceDomain?: string;
@@ -93,6 +114,18 @@ async function validateServiceSyncTargets(params: {
     return ok(undefined);
   }
 
+  return validateServiceUrlTargets({
+    serviceId: params.serviceId,
+    serviceDomain: params.serviceDomain,
+    targets: syncTargets,
+  });
+}
+
+async function validateServiceUrlTargets(params: {
+  serviceId?: string;
+  serviceDomain?: string;
+  targets: Array<[string, string]>;
+}): Promise<Result<void>> {
   const serviceId = params.serviceId?.trim();
   if (!serviceId) {
     return err(
@@ -123,12 +156,12 @@ async function validateServiceSyncTargets(params: {
     );
   }
 
-  for (const [label, rawUrl] of syncTargets) {
+  for (const [label, rawUrl] of params.targets) {
     const absoluteUrl = normalizeAbsoluteUrl(rawUrl);
     if (!absoluteUrl) {
       return err(
         "ERR_SERVICE_TRUST_INVALID",
-        `${label} is not a valid absolute URL in the Presence link for ${serviceId}.`
+        `${label} is not a valid absolute URL for ${serviceId}.`
       );
     }
 

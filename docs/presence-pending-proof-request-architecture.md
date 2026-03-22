@@ -105,6 +105,7 @@ Semantics:
 - A service creates a pending request when it needs PASS now.
 - The request is server-authoritative and durable.
 - The request is bound to the existing binding plus a fresh nonce.
+- Current Phase 1 limitation: because the request stores that nonce at creation time, the practical response window is still bounded by the underlying nonce TTL. The current nonce TTL is 5 minutes (300 seconds), so pending proof requests are effectively only usable inside that window until a later architecture separates long-lived pending-request lifetime from fresh response-time nonce issuance.
 - Only one active pending request should normally remain for the same binding/action slot; newer requests may cancel older still-pending ones.
 
 ### 3. Let the app discover pending work from trusted binding metadata

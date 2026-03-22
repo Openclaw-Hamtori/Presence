@@ -5,7 +5,7 @@ import {
   removePendingProofRequest,
   upsertPendingProofRequest,
 } from "../state/presenceState";
-import { validateBindingSyncConfiguration } from "../linkTrust";
+import { validateBindingSyncConfiguration, validateTrustedServiceUrl } from "../linkTrust";
 import { markBindingMismatchForRecovery, markBindingVerified, measure, proveMeasured } from "../service";
 import type { MeasureResult } from "../service";
 import type { PendingProofRequest, PresenceState, ServiceBinding } from "../types/index";
@@ -123,8 +123,14 @@ export async function submitPendingProofRequest(params: {
     throw new Error(`pending proof request is ${params.request.status}`);
   }
 
-  if (!isAbsoluteUrl(params.request.respondUrl)) {
-    throw new Error("pending proof request respond URL must be absolute");
+  const respondUrlTrustValidation = await validateTrustedServiceUrl({
+    serviceId: params.binding.serviceId,
+    serviceDomain: params.binding.sync?.serviceDomain ?? params.request.serviceDomain,
+    label: "respond_url",
+    url: params.request.respondUrl,
+  });
+  if (!respondUrlTrustValidation.ok) {
+    throw respondUrlTrustValidation.error;
   }
 
   const proof = await proveMeasured(measurement, {
@@ -224,15 +230,6 @@ function dedupePendingProofRequests(requests: PendingProofRequest[]): PendingPro
     }
   }
   return [...byId.values()].sort((a, b) => b.requestedAt - a.requestedAt);
-}
-
-function isAbsoluteUrl(value?: string): boolean {
-  if (!value) return false;
-  try {
-    return /^https?:$/.test(new URL(value).protocol);
-  } catch {
-    return false;
-  }
 }
 
 async function requestJson<T>(url: string, init: RequestInit): Promise<T> {
