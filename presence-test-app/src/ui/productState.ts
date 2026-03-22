@@ -46,7 +46,6 @@ export function getProductState(params: {
   requestedProofStatus?: RequestedProofUiStatus | null;
   recentVerifiedServiceId?: string | null;
   connectedServiceId?: string | null;
-  hasActionableRequestedProof?: boolean;
 }) {
   const {
     phase,
@@ -58,9 +57,7 @@ export function getProductState(params: {
     requestedProofStatus,
     recentVerifiedServiceId,
     connectedServiceId,
-    hasActionableRequestedProof = true,
   } = params;
-  const hasActionableRequest = hasActionableRequestedProof;
   const requestSummary = requestedServiceId ? ` for ${requestedServiceId}` : "";
   const hasLocalPass = !!pass && phase !== "not_ready" && phase !== "error" && !hasRecovery;
   const noRequestSummary = formatProductSummary({
@@ -79,7 +76,7 @@ export function getProductState(params: {
     };
   }
 
-  if (requestedServiceId && hasActionableRequest && requestedProofStatus === "submitting") {
+  if (requestedServiceId && requestedProofStatus === "submitting") {
     return {
       label: "IDLE",
       tone: "warn" as const,
@@ -93,13 +90,13 @@ export function getProductState(params: {
     };
   }
 
-  if (requestedServiceId && hasActionableRequest && requestedProofStatus === "failed") {
+  if (requestedServiceId && requestedProofStatus === "failed") {
     return {
       label: "FAIL",
       tone: "warn" as const,
       heading: "Proof request failed",
       detail: `The latest proof attempt${requestSummary} did not complete server verification.`,
-      action: "Tap Submit proof to retry with a fresh local check.",
+      action: "This FAIL signal is brief; retry the request or try again after checking your local proof check.",
       summary: formatProductSummary({
         linkedServiceCount,
         requestState: "active",
@@ -107,13 +104,13 @@ export function getProductState(params: {
     };
   }
 
-  if (requestedServiceId && hasActionableRequest && requestedProofStatus === "expired") {
+  if (requestedServiceId && requestedProofStatus === "expired") {
     return {
       label: "FAIL",
       tone: "warn" as const,
       heading: "Request expired",
       detail: `The latest request${requestSummary} expired before Presence could finish verification.`,
-      action: "Open a fresh service request, then submit proof again.",
+      action: "This FAIL signal is brief; open a fresh request, then submit proof again.",
       summary: formatProductSummary({
         linkedServiceCount,
         requestState: "expired",

@@ -41,7 +41,7 @@ test("getProductState() does not show PASS while linked proof is still being ver
   assert.match(state.detail, /reserved for server-verified success/i);
 });
 
-test("getProductState() holds FAIL after linked proof verification fails even if local PASS exists", () => {
+test("getProductState() shows brief FAIL after linked proof verification fails", () => {
   const state = getProductState({
     phase: "ready",
     pass: true,
@@ -54,7 +54,7 @@ test("getProductState() holds FAIL after linked proof verification fails even if
 
   assert.equal(state.label, "FAIL");
   assert.equal(state.heading, "Proof request failed");
-  assert.match(state.action, /submit proof/i);
+  assert.match(state.action, /brief/i);
 });
 
 test("getProductState() shows PASS briefly after server-verified success when no request remains", () => {
@@ -142,7 +142,7 @@ test("getProductState() keeps a request in IDLE when only local measurement succ
   assert.match(state.detail, /nothing is server-verified yet/i);
 });
 
-test("getProductState() surfaces expired request state explicitly", () => {
+test("getProductState() treats expired request state as FAIL when surfaced with a request", () => {
   const state = getProductState({
     phase: "ready",
     pass: true,
@@ -155,41 +155,7 @@ test("getProductState() surfaces expired request state explicitly", () => {
 
   assert.equal(state.label, "FAIL");
   assert.equal(state.heading, "Request expired");
-  assert.match(state.action, /fresh service request/i);
-});
-
-test("getProductState() ignores expired proof state when no actionable request is active", () => {
-  const state = getProductState({
-    phase: "ready",
-    pass: true,
-    hasLocalMeasurement: true,
-    hasRecovery: false,
-    linkedServiceCount: 1,
-    requestedServiceId: null,
-    requestedProofStatus: "expired",
-    hasActionableRequestedProof: false,
-  });
-
-  assert.equal(state.label, "IDLE");
-  assert.equal(state.heading, "No active request");
-  assert.match(state.summary, /No active request/i);
-});
-
-test("getProductState() ignores stale failed state when no actionable request is active", () => {
-  const state = getProductState({
-    phase: "ready",
-    pass: true,
-    hasLocalMeasurement: true,
-    hasRecovery: false,
-    linkedServiceCount: 1,
-    requestedServiceId: null,
-    requestedProofStatus: "failed",
-    hasActionableRequestedProof: false,
-  });
-
-  assert.equal(state.label, "IDLE");
-  assert.equal(state.heading, "No active request");
-  assert.match(state.summary, /No active request/i);
+  assert.match(state.action, /brief/i);
 });
 
 test("getProductState() keeps a newly loaded request idle until a local check actually runs", () => {

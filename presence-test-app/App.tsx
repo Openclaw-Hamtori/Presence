@@ -108,11 +108,15 @@ const MAX_LOG_ENTRIES = 240;
 const COPY_STATUS_RESET_MS = 1800;
 const RECENT_VERIFIED_PASS_HOLD_MS = 10_000;
 const INITIAL_LINK_CONNECTED_HOLD_MS = 10_000;
+const RECENT_PROOF_FAILURE_HOLD_MS = 10_000;
 // Keep pending-proof hydration on the publicly readable /presence-demo/presence surface until the trust contract changes end-to-end.
 const PRESENCE_DEMO_API_BASE_URL = "https://noctu.link/presence-demo/presence";
 
 type LinkedProofRequestState =
   | { requestKey: string; status: RequestedProofUiStatus }
+  | null;
+type RecentProofFailureState =
+  | { requestKey: string; status: "failed" | "expired"; serviceId: string | null; expiresAt: number }
   | null;
 type RecentVerifiedProofState =
   | { serviceId: string | null; expiresAt: number }
@@ -525,6 +529,7 @@ export default function App() {
   const [scannerBusy, setScannerBusy] = useState(false);
   const [submittingLinkedProof, setSubmittingLinkedProof] = useState(false);
   const [linkedProofRequestState, setLinkedProofRequestState] = useState<LinkedProofRequestState>(null);
+  const [recentProofFailure, setRecentProofFailure] = useState<RecentProofFailureState>(null);
   const [recentVerifiedProof, setRecentVerifiedProof] = useState<RecentVerifiedProofState>(null);
   const [recentConnectedLink, setRecentConnectedLink] = useState<RecentConnectedLinkState>(null);
   const [logEntries, setLogEntries] = useState<string[]>([`[${nowTime()}] App started — platform: ${Platform.OS}`]);
@@ -623,6 +628,21 @@ export default function App() {
     return () => clearTimeout(timeout);
   }, [recentConnectedLink]);
 
+  useEffect(() => {
+    if (!recentProofFailure) return;
+    const remainingMs = recentProofFailure.expiresAt - Date.now();
+    if (remainingMs <= 0) {
+      setRecentProofFailure(null);
+      return;
+    }
+    const timeout = setTimeout(() => {
+      setRecentProofFailure((current) => (
+        current?.expiresAt === recentProofFailure.expiresAt ? null : current
+      ));
+    }, remainingMs);
+    return () => clearTimeout(timeout);
+  }, [recentProofFailure]);
+
   const rememberRecentVerifiedProof = useCallback((serviceId?: string | null) => {
     setRecentVerifiedProof({
       serviceId: serviceId ?? null,
@@ -635,6 +655,27 @@ export default function App() {
       serviceId: serviceId ?? null,
       expiresAt: Date.now() + INITIAL_LINK_CONNECTED_HOLD_MS,
     });
+  }, []);
+
+  const rememberRecentProofFailure = useCallback((request: {
+    requestKey: string;
+    status: "failed" | "expired";
+    serviceId?: string | null;
+  }) => {
+    setRecentProofFailure({
+      requestKey: request.requestKey,
+      status: request.status,
+      serviceId: request.serviceId ?? null,
+      expiresAt: Date.now() + RECENT_PROOF_FAILURE_HOLD_MS,
+    });
+  }, []);
+
+  const clearRecentProofFailure = useCallback((requestKey: string | null) => {
+    setRecentProofFailure((current) => (
+      !current || current.requestKey !== requestKey
+        ? current
+        : null
+    ));
   }, []);
 
   const runLocalMeasurement = useCallback(async () => {
@@ -1286,10 +1327,6 @@ export default function App() {
     },
     [currentDeviceIss, currentPendingProofRequest, effectiveServiceBindings, openedEnvelope, presence.state?.pendingProofRequests]
   );
-  const openedRequestedBinding = useMemo(
-    () => resolveRequestedLinkedBinding(openedEnvelope, effectiveServiceBindings),
-    [effectiveServiceBindings, openedEnvelope]
-  );
   const currentPendingRequestedBinding = useMemo(
     () => (
       currentPendingProofRequest
@@ -1300,6 +1337,10 @@ export default function App() {
         : null
     ),
     [currentPendingProofRequest, effectiveServiceBindings]
+  );
+  const openedRequestedBinding = useMemo(
+    () => resolveRequestedLinkedBinding(openedEnvelope, effectiveServiceBindings),
+    [effectiveServiceBindings, openedEnvelope]
   );
   const orbRequestedBinding = openedRequestedBinding ?? currentPendingRequestedBinding;
   const currentRequestedProofKey = useMemo(
@@ -1321,7 +1362,39 @@ export default function App() {
       orbRequestedBinding?.bindingId,
     ]
   );
+  const latestExpiredRequestedProofKey = useMemo(
+    () => latestExpiredPendingProofRequest
+      ? buildRequestedProofKey({
+        requestId: latestExpiredPendingProofRequest.requestId,
+        bindingId: latestExpiredPendingProofRequest.bindingId,
+        serviceId: latestExpiredPendingProofRequest.serviceId,
+        accountId: latestExpiredPendingProofRequest.accountId ?? null,
+      })
+      : null,
+    [
+      latestExpiredPendingProofRequest?.accountId,
+      latestExpiredPendingProofRequest?.bindingId,
+      latestExpiredPendingProofRequest?.requestId,
+      latestExpiredPendingProofRequest?.serviceId,
+    ]
+  );
   const hasRecovery = effectiveServiceBindings.some((binding) => binding.status === "recovery_pending" || binding.status === "reauth_required");
+
+  useEffect(() => {
+    if (!latestExpiredRequestedProofKey || !latestExpiredPendingProofRequest) {
+      return;
+    }
+    rememberRecentProofFailure({
+      requestKey: latestExpiredRequestedProofKey,
+      status: "expired",
+      serviceId: latestExpiredPendingProofRequest.serviceId,
+    });
+  }, [
+    latestExpiredRequestedProofKey,
+    latestExpiredPendingProofRequest,
+    rememberRecentProofFailure,
+  ]);
+
   const openedSessionAlreadyLinked = !!openedRequestedBinding;
   const recentServiceBindings = [...effectiveServiceBindings]
     .filter((binding) => isActiveBinding(binding))
@@ -1340,14 +1413,21 @@ export default function App() {
     [effectiveServiceBindings]
   );
   const hasActionableRequestedProof = !!openedEnvelope || !!currentPendingProofRequest;
+  const visibleProofFailureStatus = recentProofFailure
+    ? recentProofFailure.requestKey === currentRequestedProofKey
+      ? recentProofFailure.status
+      : !hasActionableRequestedProof
+        ? recentProofFailure.status
+        : null
+    : null;
   const requestedProofStatus = hasActionableRequestedProof && currentRequestedProofKey && linkedProofRequestState?.requestKey === currentRequestedProofKey
     ? linkedProofRequestState.status
-    : hasActionableRequestedProof && latestExpiredPendingProofRequest
-      ? "expired"
+    : visibleProofFailureStatus
+      ? visibleProofFailureStatus
       : null;
   const requestedServiceId = openedEnvelope?.serviceId
     ?? currentPendingProofRequest?.serviceId
-    ?? (hasActionableRequestedProof ? latestExpiredPendingProofRequest?.serviceId : null)
+    ?? recentProofFailure?.serviceId
     ?? null;
   const recentVerifiedServiceId = presence.phase === "ready"
     && !openedEnvelope
@@ -1372,10 +1452,9 @@ export default function App() {
     requestedProofStatus,
     recentVerifiedServiceId,
     connectedServiceId: recentConnectedServiceId,
-    hasActionableRequestedProof,
   });
   const productTone = colorForProductTone(productState.tone);
-  const showActiveRequestHint = !!requestedServiceId && !recentVerifiedServiceId && requestedProofStatus !== "expired";
+  const showActiveRequestHint = hasActionableRequestedProof && !!requestedServiceId && !recentVerifiedServiceId && requestedProofStatus !== "expired";
   const serviceScrollTrackVisible = serviceContentHeight > serviceViewportHeight + 8;
   const serviceScrollThumbHeight = serviceScrollTrackVisible
     ? Math.max(36, (serviceViewportHeight * serviceViewportHeight) / Math.max(serviceContentHeight, 1))
@@ -1521,13 +1600,19 @@ export default function App() {
           rememberRecentVerifiedProof(pendingRequest.serviceId);
           if (requestKey) {
             setLinkedProofRequestState(null);
+            clearRecentProofFailure(requestKey);
           }
           void hydratePendingProofRequests(effectiveServiceBindings, "post_pending_submit");
           return;
         }
 
         if (requestKey) {
-          setLinkedProofRequestState({ requestKey, status: "failed" });
+          rememberRecentProofFailure({
+            requestKey,
+            status: "failed",
+            serviceId: pendingRequest.serviceId,
+          });
+          setLinkedProofRequestState(null);
         }
         setLocalError("This linked service needs recovery or relink before it can accept proof from this device.");
         return;
@@ -1535,7 +1620,12 @@ export default function App() {
         await presence.refresh();
         const message = error instanceof Error ? error.message : String(error);
         if (requestKey) {
-          setLinkedProofRequestState({ requestKey, status: "failed" });
+          rememberRecentProofFailure({
+            requestKey,
+            status: "failed",
+            serviceId: pendingRequest.serviceId,
+          });
+          setLinkedProofRequestState(null);
         }
         setLocalError(`Could not submit the pending proof request: ${message}`);
         addLog(`❌ pending proof error — ${message}`);
@@ -1613,13 +1703,19 @@ export default function App() {
           rememberRecentVerifiedProof(openedRequestedBinding.serviceId);
           if (requestKey) {
             setLinkedProofRequestState(null);
+            clearRecentProofFailure(requestKey);
           }
           clearConnectSession();
           return;
         }
 
         if (requestKey) {
-          setLinkedProofRequestState({ requestKey, status: "failed" });
+          rememberRecentProofFailure({
+            requestKey,
+            status: "failed",
+            serviceId: openedRequestedBinding.serviceId,
+          });
+          setLinkedProofRequestState(null);
         }
         if (result.status === "recovery_required") {
           setLocalError("This linked service needs recovery or relink before it can accept proof from this device.");
@@ -1632,7 +1728,12 @@ export default function App() {
         await presence.refresh();
         const message = error instanceof Error ? error.message : String(error);
         if (requestKey) {
-          setLinkedProofRequestState({ requestKey, status: "failed" });
+          rememberRecentProofFailure({
+            requestKey,
+            status: "failed",
+            serviceId: openedRequestedBinding.serviceId,
+          });
+          setLinkedProofRequestState(null);
         }
         setLocalError(`Could not submit proof to the linked service: ${message}`);
         addLog(`❌ linked proof error — ${message}`);
