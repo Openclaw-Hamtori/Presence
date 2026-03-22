@@ -367,7 +367,7 @@ Trigger pending request hydration on:
 - add app foreground sync for trusted `pendingRequestsUrl`
 - let orb submit the first active pending request without a fresh deeplink
 
-### Phase 2: user-visible wake-up affordances
+### Phase 2: optional user-visible wake-up affordances
 
 - add device push-token registration from mobile to backend
 - add pending-proof signal transport interface and delivery bookkeeping
@@ -390,7 +390,7 @@ Trigger pending request hydration on:
 
 ## Implementation started in this repo
 
-This pass now covers Phase 1 plus the push-driven foundation slice of Phase 2.
+This pass now covers Phase 1 plus the optional push foundation slice of Phase 2.
 
 Implemented foundation:
 

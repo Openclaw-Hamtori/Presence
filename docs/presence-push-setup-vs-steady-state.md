@@ -4,8 +4,9 @@ Date: 2026-03-22
 
 ## Goal
 
-Keep push as a best-effort wake signal for pending proof requests, while making APNs registration a real one-time setup responsibility instead of an accidental side effect of the steady-state proof path.
+Keep push as **optional** experimental wake signal for pending proof requests, while making APNs registration a clean one-time setup responsibility instead of an accidental side effect of the steady-state proof path.
 
+The canonical user path is app-open hydration: service creates a pending request, user opens Presence, and taps to provide proof. Push wake is never required for correctness.
 ## Product split
 
 ### 1. Initial setup phase
@@ -26,9 +27,9 @@ Rules:
 - push registration is never allowed to change proof truth
 - failure to register push must not block linking or direct foreground proof submission
 
-### 2. Steady-state responder phase
+### 2. Steady-state responder phase (non-canonical wake path)
 
-This is the normal repeated-use path after setup is complete.
+This is an optional wake-improvement path after setup is complete.
 
 1. service creates a pending proof request
 2. server looks up stored device push token(s) and sends a wake push

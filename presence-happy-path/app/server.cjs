@@ -615,7 +615,7 @@ async function main() {
   console.log(`[presence-happy-path] public Presence API base: ${publicPresenceApiBaseUrl}`);
   console.log(`[presence-happy-path] linkage store: ${storePath}`);
   console.log(
-    `[presence-happy-path] pending-proof push transport: ${
+    `[presence-happy-path] optional pending-proof push transport (best-effort wake): ${
       process.env.PRESENCE_PUSH_TRANSPORT || "off"
     }`
   );

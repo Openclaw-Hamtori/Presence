@@ -27,7 +27,7 @@ Phase 4 extends the persistent linkage model on device with:
 Still intentionally unfinished:
 - camera QR scanner UI (this phase uses deeplink / QR payload scaffolding)
 - native universal link registration / app-site-association hosting
-- push-driven recovery notifications
+- optional APNs recovery wake notifications (non-canonical, experimental transport only)
 - production-hardened cross-platform background scheduler
 
 ---

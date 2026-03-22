@@ -39,7 +39,7 @@ What exists now:
 Still intentionally out of scope:
 - full scanner/native QR stack
 - production RDBMS migrations
-- hosted notification delivery
+- hosted notification delivery (experimental, optional; not canonical product path)
 
 ---
 
@@ -421,7 +421,7 @@ Minimal reference model in this phase:
    - calls `createLinkedProofRequest()` and returns a normalized `/presence/linked-accounts/:accountId/nonce` response containing a fresh nonce plus verify/status metadata
    - or calls `createPendingProofRequest()` and exposes the pending proof request endpoints for app-open hydration
 8. Mobile submits PASS to `verifyLinkedAccountApiUrl` for linked nonce flows or to `/presence/pending-proof-requests/:requestId/respond` for pending-request flows.
-9. Mobile may still retry failed linked PASS submissions or pending request hydration on foreground/background wake as best-effort catch-up.
+9. Mobile may still retry failed linked PASS submissions or pending request hydration on foreground reopen or background wake as best-effort catch-up. Foreground app-open hydration remains the canonical recovery path; wake delivery is optional.
 10. Service calls `completeLinkSession()`, `verifyLinkedAccount()`, `respondToPendingProofRequest()`, or `getLinkedAccountReadiness()` and returns a normalized linked/recovery/readiness payload.
 
 This is enough to wire real product UX without building scanner/native camera stack yet.

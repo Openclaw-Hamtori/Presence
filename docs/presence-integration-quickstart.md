@@ -11,7 +11,7 @@ Use this model everywhere:
 - app submits PASS to the service backend
 - backend verifies and allows or denies the action
 
-If local app state and backend state disagree, the backend wins.
+Push/APNs is intentionally non-canonical and optional (best-effort wake signal only); the product path remains app-open hydration + request/response. If local app state and backend state disagree, the backend wins.
 
 ---
 

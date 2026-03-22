@@ -164,7 +164,7 @@ export function getProductState(params: {
       tone: "warn" as const,
       heading: "No active request",
       detail: "Presence is running a local-only check. Nothing from this check is being submitted or server-verified.",
-      action: "Open Connect to load a service link or wait for a pending request when proof is needed.",
+      action: "Open the service link flow, or open Presence to hydrate pending proof requests when one is waiting.",
       summary: noRequestSummary,
     };
   }
@@ -236,8 +236,8 @@ export function getProductState(params: {
         ? "The latest on-device check passed locally, but no linked service is currently asking for proof and nothing has been server-verified."
         : "The latest on-device check passed locally, but no request is loaded and nothing has been server-verified.",
       action: linkedServiceCount > 0
-        ? "Wait for a linked service request or open Connect to load a new link."
-        : "Open Connect to load a service link when proof is needed.",
+        ? "Open Presence to hydrate a pending request, or load a new link if needed."
+        : "Open Presence (or link flow) when proof is needed.",
       summary: noRequestSummary,
     };
   }
@@ -248,7 +248,7 @@ export function getProductState(params: {
       tone: "error" as const,
       heading: "Presence error",
       detail: "Presence could not complete the latest local check. No request was active, and nothing was server-verified.",
-      action: "Retry the local-only check or open a fresh service request.",
+      action: "Retry the local-only check, or open Presence to hydrate any pending service request.",
       summary: noRequestSummary,
     };
   }
@@ -260,8 +260,8 @@ export function getProductState(params: {
       heading: "Local check failed",
       detail: "The latest local-only check did not qualify, and nothing was submitted to a server.",
       action: linkedServiceCount > 0
-        ? "Wait for a linked service request, then run a fresh local check."
-        : "Open Connect when you have a service link or proof request.",
+        ? "Open Presence to hydrate a pending request, then run a fresh local check."
+        : "Open the service link flow when you have a service link or proof request.",
       summary: noRequestSummary,
     };
   }
@@ -274,7 +274,7 @@ export function getProductState(params: {
       ? "Presence is linked, but no service is currently asking for proof."
       : "Open Connect to start a link or wait for a service request.",
     action: linkedServiceCount > 0
-      ? "Wait for a linked service request or open Connect to load one."
+      ? "Open Presence to hydrate linked service requests."
       : "Open Connect to start a link from your service.",
     summary: noRequestSummary,
   };

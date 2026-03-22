@@ -144,7 +144,7 @@ export function PresenceStatusCard({ presence, fetchNonce }: PresenceStatusCardP
                     ? "Latest local-only check passed on device, but no request is active and nothing has been server-verified."
                     : hasLocalMeasurement
                       ? "Latest local-only check did not qualify. No request is active and nothing was sent to a server."
-                      : "No active request. Load a service request before submitting proof."}
+                      : "No active request. Open Presence and let pending requests hydrate, then load/refresh a service request before submitting proof."}
             </Text>
             {phase !== "measuring" && (
               <TouchableOpacity style={styles.primaryButton} onPress={handleMeasure}>
