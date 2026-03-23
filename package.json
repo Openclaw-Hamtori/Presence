@@ -9,6 +9,7 @@
   ],
   "scripts": {
     "check:mobile-sync": "node scripts/check-mobile-sync.mjs",
+    "check:phase1-smoke": "node scripts/phase1-baseline-smoke.mjs",
     "test": "npm run check:mobile-sync && npm run test -w presence-verifier && npm run test -w presence-sdk && npm run type-check -w presence-mobile && npm run type-check -w presence-test-app"
   }
 }
