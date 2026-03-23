@@ -1,3 +1,6 @@
+import { mkdirSync } from "fs";
+import { dirname } from "path";
+import Database from "better-sqlite3";
 import type {
   LinkageStore,
   LinkageStoreCapabilities,
@@ -12,8 +15,8 @@ import type {
 /**
  * SQLite-first scaffold surface for the next store slice.
  *
- * This file intentionally keeps runtime behavior inert: it's a contract + schema
- * preparation layer that does not alter the default file-backed happy path.
+ * This implementation keeps the file-backed store as default and provides only the
+ * first persisted linkage slice: create/complete link session lifecycle.
  */
 
 export const SQLITE_FIRST_MODE = "single-team" as const;
@@ -142,22 +145,22 @@ CREATE INDEX IF NOT EXISTS idx_audit_events_occurred_at ON audit_events(occurred
 
 const STUB_ERROR = "SQLiteLinkageStore is a prepared scaffold and not yet wired to runtime persistence";
 
-function throwStoreStub(operation: string): never {
-  throw new Error(`${operation}: ${STUB_ERROR}`);
-}
-
-/**
- * Explicitly adapter-shaped SQLite store scaffold.
- * Not bound into default runtime path yet.
- */
 export class SqliteLinkageStore implements LinkageStore {
   readonly kind: "sqlite" = "sqlite";
   readonly dbPath: string;
   readonly options: SqliteLinkageStoreOptions;
+  private readonly db: Database.Database;
+  private txDepth = 0;
 
   constructor(options: SqliteLinkageStoreOptions) {
     this.options = { ...options, mode: options.mode ?? SQLITE_FIRST_MODE };
     this.dbPath = options.dbPath;
+    if (this.dbPath !== ":memory:") {
+      mkdirSync(dirname(this.dbPath), { recursive: true });
+    }
+    this.db = new Database(this.dbPath);
+    this.db.exec(`PRAGMA journal_mode = ${options.journalMode ?? "WAL"};`);
+    this.initializeSchema();
   }
 
   getCapabilities(): LinkageStoreCapabilities {
@@ -169,64 +172,447 @@ export class SqliteLinkageStore implements LinkageStore {
     };
   }
 
-  saveLinkSession(_session: LinkSession): Promise<void> {
-    return throwStoreStub("saveLinkSession");
+  async saveLinkSession(session: LinkSession): Promise<void> {
+    await this.withAutoTransaction(async () => {
+      const row = this.sessionToRow(session);
+      const stmt = this.db.prepare(`
+        INSERT INTO link_sessions (
+          id,
+          service_id,
+          account_id,
+          issued_nonce,
+          requested_at,
+          expires_at,
+          status,
+          completed_at,
+          linked_device_iss,
+          relink_of_binding_id,
+          recovery_reason,
+          completion_json,
+          metadata_json
+        ) VALUES (@id, @service_id, @account_id, @issued_nonce, @requested_at, @expires_at, @status, @completed_at, @linked_device_iss, @relink_of_binding_id, @recovery_reason, @completion_json, @metadata_json)
+        ON CONFLICT(id) DO UPDATE SET
+          service_id = excluded.service_id,
+          account_id = excluded.account_id,
+          issued_nonce = excluded.issued_nonce,
+          requested_at = excluded.requested_at,
+          expires_at = excluded.expires_at,
+          status = excluded.status,
+          completed_at = excluded.completed_at,
+          linked_device_iss = excluded.linked_device_iss,
+          relink_of_binding_id = excluded.relink_of_binding_id,
+          recovery_reason = excluded.recovery_reason,
+          completion_json = excluded.completion_json,
+          metadata_json = excluded.metadata_json
+      `);
+      stmt.run(row);
+    });
   }
 
-  getLinkSession(_sessionId: string): Promise<LinkSession | null> {
-    return throwStoreStub("getLinkSession");
+  async getLinkSession(sessionId: string): Promise<LinkSession | null> {
+    const row = this.db.prepare("SELECT * FROM link_sessions WHERE id = ?").get(sessionId) as SqliteLinkSessionRow | undefined;
+    if (!row) {
+      return null;
+    }
+    return this.rowToLinkSession(row);
   }
 
-  saveServiceBinding(_binding: ServiceBinding): Promise<void> {
-    return throwStoreStub("saveServiceBinding");
+  async saveServiceBinding(binding: ServiceBinding): Promise<void> {
+    await this.withAutoTransaction(async () => {
+      const stmt = this.db.prepare(`
+        INSERT INTO service_bindings (
+          binding_id,
+          service_id,
+          account_id,
+          device_iss,
+          created_at,
+          updated_at,
+          status,
+          last_linked_at,
+          last_verified_at,
+          last_attested_at,
+          last_snapshot_json,
+          revoked_at,
+          unlinked_at,
+          reauth_required_at,
+          recovery_started_at,
+          recovery_reason,
+          metadata_json
+        ) VALUES (@binding_id, @service_id, @account_id, @device_iss, @created_at, @updated_at, @status, @last_linked_at, @last_verified_at, @last_attested_at, @last_snapshot_json, @revoked_at, @unlinked_at, @reauth_required_at, @recovery_started_at, @recovery_reason, @metadata_json)
+        ON CONFLICT(binding_id) DO UPDATE SET
+          binding_id = excluded.binding_id,
+          service_id = excluded.service_id,
+          account_id = excluded.account_id,
+          device_iss = excluded.device_iss,
+          created_at = excluded.created_at,
+          updated_at = excluded.updated_at,
+          status = excluded.status,
+          last_linked_at = excluded.last_linked_at,
+          last_verified_at = excluded.last_verified_at,
+          last_attested_at = excluded.last_attested_at,
+          last_snapshot_json = excluded.last_snapshot_json,
+          revoked_at = excluded.revoked_at,
+          unlinked_at = excluded.unlinked_at,
+          reauth_required_at = excluded.reauth_required_at,
+          recovery_started_at = excluded.recovery_started_at,
+          recovery_reason = excluded.recovery_reason,
+          metadata_json = excluded.metadata_json
+      `);
+      stmt.run({
+        binding_id: binding.bindingId,
+        service_id: binding.serviceId,
+        account_id: binding.accountId,
+        device_iss: binding.deviceIss,
+        created_at: binding.createdAt,
+        updated_at: binding.updatedAt,
+        status: binding.status,
+        last_linked_at: binding.lastLinkedAt,
+        last_verified_at: binding.lastVerifiedAt,
+        last_attested_at: binding.lastAttestedAt,
+        last_snapshot_json: binding.lastSnapshot ? JSON.stringify(binding.lastSnapshot) : null,
+        revoked_at: binding.revokedAt ?? null,
+        unlinked_at: binding.unlinkedAt ?? null,
+        reauth_required_at: binding.reauthRequiredAt ?? null,
+        recovery_started_at: binding.recoveryStartedAt ?? null,
+        recovery_reason: binding.recoveryReason ?? null,
+        metadata_json: binding.metadata ? JSON.stringify(binding.metadata) : null,
+      });
+    });
   }
 
-  getServiceBinding(_serviceId: string, _accountId: string): Promise<ServiceBinding | null> {
-    return throwStoreStub("getServiceBinding");
+  async getServiceBinding(serviceId: string, accountId: string): Promise<ServiceBinding | null> {
+    const row = this.db.prepare(
+      "SELECT * FROM service_bindings WHERE service_id = ? AND account_id = ?"
+    ).get(serviceId, accountId) as SqliteServiceBindingRow | undefined;
+    if (!row) {
+      return null;
+    }
+    return this.rowToServiceBinding(row);
   }
 
-  listBindingsForDevice(_deviceIss: string): Promise<ServiceBinding[]> {
-    return throwStoreStub("listBindingsForDevice");
+  async listBindingsForDevice(deviceIss: string): Promise<ServiceBinding[]> {
+    const rows = this.db.prepare("SELECT * FROM service_bindings WHERE device_iss = ?").all(deviceIss) as SqliteServiceBindingRow[];
+    return rows.map((row) => this.rowToServiceBinding(row));
   }
 
-  savePendingProofRequest(_request: PendingProofRequest): Promise<void> {
-    return throwStoreStub("savePendingProofRequest");
+  async savePendingProofRequest(_request: PendingProofRequest): Promise<void> {
+    throwStoreStub("savePendingProofRequest");
   }
 
-  getPendingProofRequest(_requestId: string): Promise<PendingProofRequest | null> {
-    return throwStoreStub("getPendingProofRequest");
+  async getPendingProofRequest(_requestId: string): Promise<PendingProofRequest | null> {
+    throwStoreStub("getPendingProofRequest");
   }
 
-  listPendingProofRequests(_filter?: {
+  async listPendingProofRequests(_filter?: {
     serviceId?: string;
     accountId?: string;
     bindingId?: string;
     deviceIss?: string;
     statuses?: PendingProofRequestStatus[];
   }): Promise<PendingProofRequest[]> {
-    return throwStoreStub("listPendingProofRequests");
+    throwStoreStub("listPendingProofRequests");
   }
 
-  getLinkedDevice(_deviceIss: string): Promise<LinkedDevice | null> {
-    return throwStoreStub("getLinkedDevice");
+  async getLinkedDevice(deviceIss: string): Promise<LinkedDevice | null> {
+    const row = this.db.prepare("SELECT * FROM linked_devices WHERE iss = ?").get(deviceIss) as SqliteLinkedDeviceRow | undefined;
+    if (!row) {
+      return null;
+    }
+    return this.rowToLinkedDevice(row);
   }
 
-  saveLinkedDevice(_device: LinkedDevice): Promise<void> {
-    return throwStoreStub("saveLinkedDevice");
+  async saveLinkedDevice(device: LinkedDevice): Promise<void> {
+    await this.withAutoTransaction(async () => {
+      const stmt = this.db.prepare(`
+        INSERT INTO linked_devices (
+          iss,
+          platform,
+          first_linked_at,
+          last_verified_at,
+          last_attested_at,
+          trust_state,
+          revoked_at,
+          recovery_started_at,
+          metadata_json
+        ) VALUES (@iss, @platform, @first_linked_at, @last_verified_at, @last_attested_at, @trust_state, @revoked_at, @recovery_started_at, @metadata_json)
+        ON CONFLICT(iss) DO UPDATE SET
+          iss = excluded.iss,
+          platform = excluded.platform,
+          first_linked_at = excluded.first_linked_at,
+          last_verified_at = excluded.last_verified_at,
+          last_attested_at = excluded.last_attested_at,
+          trust_state = excluded.trust_state,
+          revoked_at = excluded.revoked_at,
+          recovery_started_at = excluded.recovery_started_at,
+          metadata_json = excluded.metadata_json
+      `);
+      stmt.run({
+        iss: device.iss,
+        platform: device.platform,
+        first_linked_at: device.firstLinkedAt,
+        last_verified_at: device.lastVerifiedAt,
+        last_attested_at: device.lastAttestedAt,
+        trust_state: device.trustState,
+        revoked_at: device.revokedAt ?? null,
+        recovery_started_at: device.recoveryStartedAt ?? null,
+        metadata_json: device.metadata ? JSON.stringify(device.metadata) : null,
+      });
+    });
   }
 
-  appendAuditEvent(_event: LinkageAuditEvent): Promise<void> {
-    return throwStoreStub("appendAuditEvent");
+  async appendAuditEvent(event: LinkageAuditEvent): Promise<void> {
+    await this.withAutoTransaction(async () => {
+      const stmt = this.db.prepare(`
+        INSERT INTO audit_events (
+          event_id,
+          occurred_at,
+          type,
+          service_id,
+          account_id,
+          binding_id,
+          device_iss,
+          reason,
+          metadata_json
+        ) VALUES (@event_id, @occurred_at, @type, @service_id, @account_id, @binding_id, @device_iss, @reason, @metadata_json)
+      `);
+      stmt.run({
+        event_id: event.eventId,
+        occurred_at: event.occurredAt,
+        type: event.type,
+        service_id: event.serviceId,
+        account_id: event.accountId,
+        binding_id: event.bindingId ?? null,
+        device_iss: event.deviceIss ?? null,
+        reason: event.reason,
+        metadata_json: event.metadata ? JSON.stringify(event.metadata) : null,
+      });
+    });
   }
 
-  listAuditEvents(_filter?: { serviceId?: string; accountId?: string; bindingId?: string }): Promise<LinkageAuditEvent[]> {
-    return throwStoreStub("listAuditEvents");
+  async listAuditEvents(filter?: { serviceId?: string; accountId?: string; bindingId?: string }): Promise<LinkageAuditEvent[]> {
+    const rows = this.db.prepare("SELECT * FROM audit_events").all() as {
+      event_id: string;
+      occurred_at: number;
+      type: string;
+      service_id: string | null;
+      account_id: string | null;
+      binding_id: string | null;
+      device_iss: string | null;
+      reason: string | null;
+      metadata_json: string | null;
+    }[];
+
+    return rows
+      .map((row) => ({
+        eventId: row.event_id,
+        occurredAt: row.occurred_at,
+        type: row.type as LinkageAuditEvent["type"],
+        serviceId: row.service_id ?? "",
+        accountId: row.account_id ?? "",
+        bindingId: row.binding_id ?? undefined,
+        deviceIss: row.device_iss ?? undefined,
+        reason: row.reason ?? undefined,
+        metadata: row.metadata_json ? safeJsonParse<Record<string, string>>(row.metadata_json) : undefined,
+      }))
+      .filter((event) => {
+        if (filter?.serviceId && event.serviceId !== filter.serviceId) return false;
+        if (filter?.accountId && event.accountId !== filter.accountId) return false;
+        if (filter?.bindingId && event.bindingId !== filter.bindingId) return false;
+        return true;
+      });
   }
 
   async mutate<T>(mutator: (store: LinkageStore) => Promise<T>): Promise<T> {
-    throwStoreStub("mutate");
-    throw new Error("unreachable");
+    return this.withAutoTransaction(() => mutator(this));
   }
+
+  private initializeSchema(): void {
+    const shouldStartTransaction = this.txDepth === 0;
+    this.txDepth += 1;
+    if (shouldStartTransaction) {
+      this.db.exec("BEGIN IMMEDIATE");
+    }
+
+    try {
+      for (const artifact of SQLITE_LINKAGE_SCHEMA) {
+        this.db.exec(artifact.sql);
+      }
+      if (shouldStartTransaction) {
+        this.db.exec("COMMIT");
+      }
+    } catch (error) {
+      if (shouldStartTransaction) {
+        try {
+          this.db.exec("ROLLBACK");
+        } catch {
+          // ignore rollback failures while surfacing original schema error
+        }
+      }
+      throw error;
+    } finally {
+      this.txDepth -= 1;
+    }
+  }
+
+  private async withAutoTransaction<T>(operation: () => Promise<T> | T): Promise<T> {
+    const shouldStartTransaction = this.txDepth === 0;
+    this.txDepth += 1;
+    if (shouldStartTransaction) {
+      this.db.exec("BEGIN IMMEDIATE");
+    }
+
+    try {
+      const result = await operation();
+      if (shouldStartTransaction) {
+        this.db.exec("COMMIT");
+      }
+      return result;
+    } catch (error) {
+      if (shouldStartTransaction) {
+        try {
+          this.db.exec("ROLLBACK");
+        } catch {
+          // ignore rollback failures while surfacing original cause
+        }
+      }
+      throw error;
+    } finally {
+      this.txDepth -= 1;
+    }
+  }
+
+  private sessionToRow(session: LinkSession): Record<string, unknown> {
+    return {
+      id: session.id,
+      service_id: session.serviceId,
+      account_id: session.accountId,
+      issued_nonce: session.issuedNonce,
+      requested_at: session.requestedAt,
+      expires_at: session.expiresAt,
+      status: session.status,
+      completed_at: session.completedAt ?? null,
+      linked_device_iss: session.linkedDeviceIss ?? null,
+      relink_of_binding_id: session.relinkOfBindingId ?? null,
+      recovery_reason: session.recoveryReason ?? null,
+      completion_json: session.completion ? JSON.stringify(session.completion) : null,
+      metadata_json: session.metadata ? JSON.stringify(session.metadata) : null,
+    };
+  }
+
+  private rowToLinkSession(row: SqliteLinkSessionRow): LinkSession {
+    return {
+      id: row.id,
+      serviceId: row.service_id,
+      accountId: row.account_id,
+      issuedNonce: row.issued_nonce,
+      requestedAt: row.requested_at,
+      expiresAt: row.expires_at,
+      status: row.status as LinkSession["status"],
+      completedAt: row.completed_at ?? undefined,
+      linkedDeviceIss: row.linked_device_iss ?? undefined,
+      relinkOfBindingId: row.relink_of_binding_id ?? undefined,
+      recoveryReason: row.recovery_reason ?? undefined,
+      completion: row.completion_json ? safeJsonParse(row.completion_json) : undefined,
+      metadata: row.metadata_json ? safeJsonParse(row.metadata_json) : undefined,
+    };
+  }
+
+  private rowToServiceBinding(row: SqliteServiceBindingRow): ServiceBinding {
+    return {
+      bindingId: row.binding_id,
+      serviceId: row.service_id,
+      accountId: row.account_id,
+      deviceIss: row.device_iss,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      status: row.status as ServiceBinding["status"],
+      lastLinkedAt: row.last_linked_at,
+      lastVerifiedAt: row.last_verified_at,
+      lastAttestedAt: row.last_attested_at,
+      lastSnapshot: row.last_snapshot_json ? safeJsonParse(row.last_snapshot_json) : undefined,
+      revokedAt: row.revoked_at ?? undefined,
+      unlinkedAt: row.unlinked_at ?? undefined,
+      reauthRequiredAt: row.reauth_required_at ?? undefined,
+      recoveryStartedAt: row.recovery_started_at ?? undefined,
+      recoveryReason: row.recovery_reason ?? undefined,
+      metadata: row.metadata_json ? safeJsonParse(row.metadata_json) : undefined,
+    };
+  }
+
+  private rowToLinkedDevice(row: SqliteLinkedDeviceRow): LinkedDevice {
+    return {
+      iss: row.iss,
+      platform: row.platform as LinkedDevice["platform"],
+      firstLinkedAt: row.first_linked_at,
+      lastVerifiedAt: row.last_verified_at,
+      lastAttestedAt: row.last_attested_at,
+      trustState: row.trust_state as LinkedDevice["trustState"],
+      revokedAt: row.revoked_at ?? undefined,
+      recoveryStartedAt: row.recovery_started_at ?? undefined,
+      metadata: row.metadata_json ? safeJsonParse(row.metadata_json) : undefined,
+    };
+  }
+}
+
+function throwStoreStub(operation: string): never {
+  throw new Error(`${operation}: ${STUB_ERROR}`);
+}
+
+function safeJsonParse<T>(value: string): T | undefined {
+  if (!value) return undefined;
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return undefined;
+  }
+}
+
+interface SqliteLinkSessionRow {
+  id: string;
+  service_id: string;
+  account_id: string;
+  issued_nonce: string;
+  requested_at: number;
+  expires_at: number;
+  status: string;
+  completed_at: number | null;
+  linked_device_iss: string | null;
+  relink_of_binding_id: string | null;
+  recovery_reason: string | null;
+  completion_json: string | null;
+  metadata_json: string | null;
+}
+
+interface SqliteServiceBindingRow {
+  binding_id: string;
+  service_id: string;
+  account_id: string;
+  device_iss: string;
+  created_at: number;
+  updated_at: number;
+  status: string;
+  last_linked_at: number;
+  last_verified_at: number;
+  last_attested_at: number;
+  last_snapshot_json: string | null;
+  revoked_at: number | null;
+  unlinked_at: number | null;
+  reauth_required_at: number | null;
+  recovery_started_at: number | null;
+  recovery_reason: string | null;
+  metadata_json: string | null;
+}
+
+interface SqliteLinkedDeviceRow {
+  iss: string;
+  platform: string;
+  first_linked_at: number;
+  last_verified_at: number;
+  last_attested_at: number;
+  trust_state: string;
+  revoked_at: number | null;
+  recovery_started_at: number | null;
+  metadata_json: string | null;
 }
 
 export function renderSqliteSchema(): string {

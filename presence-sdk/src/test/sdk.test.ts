@@ -3,7 +3,7 @@
  */
 
 import { strict as assert } from "assert";
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { generateKeyPairSync, createSign } from "crypto";
@@ -23,6 +23,7 @@ import {
   rewriteLinkSessionForPublicBase,
 } from "../api.js";
 import { InMemoryLinkageStore, FileSystemLinkageStore, LinkageStoreCorruptionError, fileLinkageStorePath } from "../linkage.js";
+import { SqliteLinkageStore } from "../sqlite-store.js";
 import { parsePresenceRequest, ParseError } from "../transport.js";
 import { createNonce, generateNonce } from "../nonce.js";
 import type { PresenceAttestation, ManagedNonceStore } from "../types.js";
@@ -242,6 +243,89 @@ function buildAndroidBody(
     assert.equal(session.completion?.verifyLinkedAccountApiUrl, "/presence/linked-accounts/acct-1/verify");
   });
 
+  await test("sqlite-backed LinkageStore persists createLinkSession() and reads session via same store", async () => {
+    const dbDir = mkdtempSync(join(tmpdir(), "presence-sqlite-link-session-"));
+    const store = new SqliteLinkageStore({
+      dbPath: join(dbDir, "presence-linkage.db"),
+      mode: "single-team",
+      journalMode: "WAL",
+    });
+
+    try {
+      const client = new PresenceClient({ silent: true, linkageStore: store, serviceId: "svc" });
+      const { session } = await client.createLinkSession({
+        serviceId: "svc",
+        accountId: "acct-sqlite",
+        metadata: { source: "sqlite-test" },
+      });
+
+      const persisted = await store.getLinkSession(session.id);
+      if (!persisted) {
+        throw new Error("expected persisted session");
+      }
+
+      assert.equal(persisted.status, "pending");
+      assert.equal(persisted.accountId, "acct-sqlite");
+      assert.equal(persisted.serviceId, "svc");
+      assert.equal(persisted.metadata?.source, "sqlite-test");
+
+      const auditEvents = await store.listAuditEvents({ serviceId: "svc", accountId: "acct-sqlite" });
+      assert.equal(auditEvents.some((event) => event.type === "link_started"), true);
+    } finally {
+      rmSync(dbDir, { recursive: true, force: true });
+    }
+  });
+
+  await test("sqlite-backed completeLinkSession() writes binding/device and consumes session in one flow", async () => {
+    // Small-team/single-node SQLite-first assumption is explicit in test setup.
+    const dbDir = mkdtempSync(join(tmpdir(), "presence-sqlite-complete-"));
+    const store = new SqliteLinkageStore({ dbPath: join(dbDir, "presence-linkage.db"), mode: "single-team" });
+    const client = new PresenceClient({ silent: true, linkageStore: store, serviceId: "svc" });
+
+    try {
+      const { session } = await client.createLinkSession({ serviceId: "svc", accountId: "acct-sqlite-complete" });
+      const attestation = buildAttestation(keys.publicKeyDer, keys.privateKeyDer, session.issuedNonce);
+      const body = buildAndroidBody(attestation, keys.publicKeyDer, undefined, true);
+      const iss = deriveIss(keys.publicKeyDer);
+
+      const verifyStub = async () => ({
+        verified: true as const,
+        pol_version: "1.0",
+        iss,
+        iat: NOW,
+        state_created_at: STATE_CREATED,
+        state_valid_until: STATE_VALID_UNTIL,
+        human: true as const,
+        pass: true as const,
+        signals: ["heart_rate", "steps"] as const,
+        nonce: session.issuedNonce,
+      });
+      (client as unknown as { verify: typeof verifyStub }).verify = verifyStub;
+
+      const result = await client.completeLinkSession({ sessionId: session.id, body });
+      assert.equal(result.verification.verified, true);
+      assert.equal(result.session.status, "consumed");
+
+      const persistedSession = await store.getLinkSession(session.id);
+      if (!persistedSession) {
+        throw new Error("expected completed session");
+      }
+      assert.equal(persistedSession.status, "consumed");
+      assert.ok(persistedSession.completedAt);
+
+      const device = await store.getLinkedDevice(iss);
+      assert.equal(device?.platform, "android");
+
+      const binding = await store.getServiceBinding("svc", "acct-sqlite-complete");
+      assert.equal(binding?.deviceIss, iss);
+      assert.equal(binding?.lastSnapshot?.stateValidUntil, STATE_VALID_UNTIL);
+
+      const auditEvents = await store.listAuditEvents({ serviceId: "svc", accountId: "acct-sqlite-complete" });
+      assert.equal(auditEvents.some((event) => event.type === "link_completed"), true);
+    } finally {
+      rmSync(dbDir, { recursive: true, force: true });
+    }
+  });
   await test("createCompletionSessionResponse() prefers session completion URLs over contract defaults", async () => {
     const store = new InMemoryLinkageStore();
     const client = new PresenceClient({ silent: true, linkageStore: store, serviceId: "svc" });
