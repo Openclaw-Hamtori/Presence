@@ -26,6 +26,7 @@ import { InMemoryLinkageStore, FileSystemLinkageStore, LinkageStoreCorruptionErr
 import { SqliteLinkageStore } from "../sqlite-store.js";
 import { parsePresenceRequest, ParseError } from "../transport.js";
 import { createNonce, generateNonce } from "../nonce.js";
+import { LinkageStoreNonceResolver } from "../nonce-rehydration.js";
 import type { PresenceAttestation, ManagedNonceStore } from "../types.js";
 
 let passed = 0;
@@ -158,6 +159,84 @@ function buildAndroidBody(
 
     assert.ok(await nonceStore.isValid(nonce.value));
     assert.ok(!(await client.nonceStore.isUsed(nonce.value)));
+  });
+
+  await test("LinkageStoreNonceResolver returns issue time for active pending proof request", async () => {
+    const store = new InMemoryLinkageStore();
+    const now = Math.floor(Date.now() / 1000);
+    const serviceId = "svc";
+    const accountId = "acct-resolver";
+    const nonce = "resolver-nonce";
+
+    await store.savePendingProofRequest({
+      id: "ppreq-resolver",
+      serviceId,
+      accountId,
+      bindingId: "bind-1",
+      deviceIss: "presence:device:1",
+      nonce,
+      requestedAt: now - 1,
+      expiresAt: now + 60,
+      status: "pending",
+    });
+
+    const resolver = new LinkageStoreNonceResolver(store);
+    const issuedAt = await resolver.resolvePendingProofNonceIssueTime({
+      serviceId,
+      accountId,
+      nonce,
+      now,
+    });
+    assert.equal(issuedAt, now - 1);
+  });
+
+  await test("LinkageStoreNonceResolver returns issued time for active link-session", async () => {
+    const store = new InMemoryLinkageStore();
+    const now = Math.floor(Date.now() / 1000);
+    await store.saveLinkSession({
+      id: "plink-1",
+      serviceId: "svc",
+      accountId: "acct-link-session",
+      issuedNonce: "link-session-nonce",
+      requestedAt: now - 2,
+      expiresAt: now + 60,
+      status: "pending",
+    });
+
+    const resolver = new LinkageStoreNonceResolver(store);
+    const issuedAt = await resolver.resolveLinkSessionIssueTime({
+      sessionId: "plink-1",
+      now,
+    });
+    assert.equal(issuedAt, now - 2);
+  });
+
+  await test("LinkageStoreNonceResolver ignores expired pending proof nonces", async () => {
+    const store = new InMemoryLinkageStore();
+    const now = Math.floor(Date.now() / 1000);
+    const serviceId = "svc";
+    const accountId = "acct-resolver-expired";
+
+    await store.savePendingProofRequest({
+      id: "ppreq-expired",
+      serviceId,
+      accountId,
+      bindingId: "bind-1",
+      deviceIss: "presence:device:1",
+      nonce: "expired-nonce",
+      requestedAt: now - 120,
+      expiresAt: now - 10,
+      status: "pending",
+    });
+
+    const resolver = new LinkageStoreNonceResolver(store);
+    const issuedAt = await resolver.resolvePendingProofNonceIssueTime({
+      serviceId,
+      accountId,
+      nonce: "expired-nonce",
+      now,
+    });
+    assert.equal(issuedAt, null);
   });
 
   await test("parsePresenceRequest() parses Android format and marks platform explicit", async () => {

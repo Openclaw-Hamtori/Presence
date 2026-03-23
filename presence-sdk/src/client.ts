@@ -53,6 +53,7 @@ import {
   defaultLinkCompletion,
   randomId,
 } from "./linkage.js";
+import { LinkageStoreNonceResolver } from "./nonce-rehydration.js";
 
 export { ParseError } from "./transport.js";
 
@@ -71,6 +72,7 @@ export class PresenceClient {
   readonly linkageStore: LinkageStore;
   private readonly warn: (msg: string) => void;
   private hasWarnedLegacyPlatform = false;
+  private readonly persistedNonceResolver: LinkageStoreNonceResolver;
 
   constructor(config: PresenceClientConfig = {}) {
     const ttl = config.nonceTtlSeconds ?? 300;
@@ -82,6 +84,7 @@ export class PresenceClient {
     this.managedNonces = new InMemoryManagedNonceStore(ttl);
     this.tofuStore = new InMemoryTofuStore();
     this.linkageStore = config.linkageStore ?? new InMemoryLinkageStore();
+    this.persistedNonceResolver = new LinkageStoreNonceResolver(this.linkageStore);
 
     this.warn = config.silent ? () => {} : config.logger?.warn ?? ((msg) => console.warn(msg));
 
@@ -158,29 +161,35 @@ export class PresenceClient {
   }
 
   private async ensurePendingProofNonceDurability(serviceId: string, accountId: string, nonce: string): Promise<void> {
-    const requests = await this.linkageStore.listPendingProofRequests({
+    const issuedAt = await this.persistedNonceResolver.resolvePendingProofNonceIssueTime({
       serviceId,
       accountId,
-      statuses: ["pending"],
+      nonce,
+      now: Math.floor(Date.now() / 1000),
     });
-
-    const now = Math.floor(Date.now() / 1000);
-    const pending = requests.find((request) => request.nonce === nonce && request.expiresAt > now);
-    if (!pending) {
+    if (issuedAt === null) {
       return;
     }
 
     // Backward-compatible, durable verification across server restarts:
     // pending proof requests are persisted in the linkage store, so rehydrate
     // the ephemeral nonce store at verification time to keep canonical pushless flow intact.
-    this.nonceIssuer.issue(nonce, pending.requestedAt);
+    this.nonceIssuer.issue(nonce, issuedAt);
   }
 
-  private ensureLinkSessionNonceDurability(session: { issuedNonce: string; requestedAt: number; status: string }): void {
-    if (session.status !== "pending") {
+  private async ensureLinkSessionNonceDurability(session: { id: string; issuedNonce: string; status: string }): Promise<void> {
+    const issuedAt = await this.persistedNonceResolver.resolveLinkSessionIssueTime({
+      sessionId: session.id,
+      now: Math.floor(Date.now() / 1000),
+    });
+    if (issuedAt === null) {
       return;
     }
-    this.nonceIssuer.issue(session.issuedNonce, session.requestedAt);
+
+    // Backward-compatible, durable verification across server restarts:
+    // link sessions are persisted in the linkage store, so rehydrate
+    // the ephemeral nonce store at verification time to keep completion flow intact.
+    this.nonceIssuer.issue(session.issuedNonce, issuedAt);
   }
 
   private _checkNonce(attestation: unknown, nonce: string): PresenceVerifyResult | null {
@@ -629,7 +638,7 @@ export class PresenceClient {
       };
     }
 
-    this.ensureLinkSessionNonceDurability(session);
+    await this.ensureLinkSessionNonceDurability(session);
 
     const verification = await this.verify(params.body, session.issuedNonce);
     if (!verification.verified) {
