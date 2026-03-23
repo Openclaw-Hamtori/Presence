@@ -1288,6 +1288,44 @@ function buildAndroidBody(
     assert.equal(afterValid, true);
   });
 
+  await test("completeLinkSession() rehydrates link-session nonce from persisted session", async () => {
+    const store = new InMemoryLinkageStore();
+    const bootstrap = new PresenceClient({ silent: true, linkageStore: store, serviceId: "svc" });
+    const { session } = await bootstrap.createLinkSession({ serviceId: "svc", accountId: "acct-link-restart" });
+
+    const body = buildAndroidBody(
+      buildAttestation(keys.publicKeyDer, keys.privateKeyDer, session.issuedNonce),
+      keys.publicKeyDer,
+      undefined,
+      true
+    );
+    const iss = deriveIss(keys.publicKeyDer);
+
+    const restarted = new PresenceClient({ silent: true, linkageStore: store, serviceId: "svc" });
+    const restartedNonceStore = (restarted as unknown as { managedNonces: { nonceStore: { isValid: (nonce: string, now: number) => Promise<boolean> } } }).managedNonces;
+    const beforeValid = await restartedNonceStore.nonceStore.isValid(session.issuedNonce, Math.floor(Date.now() / 1000));
+    assert.equal(beforeValid, false);
+
+    const verifyStub = async () => ({
+      verified: true as const,
+      pol_version: "1.0",
+      iss,
+      iat: NOW,
+      state_created_at: STATE_CREATED,
+      state_valid_until: STATE_VALID_UNTIL,
+      human: true as const,
+      pass: true as const,
+      signals: ["heart_rate", "steps"] as const,
+      nonce: session.issuedNonce,
+    });
+    (restarted as unknown as { verify: typeof verifyStub }).verify = verifyStub;
+
+    const result = await restarted.completeLinkSession({ sessionId: session.id, body });
+    assert.equal(result.verification.verified, true);
+    const afterValid = await restartedNonceStore.nonceStore.isValid(session.issuedNonce, Math.floor(Date.now() / 1000));
+    assert.equal(afterValid, true);
+  });
+
   await test("completeLinkSession() persists Android platform metadata from parsed request", async () => {
     const store = new InMemoryLinkageStore();
     const client = new PresenceClient({ silent: true, linkageStore: store, serviceId: "svc" });

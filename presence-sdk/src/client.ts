@@ -176,6 +176,13 @@ export class PresenceClient {
     this.nonceIssuer.issue(nonce, pending.requestedAt);
   }
 
+  private ensureLinkSessionNonceDurability(session: { issuedNonce: string; requestedAt: number; status: string }): void {
+    if (session.status !== "pending") {
+      return;
+    }
+    this.nonceIssuer.issue(session.issuedNonce, session.requestedAt);
+  }
+
   private _checkNonce(attestation: unknown, nonce: string): PresenceVerifyResult | null {
     if (
       typeof attestation === "object" &&
@@ -621,6 +628,8 @@ export class PresenceClient {
         session,
       };
     }
+
+    this.ensureLinkSessionNonceDurability(session);
 
     const verification = await this.verify(params.body, session.issuedNonce);
     if (!verification.verified) {
