@@ -589,6 +589,192 @@ function buildAndroidBody(
     assert.ok(savedRequest?.completedAt);
   });
 
+  await test("pending-proof lifecycle transitions are locked down via fixtures", async () => {
+    const fixtures: Array<() => Promise<void>> = [
+      async () => {
+        const store = new InMemoryLinkageStore();
+        const client = new PresenceClient({ silent: true, linkageStore: store, serviceId: "svc" });
+        const now = Math.floor(Date.now() / 1000);
+        const binding = {
+          bindingId: "pbind_pending_transition_verified",
+          serviceId: "svc",
+          accountId: "acct-pending-transition-verified",
+          deviceIss: "presence:device:pending-transition-verified",
+          createdAt: now,
+          updatedAt: now,
+          status: "linked" as const,
+          lastLinkedAt: now,
+          lastVerifiedAt: now,
+          lastAttestedAt: now,
+        };
+        await store.saveServiceBinding(binding);
+
+        const pending = await client.createPendingProofRequest({ accountId: binding.accountId });
+        assert.equal(pending.ok, true);
+        if (!pending.ok) {
+          throw new Error("expected pending proof request");
+        }
+
+        const respondStub = async () => ({
+          verified: true as const,
+          pol_version: "1.0" as const,
+          iss: binding.deviceIss,
+          iat: NOW,
+          state_created_at: STATE_CREATED,
+          state_valid_until: STATE_VALID_UNTIL,
+          human: true as const,
+          pass: true as const,
+          signals: ["heart_rate"] as const,
+          nonce: pending.request.nonce,
+          binding,
+          snapshot: {
+            deviceIss: binding.deviceIss,
+            capturedAt: NOW,
+            attestedAt: NOW,
+            stateCreatedAt: STATE_CREATED,
+            stateValidUntil: STATE_VALID_UNTIL,
+            human: true,
+            pass: true,
+            signals: ["heart_rate"] as const,
+            source: "verified_proof" as const,
+          },
+        });
+        (client as unknown as { verifyLinkedAccount: typeof respondStub }).verifyLinkedAccount = respondStub;
+
+        const result = await client.respondToPendingProofRequest({ requestId: pending.request.id, body: { ok: true } });
+        assert.equal(result.verified, true);
+
+        const saved = await store.getPendingProofRequest(pending.request.id);
+        assert.equal(saved?.status, "verified");
+        assert.ok(saved?.completedAt);
+      },
+      async () => {
+        const store = new InMemoryLinkageStore();
+        const client = new PresenceClient({ silent: true, linkageStore: store, serviceId: "svc" });
+        const now = Math.floor(Date.now() / 1000);
+        const linkedBinding = {
+          bindingId: "pbind_pending_transition_recovery",
+          serviceId: "svc",
+          accountId: "acct-pending-transition-recovery",
+          deviceIss: "presence:device:pending-transition-recovery",
+          createdAt: now,
+          updatedAt: now,
+          status: "linked" as const,
+          lastLinkedAt: now,
+          lastVerifiedAt: now,
+          lastAttestedAt: now,
+        };
+        await store.saveServiceBinding(linkedBinding);
+
+        const pending = await client.createPendingProofRequest({ accountId: linkedBinding.accountId });
+        assert.equal(pending.ok, true);
+        if (!pending.ok) {
+          throw new Error("expected pending proof request");
+        }
+
+        const respondStub = async () => ({
+          verified: false as const,
+          error: "ERR_BINDING_RECOVERY_REQUIRED" as const,
+          detail: "binding mismatch",
+          binding: {
+            ...linkedBinding,
+            bindingId: "pbind_pending_transition_recovery_other",
+            deviceIss: "presence:device:replacement",
+          },
+          expectedDeviceIss: linkedBinding.deviceIss,
+          actualDeviceIss: "presence:device:replacement",
+          recoveryAction: "relink" as const,
+        });
+        (client as unknown as { verifyLinkedAccount: typeof respondStub }).verifyLinkedAccount = respondStub;
+
+        const result = await client.respondToPendingProofRequest({ requestId: pending.request.id, body: { ok: true } });
+        if (result.verified) {
+          throw new Error("expected recovery_required result");
+        }
+
+        const saved = await store.getPendingProofRequest(pending.request.id);
+        assert.equal(saved?.status, "recovery_required");
+        assert.equal(saved?.recoveryReason, "binding_recovery_required");
+      },
+      async () => {
+        const store = new InMemoryLinkageStore();
+        const client = new PresenceClient({ silent: true, linkageStore: store, serviceId: "svc" });
+        const now = Math.floor(Date.now() / 1000);
+        const binding = {
+          bindingId: "pbind_pending_transition_expired",
+          serviceId: "svc",
+          accountId: "acct-pending-transition-expired",
+          deviceIss: "presence:device:pending-transition-expired",
+          createdAt: now,
+          updatedAt: now,
+          status: "linked" as const,
+          lastLinkedAt: now,
+          lastVerifiedAt: now,
+          lastAttestedAt: now,
+        };
+        await store.saveServiceBinding(binding);
+        await store.savePendingProofRequest({
+          id: "ppreq_expired_fixture",
+          serviceId: binding.serviceId,
+          accountId: binding.accountId,
+          bindingId: binding.bindingId,
+          deviceIss: binding.deviceIss,
+          nonce: "fixture-expired-nonce",
+          requestedAt: now - 120,
+          expiresAt: now - 1,
+          status: "pending",
+        });
+
+        const expired = await client.getPendingProofRequest({ requestId: "ppreq_expired_fixture" });
+        assert.equal(expired?.status, "expired");
+        assert.ok(expired?.completedAt);
+
+        const allRequests = await client.listPendingProofRequests({ accountId: binding.accountId, includeInactive: true });
+        const persisted = allRequests.find((request) => request.id === "ppreq_expired_fixture");
+        assert.equal(persisted?.status, "expired");
+      },
+      async () => {
+        const store = new InMemoryLinkageStore();
+        const client = new PresenceClient({ silent: true, linkageStore: store, serviceId: "svc" });
+        const now = Math.floor(Date.now() / 1000);
+        await store.saveServiceBinding({
+          bindingId: "pbind_pending_transition_cancel",
+          serviceId: "svc",
+          accountId: "acct-pending-transition-cancel",
+          deviceIss: "presence:device:pending-transition-cancel",
+          createdAt: now,
+          updatedAt: now,
+          status: "linked" as const,
+          lastLinkedAt: now,
+          lastVerifiedAt: now,
+          lastAttestedAt: now,
+        });
+
+        const first = await client.createPendingProofRequest({ accountId: "acct-pending-transition-cancel" });
+        assert.equal(first.ok, true);
+        if (!first.ok) {
+          throw new Error("expected first pending proof request");
+        }
+
+        const second = await client.createPendingProofRequest({ accountId: "acct-pending-transition-cancel" });
+        assert.equal(second.ok, true);
+        if (!second.ok) {
+          throw new Error("expected second pending proof request");
+        }
+
+        const firstSaved = await store.getPendingProofRequest(first.request.id);
+        const secondSaved = await store.getPendingProofRequest(second.request.id);
+        assert.equal(firstSaved?.status, "cancelled");
+        assert.equal(secondSaved?.status, "pending");
+        assert.ok(firstSaved?.completedAt);
+      },
+    ];
+
+    for (const fixture of fixtures) {
+      await fixture();
+    }
+  });
+
   await test("verifyLinkedAccount() rehydrates pending-proof nonce from persisted request", async () => {
     const store = new InMemoryLinkageStore();
     const serviceId = "svc";
