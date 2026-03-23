@@ -53,4 +53,5 @@ Canonical meaning:
 
 - `docs/presence-phase1-starter-pack-2026-03-23.md`: durable baseline checklist and concrete Phase 1 starter execution plan.
 - `npm run check:phase1-smoke` runs the baseline smoke preflight checks.
+- `npm run check:runtime-smoke` runs an optional endpoint smoke check against a running Presence server (`PRESENCE_SMOKE_LOCAL=1` to auto-start local server from this repo, or `PRESENCE_SMOKE_URL` for existing live server target).
 - `npm run ci:phase1` is the CI baseline guardrail target for PRs: it validates the server contract (`check:server-contract`) and then runs the phase 1 smoke preflight.

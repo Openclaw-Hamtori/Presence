@@ -130,5 +130,14 @@ The goal of this phase is **opt-in production-hardening**, without destabilizing
 
 ## Next immediate implementation slice (recommended)
 
-1. Expand `check:phase1-smoke` to include optional, explicit endpoint smoke calls against a configured local dev server.
+1. ✅ Added optional runtime endpoint smoke as `npm run check:runtime-smoke` (`PRESENCE_SMOKE_LOCAL=1` to spin up local reference server, or `PRESENCE_SMOKE_URL` for existing live target).
 2. Freeze this checklist link in `docs/README.md` and `docs/STATUS.md` as required pre-flight before any Phase 1 changes.
+
+## Runtime smoke checklist covered in this slice
+
+- `/.well-known/presence.json` trust metadata contract.
+- `GET /health` surface contract response.
+- `POST /presence/link-sessions` plus session status endpoint round-trip.
+- `GET /presence/linked-accounts/:accountId/status` missing-link contract response.
+- `POST /presence/linked-accounts/:accountId/nonce` contract error shape for unlinked accounts.
+- `GET /presence/linked-accounts/:accountId/pending-proof-requests` and `GET /presence/audit-events` baseline shape checks.
