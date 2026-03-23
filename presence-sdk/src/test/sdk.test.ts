@@ -424,6 +424,54 @@ function buildAndroidBody(
     }
   });
 
+  await test("sqlite-backed mutate() rolls back nested async mutator on failure", async () => {
+    const dbDir = mkdtempSync(join(tmpdir(), "presence-sqlite-mutate-rollback-"));
+    const store = new SqliteLinkageStore({
+      dbPath: join(dbDir, "presence-linkage.db"),
+      mode: "single-team",
+    });
+    const now = Math.floor(Date.now() / 1000);
+
+    try {
+      await store.saveServiceBinding({
+        bindingId: "sqlite_bind_tx_base",
+        serviceId: "svc",
+        accountId: "acct-tx",
+        deviceIss: "presence:device:tx-base",
+        createdAt: now,
+        updatedAt: now,
+        status: "linked",
+        lastLinkedAt: now,
+        lastVerifiedAt: now,
+        lastAttestedAt: now,
+      });
+
+      await assert.rejects(
+        () => store.mutate(async (mutatorStore) => {
+          await mutatorStore.savePendingProofRequest({
+            id: "preq-fail",
+            serviceId: "svc",
+            accountId: "acct-tx",
+            bindingId: "sqlite_bind_tx_base",
+            deviceIss: "presence:device:tx-base",
+            nonce: "nonce-fail",
+            requestedAt: now,
+            expiresAt: now + 300,
+            status: "pending",
+          });
+          await Promise.resolve();
+          throw new Error("tx-failed");
+        }),
+        /tx-failed/
+      );
+
+      const stillMissing = await store.getPendingProofRequest("preq-fail");
+      assert.equal(stillMissing, null);
+    } finally {
+      rmSync(dbDir, { recursive: true, force: true });
+    }
+  });
+
   await test("sqlite-backed destroy() is idempotent and allows reopening", async () => {
     const dbDir = mkdtempSync(join(tmpdir(), "presence-sqlite-destroy-"));
     const dbPath = join(dbDir, "presence-linkage.db");

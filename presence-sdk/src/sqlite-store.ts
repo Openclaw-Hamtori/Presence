@@ -199,7 +199,7 @@ export class SqliteLinkageStore implements LinkageStore {
   }
 
   async saveLinkSession(session: LinkSession): Promise<void> {
-    await this.withAutoTransaction(async () => {
+    this.withTransaction(() => {
       const row = this.sessionToRow(session);
       const stmt = this.getDb().prepare(`
         INSERT INTO link_sessions (
@@ -244,7 +244,7 @@ export class SqliteLinkageStore implements LinkageStore {
   }
 
   async saveServiceBinding(binding: ServiceBinding): Promise<void> {
-    await this.withAutoTransaction(async () => {
+    this.withTransaction(() => {
       const stmt = this.getDb().prepare(`
         INSERT INTO service_bindings (
           binding_id,
@@ -322,7 +322,7 @@ export class SqliteLinkageStore implements LinkageStore {
   }
 
   async savePendingProofRequest(request: PendingProofRequest): Promise<void> {
-    await this.withAutoTransaction(async () => {
+    this.withTransaction(() => {
       const row = this.pendingProofRequestToRow(request);
       const stmt = this.getDb().prepare(`
         INSERT INTO pending_proof_requests (
@@ -423,7 +423,7 @@ export class SqliteLinkageStore implements LinkageStore {
   }
 
   async saveLinkedDevice(device: LinkedDevice): Promise<void> {
-    await this.withAutoTransaction(async () => {
+    this.withTransaction(() => {
       const stmt = this.getDb().prepare(`
         INSERT INTO linked_devices (
           iss,
@@ -462,7 +462,7 @@ export class SqliteLinkageStore implements LinkageStore {
   }
 
   async appendAuditEvent(event: LinkageAuditEvent): Promise<void> {
-    await this.withAutoTransaction(async () => {
+    this.withTransaction(() => {
       const stmt = this.getDb().prepare(`
         INSERT INTO audit_events (
           event_id,
@@ -541,6 +541,21 @@ export class SqliteLinkageStore implements LinkageStore {
   }
 
   private initializeSchema(): void {
+    this.withTransaction(() => {
+      for (const artifact of SQLITE_LINKAGE_SCHEMA) {
+        this.getDb().exec(artifact.sql);
+      }
+    });
+  }
+
+  /**
+   * Run sync database mutations using a transaction when this is the outermost call.
+   *
+   * This is intentionally narrow: all store mutations are synchronous today,
+   * so keeping the transaction boundary sync avoids wrapping sync better-sqlite3
+   * calls in async closures.
+   */
+  private withTransaction<T>(operation: () => T): T {
     const shouldStartTransaction = this.txDepth === 0;
     this.txDepth += 1;
     if (shouldStartTransaction) {
@@ -548,12 +563,11 @@ export class SqliteLinkageStore implements LinkageStore {
     }
 
     try {
-      for (const artifact of SQLITE_LINKAGE_SCHEMA) {
-        this.getDb().exec(artifact.sql);
-      }
+      const result = operation();
       if (shouldStartTransaction) {
         this.getDb().exec("COMMIT");
       }
+      return result;
     } catch (error) {
       if (shouldStartTransaction) {
         try {
@@ -568,7 +582,13 @@ export class SqliteLinkageStore implements LinkageStore {
     }
   }
 
-  private async withAutoTransaction<T>(operation: () => Promise<T> | T): Promise<T> {
+  /**
+   * Async wrapper for composition APIs that need to supply async mutators.
+   *
+   * In this store, async variants should call this entrypoint (e.g. mutate()),
+   * while primary methods use withTransaction() directly.
+   */
+  private async withAutoTransaction<T>(operation: () => Promise<T>): Promise<T> {
     const shouldStartTransaction = this.txDepth === 0;
     this.txDepth += 1;
     if (shouldStartTransaction) {
