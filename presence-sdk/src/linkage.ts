@@ -182,6 +182,30 @@ export interface BindingPolicy {
   requireFreshReauthOnRelink?: boolean;
 }
 
+export interface LinkageStoreCapabilities {
+  /**
+   * Human-friendly backend kind for diagnostics and capability checks.
+   */
+  readonly kind: "in_memory" | "file" | "redis" | "sqlite" | "custom";
+
+  /**
+   * Indicates whether the adapter can provide safer concurrent mutation semantics
+   * for multi-write flows such as pending-proof consume + verification.
+   */
+  readonly supportsAtomicMutations: boolean;
+
+  /**
+   * Indicates whether the backing store has cross-process synchronization semantics.
+   */
+  readonly supportsCrossProcessLocking: boolean;
+
+  /**
+   * Friendly note for the next migration slice.
+   * Keep this explicit that SQLite remains the first DB-backed target.
+   */
+  readonly sqliteFirstNote?: string;
+}
+
 export interface LinkageStore {
   saveLinkSession(session: LinkSession): Promise<void>;
   getLinkSession(sessionId: string): Promise<LinkSession | null>;
@@ -202,6 +226,10 @@ export interface LinkageStore {
   appendAuditEvent(event: LinkageAuditEvent): Promise<void>;
   listAuditEvents(filter?: { serviceId?: string; accountId?: string; bindingId?: string }): Promise<LinkageAuditEvent[]>;
   mutate?<T>(mutator: (store: LinkageStore) => Promise<T>): Promise<T>;
+  /**
+   * Optional capability surface. Implemented as optional so legacy adapters remain safe.
+   */
+  getCapabilities?: () => LinkageStoreCapabilities;
 }
 
 export interface CreateLinkSessionOptions {
@@ -280,6 +308,15 @@ export class InMemoryLinkageStore implements LinkageStore {
   private readonly devices = new Map<string, LinkedDevice>();
   private readonly auditEvents: LinkageAuditEvent[] = [];
   private mutationQueue: Promise<void> = Promise.resolve();
+
+  getCapabilities(): LinkageStoreCapabilities {
+    return {
+      kind: "in_memory",
+      supportsAtomicMutations: true,
+      supportsCrossProcessLocking: false,
+      sqliteFirstNote: "Single-server in-process defaults remain for tests/dev only; SQLite-first target remains the production path.",
+    };
+  }
 
   async saveLinkSession(session: LinkSession): Promise<void> {
     this.sessions.set(session.id, { ...session });
@@ -512,6 +549,15 @@ export class FileSystemLinkageStore implements LinkageStore {
   private static readonly pathQueues = new Map<string, Promise<void>>();
 
   constructor(private readonly filePath: string) {}
+
+  getCapabilities(): LinkageStoreCapabilities {
+    return {
+      kind: "file",
+      supportsAtomicMutations: true,
+      supportsCrossProcessLocking: true,
+      sqliteFirstNote: "File-backed reference store remains default for baseline. SQLite-first path is next explicit adapter target.",
+    };
+  }
 
   async saveLinkSession(session: LinkSession): Promise<void> {
     await this.update((data) => {

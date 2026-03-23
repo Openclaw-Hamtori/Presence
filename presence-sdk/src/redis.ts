@@ -1,5 +1,6 @@
 import type {
   LinkageStore,
+  LinkageStoreCapabilities,
   LinkSession,
   ServiceBinding,
   LinkedDevice,
@@ -28,6 +29,15 @@ export class RedisLinkageStore implements LinkageStore {
     private readonly client: RedisLikeClient,
     private readonly key = "presence:linkage:store"
   ) {}
+
+  getCapabilities(): LinkageStoreCapabilities {
+    return {
+      kind: "redis",
+      supportsAtomicMutations: false,
+      supportsCrossProcessLocking: true,
+      sqliteFirstNote: "Redis adapter is full-blob compatible today; migration target remains SQLite-first for small-team production.",
+    };
+  }
 
   async saveLinkSession(session: LinkSession): Promise<void> {
     await this.update((data) => {

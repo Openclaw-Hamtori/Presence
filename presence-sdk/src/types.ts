@@ -39,6 +39,7 @@ import type {
   LinkedAccountReadinessState,
   BindingMutationResult,
   LinkageAuditEvent,
+  LinkageStoreCapabilities,
   LinkCompletion,
   LinkCompletionMethod,
 } from "./linkage.js";
@@ -63,7 +64,14 @@ import type {
   PresenceLinkedAccountReadinessResponse,
   LinkSessionPublicBaseOptions,
 } from "./api.js";
-import type { RedisLikeClient } from "./redis.js";
+import type {
+  RedisLikeClient,
+} from "./redis.js";
+import type {
+  SqliteLinkageStoreOptions,
+  SqliteSchemaArtifact,
+  SqliteLinkageMappingRow,
+} from "./sqlite-store.js";
 
 export type {
   VerifierResult,
@@ -250,6 +258,7 @@ export type {
   LinkedAccountReadinessState,
   BindingMutationResult,
   LinkageAuditEvent,
+  LinkageStoreCapabilities,
   LinkCompletion,
   LinkCompletionMethod,
   PresenceBackendFlow,
@@ -272,4 +281,7 @@ export type {
   PresenceLinkedAccountReadinessResponse,
   LinkSessionPublicBaseOptions,
   RedisLikeClient,
+  SqliteLinkageStoreOptions,
+  SqliteSchemaArtifact,
+  SqliteLinkageMappingRow,
 };

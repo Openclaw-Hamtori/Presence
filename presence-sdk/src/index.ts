@@ -20,7 +20,19 @@ export {
   defaultLinkCompletion,
   fileLinkageStorePath,
 } from "./linkage.js";
-export { RedisLinkageStore } from "./redis.js";
+export {
+  RedisLinkageStore,
+} from "./redis.js";
+export {
+  SqliteLinkageStore,
+  renderSqliteSchema,
+  SQLITE_LINKAGE_SCHEMA,
+  SQLITE_LINKAGE_MAPPINGS,
+  SQLITE_FIRST_MODE,
+  type SqliteLinkageStoreOptions,
+  type SqliteSchemaArtifact,
+  type SqliteLinkageMappingRow,
+} from "./sqlite-store.js";
 export {
   createCompletionDescriptor,
   createCompletionSessionResponse,
@@ -90,6 +102,7 @@ export type {
   PendingProofSignal,
   PendingProofSignalDispatch,
   PresenceSnapshot,
+  LinkageStoreCapabilities,
   LinkCompletion,
   LinkCompletionMethod,
   PendingProofRequestStatus,
