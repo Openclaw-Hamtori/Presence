@@ -135,6 +135,7 @@ async function main() {
   const port = Number(process.env.PRESENCE_SMOKE_PORT || "18920");
   const publicBaseUrl = process.env.PRESENCE_SMOKE_PUBLIC_BASE_URL || `http://${host}:${port}`;
   const serviceDomain = process.env.PRESENCE_SMOKE_SERVICE_DOMAIN || "presence.example";
+  const shouldRunPendingProofProbe = process.env.PRESENCE_SMOKE_PENDING_PROOF_PROBE === "1";
 
   const baseUrl = explicitUrl
     ? `${String(explicitUrl).replace(/\/$/, "")}`
@@ -225,6 +226,64 @@ async function main() {
     );
     assert(pendingList.response.status === 200, "pending-proof list endpoint should return 200");
     assert(Array.isArray(pendingList.payload?.proofRequests), "pending-proof list should include proofRequests array");
+
+    if (shouldRunPendingProofProbe) {
+      log("running optional pending-proof write-path probe.");
+
+      const createProbe = await requestJson(
+        baseUrl,
+        `${routeBasePath}/presence/linked-accounts/${encodeURIComponent(accountId)}/pending-proof-requests`,
+        { method: "POST", body: {} }
+      );
+      assert(
+        createProbe.response.status === 404,
+        "pending-proof create probe should return 404 for missing binding"
+      );
+      assert(
+        createProbe.payload?.ok === false,
+        "pending-proof create probe should include ok=false"
+      );
+      assert(
+        createProbe.payload?.code === "ERR_BINDING_NOT_FOUND",
+        "pending-proof create probe should return ERR_BINDING_NOT_FOUND"
+      );
+      assert(
+        createProbe.payload?.state === "missing_binding",
+        "pending-proof create probe should report missing_binding state"
+      );
+
+      const fakeRequestId = `probe-${randomBytes(4).toString("hex")}`;
+      const statusProbe = await requestJson(
+        baseUrl,
+        `${routeBasePath}/presence/pending-proof-requests/${encodeURIComponent(fakeRequestId)}`
+      );
+      assert(statusProbe.response.status === 404, "pending-proof status probe should return 404 for unknown request");
+      assert(
+        statusProbe.payload?.code === "ERR_PENDING_PROOF_REQUEST_NOT_FOUND",
+        "pending-proof status probe should return ERR_PENDING_PROOF_REQUEST_NOT_FOUND"
+      );
+
+      const respondProbe = await requestJson(
+        baseUrl,
+        `${routeBasePath}/presence/pending-proof-requests/${encodeURIComponent(fakeRequestId)}/respond`,
+        {
+          method: "POST",
+          body: {},
+        }
+      );
+      assert(
+        respondProbe.response.status === 400,
+        "pending-proof respond probe should return 400 for unknown request + malformed proof"
+      );
+      assert(
+        respondProbe.payload?.ok === false,
+        "pending-proof respond probe should include ok=false"
+      );
+      assert(
+        respondProbe.payload?.code === "ERR_INVALID_FORMAT",
+        "pending-proof respond probe should return ERR_INVALID_FORMAT for probe payload"
+      );
+    }
 
     const audits = await requestJson(baseUrl, `${routeBasePath}/presence/audit-events`);
     assert(audits.response.status === 200, "audit events endpoint should return 200");
