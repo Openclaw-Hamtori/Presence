@@ -42,6 +42,57 @@ function getServiceApiKey() {
   return process.env.PRESENCE_SERVICE_API_KEY || process.env.PRESENCE_API_KEY || "";
 }
 
+function getCleanupIntervalSeconds() {
+  const defaultInterval = 300;
+  const maxInterval = 3_600;
+  const value = process.env.PRESENCE_CLEANUP_INTERVAL_SECONDS;
+  if (value === undefined || value === "") {
+    return defaultInterval;
+  }
+
+  const parsed = Number.parseInt(value, 10);
+  if (Number.isNaN(parsed) || parsed < 0) {
+    return defaultInterval;
+  }
+  return Math.min(maxInterval, parsed);
+}
+
+function parseCleanupIntervalConfig() {
+  const intervalSeconds = getCleanupIntervalSeconds();
+  return {
+    intervalSeconds,
+    enabled: intervalSeconds > 0,
+    runAtStartup: true,
+  };
+}
+
+async function runNonceCleanupOnce(presence) {
+  const report = await presence.cleanupPersistedNonces();
+  if (report.totalExpired > 0) {
+    console.log(`[presence-sdk] cleanup sweep removed ${report.totalExpired} expired nonce artifacts`, JSON.stringify(report));
+  }
+}
+
+function startCleanupScheduler(presence, { intervalSeconds }) {
+  if (intervalSeconds <= 0) {
+    return null;
+  }
+
+  const runSweep = () => {
+    runNonceCleanupOnce(presence).catch((error) => {
+      console.error("[presence-sdk] cleanup sweep failed", error instanceof Error ? error.message : String(error));
+    });
+  };
+
+  runSweep();
+  const intervalMs = intervalSeconds * 1000;
+  const timer = setInterval(runSweep, intervalMs);
+  if (typeof timer.unref === "function") {
+    timer.unref();
+  }
+  return timer;
+}
+
 function extractServiceApiKey(req) {
   const authHeader = req.headers.authorization || req.headers.Authorization;
   if (typeof authHeader === "string") {
@@ -115,6 +166,8 @@ async function main() {
     linkageStore: new FileSystemLinkageStore(storePath),
     bindingPolicy: { allowReplacementOnMismatch: true },
   });
+  const cleanupConfig = parseCleanupIntervalConfig();
+  const cleanupTimer = startCleanupScheduler(presence, cleanupConfig);
 
   const endpointContract = {
     createSessionPath: "/presence/link-sessions",
@@ -148,7 +201,17 @@ async function main() {
       }
 
       if (method === "GET" && url.pathname === "/health") {
-        send(200, { ok: true, serviceId, serviceDomain: serviceDomain || undefined, storePath });
+        send(200, {
+          ok: true,
+          serviceId,
+          serviceDomain: serviceDomain || undefined,
+          storePath,
+          cleanup: {
+            enabled: cleanupConfig.enabled,
+            intervalSeconds: cleanupConfig.intervalSeconds,
+            runAtStartup: cleanupConfig.runAtStartup,
+          },
+        });
         return;
       }
 
@@ -525,6 +588,11 @@ async function main() {
   await new Promise((resolve) => server.listen(port, host, resolve));
   console.log(`[presence-sdk] local reference server listening on ${publicBaseUrl}`);
   console.log(`[presence-sdk] linkage store: ${storePath}`);
+  if (cleanupConfig.enabled) {
+    console.log(`[presence-sdk] automatic nonce/request sweep: every ${cleanupConfig.intervalSeconds}s`);
+  } else {
+    console.log("[presence-sdk] automatic nonce/request sweep: disabled");
+  }
   if (serviceAuthEnabled) {
     console.log(`[presence-sdk] service API auth: enabled via PRESENCE_SERVICE_API_KEY`);
   }
@@ -532,6 +600,14 @@ async function main() {
   if (serviceDomain) {
     console.log(`[presence-sdk] trust metadata: ${publicBaseUrl}/.well-known/presence.json`);
   }
+
+  const stopCleanupScheduler = () => {
+    if (cleanupTimer) {
+      clearInterval(cleanupTimer);
+    }
+  };
+  process.on("SIGINT", stopCleanupScheduler);
+  process.on("SIGTERM", stopCleanupScheduler);
 }
 
 main().catch((error) => {

@@ -101,6 +101,58 @@ function getServiceApiKey() {
   return process.env.PRESENCE_SERVICE_API_KEY || process.env.PRESENCE_API_KEY || "";
 }
 
+function getCleanupIntervalSeconds() {
+  const defaultInterval = 300;
+  const maxInterval = 3_600;
+  const value = process.env.PRESENCE_CLEANUP_INTERVAL_SECONDS;
+  if (value === undefined || value === "") {
+    return defaultInterval;
+  }
+
+  const parsed = Number.parseInt(value, 10);
+  if (Number.isNaN(parsed) || parsed < 0) {
+    return defaultInterval;
+  }
+  return Math.min(maxInterval, parsed);
+}
+
+function parseCleanupIntervalConfig() {
+  const intervalSeconds = getCleanupIntervalSeconds();
+  return {
+    intervalSeconds,
+    enabled: intervalSeconds > 0,
+    runAtStartup: true,
+  };
+}
+
+function runCleanup(presence, logger) {
+  return presence.cleanupPersistedNonces()
+    .then((report) => {
+      if (report.totalExpired > 0) {
+        logger(`[presence-happy-path] cleanup sweep removed ${report.totalExpired} expired nonce artifacts ${JSON.stringify(report)}`);
+      }
+    })
+    .catch((error) => {
+      logger(`[presence-happy-path] cleanup sweep failed: ${error instanceof Error ? error.message : String(error)}`);
+    });
+}
+
+function startCleanupScheduler(presence, options) {
+  if (!options.enabled) {
+    return null;
+  }
+
+  runCleanup(presence, console.log);
+  const intervalMs = options.intervalSeconds * 1000;
+  const timer = setInterval(() => {
+    runCleanup(presence, console.log);
+  }, intervalMs);
+  if (typeof timer.unref === "function") {
+    timer.unref();
+  }
+  return timer;
+}
+
 function extractServiceApiKey(req) {
   const authHeader = req.headers.authorization || req.headers.Authorization;
   if (typeof authHeader === "string") {
@@ -231,6 +283,8 @@ async function main() {
     bindingPolicy: { allowReplacementOnMismatch },
     pendingProofSignalTransport: resolvePendingProofSignalTransport({ iosAppId }),
   });
+  const cleanupConfig = parseCleanupIntervalConfig();
+  const cleanupTimer = startCleanupScheduler(presence, cleanupConfig);
 
   const endpointContract = {
     createSessionPath: "/presence/link-sessions",
@@ -271,6 +325,11 @@ async function main() {
           serviceDomain: serviceDomain || undefined,
           storePath,
           iosAppIdSource,
+          cleanup: {
+            enabled: cleanupConfig.enabled,
+            intervalSeconds: cleanupConfig.intervalSeconds,
+            runAtStartup: cleanupConfig.runAtStartup,
+          },
         });
         return;
       }
@@ -681,6 +740,11 @@ async function main() {
   });
 
   await new Promise((resolve) => server.listen(port, host, resolve));
+  if (cleanupConfig.enabled) {
+    console.log(`[presence-happy-path] automatic nonce/request sweep: every ${cleanupConfig.intervalSeconds}s`);
+  } else {
+    console.log("[presence-happy-path] automatic nonce/request sweep: disabled");
+  }
   console.log(`[presence-happy-path] listening on ${publicBaseUrl}`);
   console.log(`[presence-happy-path] public Presence API base: ${publicPresenceApiBaseUrl}`);
   console.log(`[presence-happy-path] linkage store: ${storePath}`);
@@ -698,6 +762,14 @@ async function main() {
       `[presence-happy-path] service-domain trust metadata: ${serviceDomainWellKnownUrl} -> allowed_url_prefixes includes ${publicPresenceApiBaseUrl}`
     );
   }
+
+  const stopCleanupScheduler = () => {
+    if (cleanupTimer) {
+      clearInterval(cleanupTimer);
+    }
+  };
+  process.on("SIGINT", stopCleanupScheduler);
+  process.on("SIGTERM", stopCleanupScheduler);
 }
 
 main().catch((error) => {

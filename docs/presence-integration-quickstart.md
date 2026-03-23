@@ -95,6 +95,7 @@ If you use `presence-happy-path/app/server.cjs` or the same pattern, these setti
 - `PUBLIC_BASE_URL`
 - `PRESENCE_SERVICE_DOMAIN`
 - `PRESENCE_SERVICE_API_KEY` (optional)
+- `PRESENCE_CLEANUP_INTERVAL_SECONDS`
 
 ### `ROUTE_BASE_PATH`
 
@@ -158,6 +159,26 @@ The public callback/deep-link endpoints remain open by design to support the use
 - `POST /presence/pending-proof-requests/:requestId/respond`
 
 The auth check is opt-in; leave unset to keep baseline local/dev behavior.
+
+## Expired nonce/request cleanup sweep (reference servers)
+
+Small deployments often forget to run periodic cleanup, so the reference servers now self-sweep:
+
+- set `PRESENCE_CLEANUP_INTERVAL_SECONDS` (seconds) to enable periodic cleanup of expired local-reference state.
+- default: `300` (5 minutes)
+- set `0` to disable automatic sweeping (manual cleanup remains available)
+
+The sweep calls `presence.cleanupPersistedNonces()` on a timer and currently clears:
+- in-memory tracked nonces
+- SQLite-backed pending-link/pending-proof state (via sqlite-backed `PersistedNonceStore`)
+- no-op for pure in-memory/file stores where persisted state isn't centrally indexable
+
+`/health` on both `presence-happy-path/app/server.cjs` and `presence-sdk/examples/local-reference-server.js` reports:
+- `cleanup.enabled`
+- `cleanup.intervalSeconds`
+- `cleanup.runAtStartup`
+
+This keeps cleanup behavior predictable without external cron jobs for the local/reference deployment path.
 
 ---
 

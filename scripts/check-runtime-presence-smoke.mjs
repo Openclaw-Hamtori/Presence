@@ -68,6 +68,7 @@ async function startServer(config) {
         ROUTE_BASE_PATH: routeBasePath,
         PUBLIC_BASE_URL: publicBaseUrl,
         PRESENCE_SERVICE_DOMAIN: serviceDomain,
+        PRESENCE_CLEANUP_INTERVAL_SECONDS: "2",
       },
     }
   );
@@ -165,6 +166,12 @@ async function main() {
     assert(health.response.status === 200, "health endpoint should return HTTP 200");
     assert(health.payload?.ok === true, "health response should include ok=true");
     assert(typeof health.payload?.serviceId === "string", "health response should include serviceId string");
+    assert(typeof health.payload?.cleanup === "object", "health response should expose cleanup config");
+    assert(typeof health.payload?.cleanup?.intervalSeconds === "number", "cleanup config should include intervalSeconds");
+    assert(typeof health.payload?.cleanup?.enabled === "boolean", "cleanup config should include enabled");
+    if (!explicitUrl) {
+      assert(health.payload?.cleanup?.intervalSeconds === 2, "local runtime smoke should run cleanup every 2 seconds for verification");
+    }
 
     const wellKnown = await requestJson(baseUrl, `${routeBasePath}/.well-known/presence.json`);
     assert(wellKnown.response.status === 200, "well-known endpoint should be reachable");

@@ -29,6 +29,7 @@ _Last updated: 2026-03-23_
 - **Push token upload path hardened** and route accepts persisted token formats only (`projects/presence-push-token-apns-format-fix-2026-03-22.md`, `projects/presence-ios-push-entitlement-debug-2026-03-22.md`).
 - **Minimal service auth boundary added** to the reference server (`PRESENCE_SERVICE_API_KEY`) for service-owned endpoints; callback proof endpoints remain public and auth is opt-in for local/dev (`presence-happy-path/app/server.cjs`, `scripts/check-server-auth.mjs`).
 - **SQLite-backed `SqliteLinkageStore` now persists pending-proof request records and their status transitions** (`presence-sdk/src/sqlite-store.ts`, `presence-sdk/src/test/sdk.test.ts`).
+- **Reference server cleanup sweep wired** for local/single-instance deployments: reference servers now run `presence.cleanupPersistedNonces()` on a startup + timer cadence controlled by `PRESENCE_CLEANUP_INTERVAL_SECONDS`, and expose sweep config on `/health` (`presence-happy-path/app/server.cjs`, `presence-sdk/examples/local-reference-server.js`).
 
 ## 3) Non-canonical / optional / experimental
 - **APNs wake path** is optional and non-authoritative (`docs/presence-push-setup-vs-steady-state.md` and `docs/README.md`).
