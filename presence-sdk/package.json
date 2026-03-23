@@ -21,7 +21,10 @@
     "build": "tsc",
     "test": "npm run build && node dist/test/sdk.test.js && node dist/test/localReferenceRoundtrip.test.js",
     "test:roundtrip": "npm run build && node dist/test/localReferenceRoundtrip.test.js",
-    "serve:reference": "npm run build && node examples/local-reference-server.js"
+    "serve:reference": "npm run build && node examples/local-reference-server.js",
+    "check:dist": "node ../scripts/verify-dist-for-publish.mjs .",
+    "prepack": "npm run build && npm run check:dist",
+    "prepublishOnly": "npm run build && npm run check:dist"
   },
   "dependencies": {
     "better-sqlite3": "^12.8.0",
@@ -32,7 +35,7 @@
     "@types/node": "^20.0.0",
     "typescript": "^5.0.0"
   },
-  "notes": {
-    "presence-verifier": "Local workspace dependency for now. Replace with a published semver dependency before npm release."
+  "engines": {
+    "node": ">=18"
   }
 }

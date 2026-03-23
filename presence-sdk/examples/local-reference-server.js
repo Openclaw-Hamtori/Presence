@@ -43,6 +43,20 @@ function getServiceApiKey() {
   return process.env.PRESENCE_SERVICE_API_KEY || process.env.PRESENCE_API_KEY || "";
 }
 
+function getReferenceAuthMode() {
+  const mode = String(process.env.PRESENCE_REFERENCE_AUTH_MODE || "demo").toLowerCase();
+
+  if (mode === "strict") {
+    return "strict";
+  }
+
+  if (mode === "demo") {
+    return "demo";
+  }
+
+  return "demo";
+}
+
 function getCleanupIntervalSeconds() {
   const defaultInterval = 300;
   const maxInterval = 3_600;
@@ -166,13 +180,24 @@ async function main() {
   const serviceId = process.env.PRESENCE_SERVICE_ID || "demo-service";
   const publicBaseUrl = (process.env.PUBLIC_BASE_URL || `http://${host}:${port}`).replace(/\/$/, "");
   const serviceDomain = process.env.PRESENCE_SERVICE_DOMAIN || "";
+  const referenceAuthMode = getReferenceAuthMode();
   const serviceApiKeyEnv = process.env.PRESENCE_SERVICE_API_KEY;
-  if (!serviceApiKeyEnv) {
+  const serviceAuthEnabled = Boolean(getServiceApiKey());
+  if (!serviceAuthEnabled && referenceAuthMode === "strict") {
+    console.error(
+      "[presence-sdk] FAILED: PRESENCE_REFERENCE_AUTH_MODE=strict requires PRESENCE_SERVICE_API_KEY to be set."
+    );
+    console.error("[presence-sdk] Set a random shared secret and resend, or run with PRESENCE_REFERENCE_AUTH_MODE=demo for local/dev.");
+    process.exit(1);
+  }
+  if (!serviceAuthEnabled) {
     console.warn(
-      "[presence-sdk] warning: PRESENCE_SERVICE_API_KEY is unset; service-to-service endpoints are not protected by API key."
+      "[presence-sdk] Insecure-by-default reference mode active: service-to-service endpoints are currently unprotected (PRESENCE_REFERENCE_AUTH_MODE=demo)."
+    );
+    console.warn(
+      "[presence-sdk] Set PRESENCE_SERVICE_API_KEY and PRESENCE_REFERENCE_AUTH_MODE=strict for a production-hardened service boundary."
     );
   }
-  const serviceAuthEnabled = Boolean(getServiceApiKey());
   const storageRoot = process.env.PRESENCE_STORAGE_ROOT || join(process.cwd(), "var", "presence");
   mkdirSync(storageRoot, { recursive: true });
   const storePath = fileLinkageStorePath(storageRoot);
@@ -247,6 +272,15 @@ async function main() {
             enabled: cleanupConfig.enabled,
             intervalSeconds: cleanupConfig.intervalSeconds,
             runAtStartup: cleanupConfig.runAtStartup,
+          },
+          security: {
+            serviceAuthMode: referenceAuthMode,
+            serviceApiKeyConfigured: serviceAuthEnabled,
+            callbackEndpointsPublic: [
+              "POST /presence/link-sessions/:sessionId/complete",
+              "POST /presence/linked-accounts/:accountId/verify",
+              "POST /presence/pending-proof-requests/:requestId/respond",
+            ],
           },
         });
         return;
@@ -633,8 +667,11 @@ async function main() {
   }
   if (serviceAuthEnabled) {
     console.log(`[presence-sdk] service API auth: enabled via PRESENCE_SERVICE_API_KEY`);
+  } else {
+    console.log(`[presence-sdk] reference server auth posture: demo mode (service API auth disabled)`);
   }
   console.log(`[presence-sdk] service API auth header: x-presence-service-api-key or Authorization: Bearer <key>`);
+  console.log(`[presence-sdk] reference auth mode env: PRESENCE_REFERENCE_AUTH_MODE=${referenceAuthMode}`);
   if (serviceDomain) {
     console.log(`[presence-sdk] trust metadata: ${publicBaseUrl}/.well-known/presence.json`);
   }

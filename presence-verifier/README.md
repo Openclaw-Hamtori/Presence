@@ -101,6 +101,10 @@ npm run build
 npm test
 ```
 
+## Runtime requirements
+
+Node.js `>=18` is the current minimum for published packages.
+
 ## Platform attestation notes
 
 ### iOS App Attest

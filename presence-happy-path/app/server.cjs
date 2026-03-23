@@ -102,6 +102,16 @@ function getServiceApiKey() {
   return process.env.PRESENCE_SERVICE_API_KEY || process.env.PRESENCE_API_KEY || "";
 }
 
+function getReferenceAuthMode() {
+  const mode = String(process.env.PRESENCE_REFERENCE_AUTH_MODE || "demo").toLowerCase();
+
+  if (mode === "strict") {
+    return "strict";
+  }
+
+  return "demo";
+}
+
 function getCleanupIntervalSeconds() {
   const defaultInterval = 300;
   const maxInterval = 3_600;
@@ -271,7 +281,23 @@ async function main() {
   const host = process.env.HOST || "127.0.0.1";
   const { iosAppId, iosAppIdSource } = resolvePresenceServerConfig(process.env);
   const serviceId = process.env.PRESENCE_SERVICE_ID || "demo-service";
+  const referenceAuthMode = getReferenceAuthMode();
   const serviceAuthEnabled = Boolean(getServiceApiKey());
+  if (!serviceAuthEnabled && referenceAuthMode === "strict") {
+    console.error(
+      "[presence-happy-path] FAILED: PRESENCE_REFERENCE_AUTH_MODE=strict requires PRESENCE_SERVICE_API_KEY to be set."
+    );
+    console.error("[presence-happy-path] Set a shared secret and restart, or run with PRESENCE_REFERENCE_AUTH_MODE=demo for local/dev.");
+    process.exit(1);
+  }
+  if (!serviceAuthEnabled) {
+    console.warn(
+      "[presence-happy-path] Insecure-by-default reference mode active: service-to-service endpoints are currently unprotected (PRESENCE_REFERENCE_AUTH_MODE=demo)."
+    );
+    console.warn(
+      "[presence-happy-path] Set PRESENCE_SERVICE_API_KEY and PRESENCE_REFERENCE_AUTH_MODE=strict for production-like hardening."
+    );
+  }
   const routeBasePath = normalizeRouteBasePath(process.env.ROUTE_BASE_PATH || "");
   const publicBaseUrl = (process.env.PUBLIC_BASE_URL || `http://${host}:${port}`).replace(/\/$/, "");
   const publicPresenceApiBaseUrl = `${publicBaseUrl}/presence`;
@@ -361,6 +387,15 @@ async function main() {
             enabled: cleanupConfig.enabled,
             intervalSeconds: cleanupConfig.intervalSeconds,
             runAtStartup: cleanupConfig.runAtStartup,
+          },
+          security: {
+            serviceAuthMode: referenceAuthMode,
+            serviceApiKeyConfigured: serviceAuthEnabled,
+            callbackEndpointsPublic: [
+              "POST /presence/link-sessions/:sessionId/complete",
+              "POST /presence/linked-accounts/:accountId/verify",
+              "POST /presence/pending-proof-requests/:requestId/respond",
+            ],
           },
         });
         return;
@@ -783,8 +818,11 @@ async function main() {
   console.log(`[presence-happy-path] linkage store: ${storePath}`);
   if (serviceAuthEnabled) {
     console.log(`[presence-happy-path] service API auth: enabled via PRESENCE_SERVICE_API_KEY`);
+  } else {
+    console.log(`[presence-happy-path] reference server auth posture: demo mode (service API auth disabled)`);
   }
   console.log(`[presence-happy-path] service API auth header: x-presence-service-api-key or Authorization: Bearer <key>`);
+  console.log(`[presence-happy-path] reference auth mode env: PRESENCE_REFERENCE_AUTH_MODE=${referenceAuthMode}`);
   console.log(
     `[presence-happy-path] optional pending-proof push transport (best-effort wake): ${
       process.env.PRESENCE_PUSH_TRANSPORT || "off"

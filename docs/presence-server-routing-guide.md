@@ -68,6 +68,8 @@ Important:
 - `PUBLIC_BASE_URL=http://127.0.0.1:8787`
 - `PRESENCE_SERVICE_DOMAIN` unset until HTTPS and `.well-known` are available
 - `PRESENCE_ALLOW_REPLACEMENT_ON_MISMATCH=true` (server creates a relink recovery session when a verified proof arrives from an unexpected device)
+- `PRESENCE_REFERENCE_AUTH_MODE=demo` (default/dev behavior, demo auth posture)
+- `PRESENCE_SERVICE_API_KEY=<random-long-secret>` (optional; no-op unless mode is `strict`)
 - `PRESENCE_CLEANUP_INTERVAL_SECONDS=300` (5 minutes)
 
 For stricter recovery, set `PRESENCE_ALLOW_REPLACEMENT_ON_MISMATCH=false` in dev or production to require explicit re-auth rather than relink-on-mismatch.
@@ -91,6 +93,15 @@ For stricter recovery, set `PRESENCE_ALLOW_REPLACEMENT_ON_MISMATCH=false` in dev
     "enabled": true,
     "intervalSeconds": 300,
     "runAtStartup": true
+  },
+  "security": {
+    "serviceAuthMode": "demo",
+    "serviceApiKeyConfigured": false,
+    "callbackEndpointsPublic": [
+      "POST /presence/link-sessions/:sessionId/complete",
+      "POST /presence/linked-accounts/:accountId/verify",
+      "POST /presence/pending-proof-requests/:requestId/respond"
+    ]
   }
 }
 ```

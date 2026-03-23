@@ -45,9 +45,16 @@ Still intentionally out of scope:
 
 ## Installation
 
+For package consumers:
+
 ```bash
-npm install
+npm install presence-sdk presence-verifier
 ```
+
+`presence-sdk` depends on `presence-verifier` as a published dependency. If you are working locally inside this repo, the monorepo `npm` workspace will still resolve the linked source package for development.
+
+Runtime requirement:
+- Node.js `>=18`
 
 ---
 
@@ -182,6 +189,15 @@ Use `../docs/presence-integration-quickstart.md` as the canonical endpoint and s
 ---
 
 ## Public integration model
+
+### Reference posture
+
+This package includes `examples/local-reference-server.js`, which is a **reference/demonstration server** for local development and evaluation. It is deliberately convenient and insecure-by-default:
+- no service API key required unless you configure one
+- public completion/verify callbacks remain open for mobile flows
+
+For production or shared deployments, prefer a deployed transport with explicit server-auth controls and hardened network posture.
+
 
 Presence works as a split system:
 

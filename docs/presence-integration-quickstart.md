@@ -131,11 +131,15 @@ For the server-local path map:
 - Public links and trust checks should remain aligned to `PUBLIC_BASE_URL` + `/presence`.
 - Don’t mix `ROUTE_BASE_PATH` into `allowed_url_prefixes`; keep trust prefixes on the public API base that mobile receives.
 
-## Service auth (minimum baseline path)
+## Service auth (reference posture)
 
-For a small-team deployment, you can enable a shared-secret guard: `PRESENCE_SERVICE_API_KEY`.
+The reference server defaults to a **demo posture** for local/dev workflows. In this default, service-owned routes are intentionally easier to use, but less secure.
 
-When set, the reference server protects service-owned operations with either:
+To run a hardened mode, set both:
+- `PRESENCE_SERVICE_API_KEY=<random-long-secret>`
+- `PRESENCE_REFERENCE_AUTH_MODE=strict`
+
+In strict mode, the reference server protects service-owned operations with either:
 - `Authorization: Bearer <key>`
 - `x-presence-service-api-key: <key>`
 
@@ -158,7 +162,7 @@ The public callback/deep-link endpoints remain open by design to support the use
 - `POST /presence/linked-accounts/:accountId/verify`
 - `POST /presence/pending-proof-requests/:requestId/respond`
 
-The auth check is opt-in; leave unset to keep baseline local/dev behavior.
+`PRESENCE_REFERENCE_AUTH_MODE` can also be left unset/`demo` for local/dev use.
 
 ## Expired nonce/request cleanup sweep (reference servers)
 
