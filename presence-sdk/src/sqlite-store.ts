@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { mkdirSync } from "fs";
 import { dirname } from "path";
 import Database from "better-sqlite3";
@@ -153,6 +154,8 @@ export class SqliteLinkageStore implements LinkageStore {
   private readonly db: Database.Database;
   private txDepth = 0;
   private isClosed = false;
+  private txQueue: Promise<unknown> = Promise.resolve();
+  private readonly mutationScope = new AsyncLocalStorage<boolean>();
 
   constructor(options: SqliteLinkageStoreOptions) {
     this.options = { ...options, mode: options.mode ?? SQLITE_FIRST_MODE };
@@ -621,6 +624,22 @@ export class SqliteLinkageStore implements LinkageStore {
    * while primary methods use withTransaction() directly.
    */
   private async withAutoTransaction<T>(operation: () => Promise<T>): Promise<T> {
+    // Re-enter same async transaction context when nested: callers sharing the
+    // same async stack should not create a separate queued transaction.
+    if (this.mutationScope.getStore()) {
+      return this.withAutoTransactionUnqueued(operation);
+    }
+
+    // Serialize async transaction entry points to avoid interleaving async
+    // continuations from distinct calls into a shared write lock.
+    const execution = () => this.mutationScope.run(true, () => this.withAutoTransactionUnqueued(operation));
+    const queued = this.txQueue.then(execution, execution);
+
+    this.txQueue = queued.catch(() => undefined);
+    return queued;
+  }
+
+  private async withAutoTransactionUnqueued<T>(operation: () => Promise<T>): Promise<T> {
     const shouldStartTransaction = this.txDepth === 0;
     this.txDepth += 1;
     if (shouldStartTransaction) {

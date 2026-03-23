@@ -817,6 +817,64 @@ function buildAndroidBody(
     }
   });
 
+  await test("sqlite-backed mutate() serializes concurrent async mutators", async () => {
+    const dbDir = mkdtempSync(join(tmpdir(), "presence-sqlite-mutate-serialize-"));
+    const store = new SqliteLinkageStore({
+      dbPath: join(dbDir, "presence-linkage.db"),
+      mode: "single-team",
+    });
+    const now = Math.floor(Date.now() / 1000);
+
+    try {
+      const first = store.mutate(async (mutatorStore) => {
+        await mutatorStore.saveServiceBinding({
+          bindingId: "sqlite_bind_concurrent_a",
+          serviceId: "svc",
+          accountId: "acct-concurrent-a",
+          deviceIss: "presence:device:concurrent-a",
+          createdAt: now,
+          updatedAt: now,
+          status: "linked",
+          lastLinkedAt: now,
+          lastVerifiedAt: now,
+          lastAttestedAt: now,
+        });
+        await new Promise((resolve) => setTimeout(resolve, 75));
+        return "first-done";
+      });
+
+      const second = store.mutate(async (mutatorStore) => {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        await mutatorStore.saveServiceBinding({
+          bindingId: "sqlite_bind_concurrent_b",
+          serviceId: "svc",
+          accountId: "acct-concurrent-b",
+          deviceIss: "presence:device:concurrent-b",
+          createdAt: now,
+          updatedAt: now,
+          status: "linked",
+          lastLinkedAt: now,
+          lastVerifiedAt: now,
+          lastAttestedAt: now,
+        });
+        throw new Error("second-failed");
+      });
+
+      const [firstResult, secondResult] = await Promise.allSettled([first, second]);
+
+      assert.equal(firstResult.status, "fulfilled");
+      assert.equal(secondResult.status, "rejected");
+
+      const survived = await store.getServiceBinding("svc", "acct-concurrent-a");
+      const failed = await store.getServiceBinding("svc", "acct-concurrent-b");
+
+      assert.equal(survived?.bindingId, "sqlite_bind_concurrent_a");
+      assert.equal(failed, null);
+    } finally {
+      rmSync(dbDir, { recursive: true, force: true });
+    }
+  });
+
   await test("sqlite-backed destroy() is idempotent and allows reopening", async () => {
     const dbDir = mkdtempSync(join(tmpdir(), "presence-sqlite-destroy-"));
     const dbPath = join(dbDir, "presence-linkage.db");
