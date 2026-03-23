@@ -30,7 +30,11 @@ Remaining production TODOs are now mostly about trust material and real environm
 
 ### Small-team persistence helper
 
-For SQLite-first/single-server deployments, Presence verifier now includes `SqliteTofuStore` in `src/stores.ts`. It persists Android TOFU key bindings by `iss` in a local sqlite database so Android key continuity survives server restarts.
+For SQLite-first/single-server deployments, Presence verifier includes `SqliteTofuStore` in `src/stores.ts`. It persists Android TOFU key bindings by `iss` in a local sqlite database so Android key continuity survives server restarts.
+
+`SqliteTofuStore` bootstraps schema with a small, explicit migration path. It tracks schema versions in
+`_presence_verifier_schema_migrations` and applies sequential upgrades before first use, so legacy
+"create-if-not-exists" databases can be upgraded safely on startup.
 
 ---
 

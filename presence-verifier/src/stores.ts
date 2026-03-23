@@ -124,6 +124,8 @@ export interface SqliteTofuStoreOptions {
   journalMode?: "WAL" | "DELETE";
 }
 
+export const SQLITE_TOFU_SCHEMA_VERSION = 1;
+
 export const SQLITE_TOFU_SCHEMA = `
 CREATE TABLE IF NOT EXISTS tofu_keys (
   iss TEXT PRIMARY KEY,
@@ -131,6 +133,24 @@ CREATE TABLE IF NOT EXISTS tofu_keys (
   updated_at INTEGER NOT NULL
 );
 `.trim();
+
+const SQLITE_TOFU_SCHEMA_MIGRATIONS_TABLE = `
+CREATE TABLE IF NOT EXISTS _presence_verifier_schema_migrations (
+  version INTEGER PRIMARY KEY,
+  applied_at INTEGER NOT NULL
+);
+`.trim();
+
+const TOFU_MIGRATIONS: ReadonlyArray<{ version: number; up: string[] }> = [
+  {
+    version: 1,
+    up: [
+      SQLITE_TOFU_SCHEMA_MIGRATIONS_TABLE,
+      SQLITE_TOFU_SCHEMA,
+      "INSERT OR IGNORE INTO _presence_verifier_schema_migrations (version, applied_at) VALUES (1, strftime('%s','now'));",
+    ],
+  },
+];
 
 /**
  * SqliteTofuStore
@@ -153,7 +173,7 @@ export class SqliteTofuStore implements TofuStore {
 
     this.db = new Database(this.dbPath);
     this.db.exec(`PRAGMA journal_mode = ${options.journalMode ?? "WAL"};`);
-    this.db.exec(SQLITE_TOFU_SCHEMA);
+    this.runMigrations();
   }
 
   async get(iss: string): Promise<Uint8Array | null> {
@@ -196,6 +216,28 @@ export class SqliteTofuStore implements TofuStore {
     }
     this.isClosed = true;
     this.db.close();
+  }
+
+  private runMigrations(): void {
+    const applyMigrations = this.db.transaction(() => {
+      this.db.exec(SQLITE_TOFU_SCHEMA_MIGRATIONS_TABLE);
+
+      const currentVersion = Number(
+        (this.db
+          .prepare("SELECT COALESCE(MAX(version), 0) AS version FROM _presence_verifier_schema_migrations;")
+          .get() as { version: number } | undefined)?.version ?? 0
+      );
+
+      for (const migration of TOFU_MIGRATIONS) {
+        if (migration.version > currentVersion) {
+          for (const statement of migration.up) {
+            this.db.exec(statement);
+          }
+        }
+      }
+    });
+
+    applyMigrations();
   }
 
   private assertOpen(): void {

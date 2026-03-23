@@ -8,8 +8,9 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { strict as assert } from "node:assert";
+import Database from "better-sqlite3";
 
-import { SqliteTofuStore } from "../stores.js";
+import { SqliteTofuStore, SQLITE_TOFU_SCHEMA, SQLITE_TOFU_SCHEMA_VERSION } from "../stores.js";
 
 let passed = 0;
 let failed = 0;
@@ -36,6 +37,21 @@ function cleanup(path: string) {
   } catch {
     // ignore
   }
+}
+
+function createLegacyTofuDb(path: string): void {
+  const db = new Database(path);
+  db.exec(SQLITE_TOFU_SCHEMA);
+  db.close();
+}
+
+function readSchemaVersion(path: string): number {
+  const db = new Database(path);
+  const row = db.prepare("SELECT COALESCE(MAX(version), 0) AS version FROM _presence_verifier_schema_migrations;").get() as
+    | { version: number }
+    | undefined;
+  db.close();
+  return row?.version ?? 0;
 }
 
 (async () => {
@@ -82,6 +98,26 @@ function cleanup(path: string) {
 
     const got = await store.get("did:example:overwrite");
     assert.deepEqual(Array.from(got ?? []), [21, 22, 23]);
+
+    store.close();
+    cleanup(dbPath);
+  });
+
+  await test("migrates legacy no-version schema to version table", async () => {
+    const dbPath = nextTempDbPath();
+    createLegacyTofuDb(dbPath);
+
+    const store = new SqliteTofuStore({ dbPath });
+    const got = await store.get("did:example:legacy");
+
+    assert.equal(got, null);
+    assert.equal(readSchemaVersion(dbPath), SQLITE_TOFU_SCHEMA_VERSION);
+
+    await store.set("did:example:legacy", new Uint8Array([9, 8, 7]));
+
+    const recovered = await store.get("did:example:legacy");
+    assert.ok(recovered !== null);
+    assert.deepEqual(Array.from(recovered), [9, 8, 7]);
 
     store.close();
     cleanup(dbPath);
