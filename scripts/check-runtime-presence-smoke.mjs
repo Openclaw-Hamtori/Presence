@@ -173,6 +173,16 @@ async function main() {
       assert(health.payload?.cleanup?.intervalSeconds === 2, "local runtime smoke should run cleanup every 2 seconds for verification");
     }
 
+    assert(typeof health.payload?.store === "object", "health response should expose store metadata");
+    assert(typeof health.payload?.store?.kind === "string" && health.payload.store.kind.length > 0,
+      "health store metadata should include kind");
+    assert(typeof health.payload?.store?.schema === "string" && health.payload.store.schema.length > 0,
+      "health store metadata should include schema identity");
+    assert(typeof health.payload?.store?.path === "string" && health.payload.store.path.length > 0,
+      "health store metadata should include path");
+    assert(typeof health.payload?.store?.surface === "string" && health.payload.store.surface.length > 0,
+      "health store metadata should include surface");
+
     const wellKnown = await requestJson(baseUrl, `${routeBasePath}/.well-known/presence.json`);
     assert(wellKnown.response.status === 200, "well-known endpoint should be reachable");
     assert(wellKnown.payload?.version === "1", "well-known response should expose version");

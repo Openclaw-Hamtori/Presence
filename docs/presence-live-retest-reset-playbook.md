@@ -26,6 +26,27 @@ Use this when a live retest or integration check fails and you need to reset a l
    - Create a fresh proof request.
    - Verify PASS again end-to-end.
 
+## Field-name cheat sheet (authoritative surface first)
+
+When checking status, use these exact fields as the canonical signal:
+
+- `GET /health`:
+  - `store.kind`: linkage store category (`file`, `sqlite`, `redis`, etc.)
+  - `store.schema`: canonical schema identity for that store
+  - `store.path` and `store.surface`: where and how the authoritative store is backed
+  - `cleanup.*`: nonce/request sweep config currently active
+- `GET /presence/linked-accounts/:accountId/status`:
+  - `readiness.state`: authoritative gate state (`ready`, `stale`, `not_ready`, `missing_binding`, `unlinked`, `revoked`, `recovery_pending`)
+  - `readiness.stateValidUntil`: snapshot expiry for the current linked state
+  - `readiness.accountId`: authoritative account key for server-scoped status
+- `GET /presence/audit-events`:
+  - `events[].code` + `events[].timestamp` for a timeline check across replays
+  - `events[].accountId` to correlate action to account
+
+Use this sheet to distinguish:
+- **Authoritative truth**: current values from live API responses
+- **Local derived view**: any client-device or stale DB snapshot not returned by the above
+
 ---
 
 ## Common confusions to avoid

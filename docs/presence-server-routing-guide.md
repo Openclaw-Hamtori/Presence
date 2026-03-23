@@ -72,10 +72,21 @@ Important:
 
 For stricter recovery, set `PRESENCE_ALLOW_REPLACEMENT_ON_MISMATCH=false` in dev or production to require explicit re-auth rather than relink-on-mismatch.
 
-`/health` now includes a `cleanup` block so operators can confirm automatic sweep settings:
+/health now includes a `store` block (in addition to `cleanup`) so operators can identify the authoritative backing surface without guessing:
 
 ```json
 {
+  "store": {
+    "kind": "file",
+    "schema": "presence-linkage-store-file-json-v1",
+    "path": "/path/to/storage/links.json",
+    "surface": "path",
+    "capabilities": {
+      "kind": "file",
+      "supportsAtomicMutations": true,
+      "supportsCrossProcessLocking": true
+    }
+  },
   "cleanup": {
     "enabled": true,
     "intervalSeconds": 300,
@@ -83,6 +94,8 @@ For stricter recovery, set `PRESENCE_ALLOW_REPLACEMENT_ON_MISMATCH=false` in dev
   }
 }
 ```
+
+`/health` on `presence-happy-path/app/server.cjs` reports the above fields.
 
 ## Reference implementations
 

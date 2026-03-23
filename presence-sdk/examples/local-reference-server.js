@@ -176,11 +176,24 @@ async function main() {
   const storageRoot = process.env.PRESENCE_STORAGE_ROOT || join(process.cwd(), "var", "presence");
   mkdirSync(storageRoot, { recursive: true });
   const storePath = fileLinkageStorePath(storageRoot);
+  const linkageStore = new FileSystemLinkageStore(storePath);
+  const storeCapabilities = typeof linkageStore.getCapabilities === "function"
+    ? linkageStore.getCapabilities()
+    : null;
+  const storeKind = storeCapabilities?.kind || "file";
+  const storeSchema = {
+    file: "presence-linkage-store-file-json-v1",
+    sqlite: "presence-linkage-store-sqlite-v1",
+    redis: "presence-linkage-store-redis-v1",
+    in_memory: "presence-linkage-store-memory-v1",
+    custom: "presence-linkage-store-custom-v1",
+  }[storeKind] || "presence-linkage-store-unknown-v1";
+  const storeSurface = storeKind === "file" ? "path" : "surface";
 
   const presence = new PresenceClient({
     silent: true,
     serviceId,
-    linkageStore: new FileSystemLinkageStore(storePath),
+    linkageStore,
     bindingPolicy: { allowReplacementOnMismatch: true },
   });
   const cleanupConfig = parseCleanupIntervalConfig();
@@ -223,6 +236,13 @@ async function main() {
           serviceId,
           serviceDomain: serviceDomain || undefined,
           storePath,
+          store: {
+            kind: storeKind,
+            schema: storeSchema,
+            path: storePath,
+            surface: storeSurface,
+            capabilities: storeCapabilities ?? undefined,
+          },
           cleanup: {
             enabled: cleanupConfig.enabled,
             intervalSeconds: cleanupConfig.intervalSeconds,
@@ -604,6 +624,7 @@ async function main() {
 
   await new Promise((resolve) => server.listen(port, host, resolve));
   console.log(`[presence-sdk] local reference server listening on ${publicBaseUrl}`);
+  console.log(`[presence-sdk] authoritative store: kind=${storeKind} schema=${storeSchema} surface=${storeSurface} path=${storePath}`);
   console.log(`[presence-sdk] linkage store: ${storePath}`);
   if (cleanupConfig.enabled) {
     console.log(`[presence-sdk] automatic nonce/request sweep: every ${cleanupConfig.intervalSeconds}s`);

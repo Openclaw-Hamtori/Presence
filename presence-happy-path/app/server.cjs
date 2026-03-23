@@ -280,6 +280,20 @@ async function main() {
   const storageRoot = process.env.PRESENCE_STORAGE_ROOT || join(process.cwd(), "var", "presence");
   mkdirSync(storageRoot, { recursive: true });
   const storePath = fileLinkageStorePath(storageRoot);
+  const linkageStore = new FileSystemLinkageStore(storePath);
+  const storeCapabilities = typeof linkageStore.getCapabilities === "function"
+    ? linkageStore.getCapabilities()
+    : null;
+  const storeKind = storeCapabilities?.kind || "file";
+  const storeSchema = {
+    file: "presence-linkage-store-file-json-v1",
+    sqlite: "presence-linkage-store-sqlite-v1",
+    redis: "presence-linkage-store-redis-v1",
+    in_memory: "presence-linkage-store-memory-v1",
+    custom: "presence-linkage-store-custom-v1",
+  }[storeKind] || "presence-linkage-store-unknown-v1";
+  const storeSurface = storeKind === "file" ? "path" : "surface";
+
   // Keep mismatch replacement enabled by default for the happy-path demo/server:
   // it keeps recovery recoverable via relink flow without changing server runtime.
   // Set PRESENCE_ALLOW_REPLACEMENT_ON_MISMATCH=false for stricter behavior.
@@ -289,7 +303,7 @@ async function main() {
   const presence = new PresenceClient({
     silent: true,
     serviceId,
-    linkageStore: new FileSystemLinkageStore(storePath),
+    linkageStore,
     iosAppId,
     bindingPolicy: { allowReplacementOnMismatch },
     pendingProofSignalTransport: resolvePendingProofSignalTransport({ iosAppId }),
@@ -335,6 +349,13 @@ async function main() {
           serviceId,
           serviceDomain: serviceDomain || undefined,
           storePath,
+          store: {
+            kind: storeKind,
+            schema: storeSchema,
+            path: storePath,
+            surface: storeSurface,
+            capabilities: storeCapabilities ?? undefined,
+          },
           iosAppIdSource,
           cleanup: {
             enabled: cleanupConfig.enabled,
@@ -758,6 +779,7 @@ async function main() {
   }
   console.log(`[presence-happy-path] listening on ${publicBaseUrl}`);
   console.log(`[presence-happy-path] public Presence API base: ${publicPresenceApiBaseUrl}`);
+  console.log(`[presence-happy-path] authoritative store: kind=${storeKind} schema=${storeSchema} surface=${storeSurface} path=${storePath}`);
   console.log(`[presence-happy-path] linkage store: ${storePath}`);
   if (serviceAuthEnabled) {
     console.log(`[presence-happy-path] service API auth: enabled via PRESENCE_SERVICE_API_KEY`);
