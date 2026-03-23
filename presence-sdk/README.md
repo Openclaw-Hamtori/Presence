@@ -2,6 +2,8 @@
 
 Presence SDK — service integration layer for Presence Signal Spec v0.4.
 
+**Current platform scope:** service-side and **iOS-first runtime pairing** (`presence-mobile` is currently iOS-focused).
+
 Wraps `presence-verifier` with:
 - challenge nonce creation + issuance
 - transport parsing for HTTP/JSON requests

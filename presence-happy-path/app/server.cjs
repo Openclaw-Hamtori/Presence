@@ -32,19 +32,81 @@ const {
   rewriteLinkSessionForPublicBase,
 } = loadPresenceSdk();
 
+function getMaxBodyBytes() {
+  const value = process.env.PRESENCE_MAX_BODY_BYTES;
+  const defaultMaxBytes = 64 * 1024;
+
+  if (value === undefined || value === "") {
+    return defaultMaxBytes;
+  }
+
+  const parsed = Number.parseInt(value, 10);
+  if (Number.isNaN(parsed) || parsed <= 0) {
+    return defaultMaxBytes;
+  }
+
+  return parsed;
+}
+
+function createBodyParseError(code, message, statusCode = 400) {
+  const error = new Error(message);
+  error.code = code;
+  error.statusCode = statusCode;
+  return error;
+}
+
 function readJson(req) {
+  const maxBodyBytes = getMaxBodyBytes();
+  const contentLength = Number.parseInt(req.headers["content-length"] || "", 10);
+  if (Number.isFinite(contentLength) && contentLength > maxBodyBytes) {
+    return Promise.reject(createBodyParseError(
+      "ERR_REQUEST_BODY_TOO_LARGE",
+      `Request body too large (${contentLength} > ${maxBodyBytes} bytes)`,
+      413
+    ));
+  }
+
   return new Promise((resolve, reject) => {
     const chunks = [];
-    req.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
+    let receivedBytes = 0;
+
+    req.on("data", (chunk) => {
+      receivedBytes += chunk.length;
+      if (receivedBytes > maxBodyBytes) {
+        reject(createBodyParseError(
+          "ERR_REQUEST_BODY_TOO_LARGE",
+          `Request body too large (${receivedBytes} > ${maxBodyBytes} bytes)`,
+          413
+        ));
+        return;
+      }
+      chunks.push(Buffer.from(chunk));
+    });
+
     req.on("end", () => {
       try {
         const raw = Buffer.concat(chunks).toString("utf8");
-        resolve(raw ? JSON.parse(raw) : {});
+        if (!raw) {
+          resolve({});
+          return;
+        }
+        resolve(JSON.parse(raw));
       } catch (error) {
-        reject(error);
+        reject(createBodyParseError(
+          "ERR_INVALID_JSON",
+          error instanceof Error ? error.message : "Invalid JSON body",
+          400
+        ));
       }
     });
-    req.on("error", reject);
+
+    req.on("error", (error) => {
+      reject(createBodyParseError(
+        "ERR_REQUEST_ERROR",
+        error instanceof Error ? error.message : String(error),
+        400
+      ));
+    });
   });
 }
 
@@ -798,6 +860,24 @@ async function main() {
 
       send(404, { ok: false, code: "ERR_NOT_FOUND" });
     } catch (error) {
+      if (error && (error.statusCode === 413 || error.code === "ERR_REQUEST_BODY_TOO_LARGE")) {
+        send(413, {
+          ok: false,
+          code: "ERR_REQUEST_BODY_TOO_LARGE",
+          message: error.message,
+        });
+        return;
+      }
+
+      if (error && error.code === "ERR_INVALID_JSON") {
+        send(400, {
+          ok: false,
+          code: "ERR_INVALID_JSON",
+          message: error.message,
+        });
+        return;
+      }
+
       send(500, {
         ok: false,
         code: "ERR_INTERNAL",

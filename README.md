@@ -18,10 +18,16 @@ The repo is currently tuned for a **public npm release + self-hosted reference s
 - Endpoint contract and trust flow: `docs/presence-public-architecture.md`
 - Reference server routing + env knobs: `docs/presence-server-routing-guide.md`
 - Canonical backend flow reference: `docs/presence-pending-proof-request-architecture.md`
+- Production/deployment runbook: `docs/presence-production-runbook.md`
+- Historical release notes/checks (archived, non-canonical): `docs/archive/release-notes/README.md`
+
+Current platform scope: **iOS-first** for client runtime.
 
 Package docs:
 - `presence-verifier/README.md`
 - `presence-sdk/README.md`
+- `presence-mobile/README.md` (iOS-native reference client)
+- `presence-test-app/README.md` (integration test surface)
 
 ---
 

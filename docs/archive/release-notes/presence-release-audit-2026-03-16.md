@@ -97,5 +97,5 @@ If judging final ship / signoff:
 ## Recommended next actions
 1. Run one real backend completion round-trip and record the evidence.
 2. Run/observe one background refresh + renewal-window validation and record the evidence.
-3. Update `REGRESSION_CHECKLIST.md` and this audit note with those final results.
+3. Update `docs/archive/release-notes/regression-checklist-2026-03-16.md` and this audit note with those final results.
 4. Then perform final release signoff.

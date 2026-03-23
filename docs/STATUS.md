@@ -13,12 +13,12 @@ _Last updated: 2026-03-23_
 
 ## 2) Verified working state (real device/live server)
 - **Real iPhone + live HTTPS trust + verifier completion happy-path validated** end-to-end
-  - Documented in `PRESENCE_RELEASE_VALIDATION_2026-03-19.md`.
+  - Documented in `docs/archive/release-notes/presence-release-validation-2026-03-19.md`.
 - **Live server canonical loop (link/verify/reauth/ready persistence) validated repeatedly on real device + Noctu**
   - Documented in `projects/presence-ship-closeout-2026-03-21.md`.
   - Includes repeated verify success, readiness (`ready`, `lastVerifiedAt`, `stateValidUntil`) advancing, and audit/event consistency.
 - **Trust model + service-domain prefix behavior confirmed on-device**
-  - `/.well-known/presence.json` happy path and boundary checks validated; stale/invalid trust failures are fail-closed (`PRESENCE_RELEASE_VALIDATION_2026-03-19.md`).
+  - `/.well-known/presence.json` happy path and boundary checks validated; stale/invalid trust failures are fail-closed (`docs/archive/release-notes/presence-release-validation-2026-03-19.md`).
 - **Live pending-proof API surface is now redeployed, route-mapped, and real-device revalidated on latest deploy**
   - `POST /presence/linked-accounts/:accountId/pending-proof-requests`
   - `GET /presence/linked-accounts/:accountId/pending-proof-requests`

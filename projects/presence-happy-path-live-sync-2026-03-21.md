@@ -17,7 +17,7 @@
 - Summary: Service tab now hydrates bindings from device endpoint first, then falls back to audit-events + linked-account status, then merges with local bindings.
 - Reflected in:
   - `presence-test-app/App.tsx`
-  - `TIME_TEST_CHECKLIST.md`
+  - `docs/archive/release-notes/time-test-checklist-2026-03-21.md`
 
 ---
 

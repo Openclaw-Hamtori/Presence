@@ -106,6 +106,6 @@ Already closed in this phase:
 
 ## Notes
 - This file was the handoff point for release validation during that phase.
-- `REGRESSION_CHECKLIST.md` is the checkbox ledger; this file is the judgment/evidence summary.
+- `docs/archive/release-notes/regression-checklist-2026-03-16.md` is the checkbox ledger; this file is the judgment/evidence summary.
 - Code-level ship blockers are closed as of the latest audit.
 - Remaining release risk is concentrated in real-device renewal/background evidence, not the core linking/verifier flow.

@@ -2,6 +2,12 @@
 
 Use this as the starting point for implementing or integrating Presence today.
 
+## Production scope note
+
+The public-facing docs here describe the current **canonical, iOS-first** path:
+- Mobile path: **iOS production target**
+- Android: wire-shape support in types only; runtime path is not production-hardened yet.
+
 ## Primary flow (canonical)
 
 The implemented default product path is:
@@ -22,6 +28,7 @@ Canonical meaning:
    - full backend + mobile integration flow
    - endpoint contract and required states
    - push/APNs positioning (optional / non-canonical)
+   - explicit scope note: iOS-first runtime target
 2. `docs/presence-public-architecture.md`
    - protocol and architecture view of linked service + pending request flows
 3. `docs/presence-pending-proof-request-architecture.md`
@@ -38,6 +45,7 @@ Canonical meaning:
 - `presence-mobile/README.md`: mobile SDK semantics, proof-generation expectations, and user-state behavior.
 - `presence-happy-path/app/server.cjs`: local reference server implementing the canonical flow with `ROUTE_BASE_PATH`, `PUBLIC_BASE_URL`, and `PRESENCE_SERVICE_DOMAIN` support.
 - `presence-sdk/examples/*`: lightweight reference implementation of endpoint handlers.
+- `docs/presence-production-runbook.md`: concrete production/deployment checklist + required environment/config.
 
 ## Quick implementation order
 
@@ -51,6 +59,11 @@ Canonical meaning:
 ## Production roadmap
 
 - `docs/presence-next-stage-roadmap.md`: priorities for moving from stabilized reference implementation to self-hostable, operator-grade stack.
+
+## Historical/publication archive (non-canonical)
+
+- `docs/archive/release-notes/README.md`: historical release notes and checklists that informed early phase work.
+- `docs/README.md` remains the canonical onboarding map.
 
 ## Regression baseline (start here before Phase 1/2 changes)
 
