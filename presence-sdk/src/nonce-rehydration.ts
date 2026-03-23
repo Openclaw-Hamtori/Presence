@@ -40,6 +40,18 @@ export class LinkageStorePersistedNonceStore implements PersistedNonceStore {
     }
     return isStillActiveSession(session, now) ? session.requestedAt : null;
   }
+
+  async sweepExpiredNonces(_params?: { now?: number }): Promise<{
+    linkSessionsExpired: number;
+    pendingProofRequestsExpired: number;
+    totalExpired: number;
+  }> {
+    return {
+      linkSessionsExpired: 0,
+      pendingProofRequestsExpired: 0,
+      totalExpired: 0,
+    };
+  }
 }
 
 function isStillActiveSession(session: LinkSession, now: number): boolean {

@@ -113,6 +113,18 @@ export interface PersistedNonceStore {
     sessionId: string;
     now: number;
   }): Promise<number | null>;
+
+  /**
+   * Optional, cheap maintenance hook for small-team cleanup jobs.
+   * Should only operate on nonce-bearing persisted state (pending sessions/requests).
+   */
+  sweepExpiredNonces(params?: {
+    now?: number;
+  }): Promise<{
+    linkSessionsExpired: number;
+    pendingProofRequestsExpired: number;
+    totalExpired: number;
+  }>;
 }
 
 export type ManagedNonceStore = NonceStore & NonceIssuer;

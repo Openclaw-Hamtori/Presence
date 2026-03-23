@@ -764,6 +764,15 @@ export interface SqlitePersistedNonceStoreOptions {
 }
 
 /**
+ * Result payload for one sweep over nonce-bearing rows.
+ */
+export interface PersistedNonceSweepResult {
+  linkSessionsExpired: number;
+  pendingProofRequestsExpired: number;
+  totalExpired: number;
+}
+
+/**
  * SQLite-backed persisted-nonce resolver that reads issuance times directly from
  * link-session and pending-proof state tables.
  */
@@ -805,6 +814,28 @@ export class SqlitePersistedNonceStore implements PersistedNonceStore {
       .get(params.sessionId, params.now) as { requested_at?: number } | undefined;
 
     return row?.requested_at ?? null;
+  }
+
+  async sweepExpiredNonces(params?: { now?: number }): Promise<PersistedNonceSweepResult> {
+    const now = params?.now ?? Math.floor(Date.now() / 1000);
+
+    const linkSessionsExpired = this.db.prepare(
+      `UPDATE link_sessions
+       SET status = 'expired', completed_at = COALESCE(completed_at, ?)
+       WHERE status = 'pending' AND expires_at <= ?`
+    ).run(now, now).changes;
+
+    const pendingProofRequestsExpired = this.db.prepare(
+      `UPDATE pending_proof_requests
+       SET status = 'expired', completed_at = COALESCE(completed_at, ?)
+       WHERE status = 'pending' AND expires_at <= ?`
+    ).run(now, now).changes;
+
+    return {
+      linkSessionsExpired,
+      pendingProofRequestsExpired,
+      totalExpired: linkSessionsExpired + pendingProofRequestsExpired,
+    };
   }
 
   close(): void {

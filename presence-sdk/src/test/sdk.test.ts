@@ -284,8 +284,89 @@ function buildAndroidBody(
       assert.equal(issuedAtSession, now - 9);
     } finally {
       persistedNonceStore.close();
+      linkageStore.close();
       rmSync(dbDir, { recursive: true, force: true });
     }
+  });
+
+  await test("SqlitePersistedNonceStore sweepExpiredNonces() expires stale nonce-bearing rows", async () => {
+    const dbDir = mkdtempSync(join(tmpdir(), "presence-sqlite-nonce-sweep-"));
+    const dbPath = join(dbDir, "presence-linkage.db");
+    const linkageStore = new SqliteLinkageStore({ dbPath, mode: "single-team" });
+    const persistedNonceStore = new SqlitePersistedNonceStore({ dbPath, mode: "single-team" });
+    const now = Math.floor(Date.now() / 1000);
+
+    try {
+      await linkageStore.savePendingProofRequest({
+        id: "ppreq-sqlite-sweep-expired",
+        serviceId: "svc",
+        accountId: "acct-sweep",
+        bindingId: "bind-sweep",
+        deviceIss: "presence:device:sweep",
+        nonce: "sweep-expired-nonce",
+        requestedAt: now - 120,
+        expiresAt: now - 60,
+        status: "pending",
+      });
+      await linkageStore.savePendingProofRequest({
+        id: "ppreq-sqlite-sweep-active",
+        serviceId: "svc",
+        accountId: "acct-sweep",
+        bindingId: "bind-sweep",
+        deviceIss: "presence:device:sweep",
+        nonce: "sweep-active-nonce",
+        requestedAt: now,
+        expiresAt: now + 120,
+        status: "pending",
+      });
+      await linkageStore.saveLinkSession({
+        id: "plink-sqlite-sweep-expired",
+        serviceId: "svc",
+        accountId: "acct-sweep",
+        issuedNonce: "sqlite-sweep-expired",
+        requestedAt: now - 120,
+        expiresAt: now - 60,
+        status: "pending",
+      });
+      await linkageStore.saveLinkSession({
+        id: "plink-sqlite-sweep-active",
+        serviceId: "svc",
+        accountId: "acct-sweep",
+        issuedNonce: "sqlite-sweep-active",
+        requestedAt: now,
+        expiresAt: now + 120,
+        status: "pending",
+      });
+
+      const sweep = await persistedNonceStore.sweepExpiredNonces({ now });
+      assert.equal(sweep.linkSessionsExpired, 1);
+      assert.equal(sweep.pendingProofRequestsExpired, 1);
+      assert.equal(sweep.totalExpired, 2);
+
+      const expiredRequest = await linkageStore.getPendingProofRequest("ppreq-sqlite-sweep-expired");
+      const activeRequest = await linkageStore.getPendingProofRequest("ppreq-sqlite-sweep-active");
+      const expiredSession = await linkageStore.getLinkSession("plink-sqlite-sweep-expired");
+      const activeSession = await linkageStore.getLinkSession("plink-sqlite-sweep-active");
+
+      assert.equal(expiredRequest?.status, "expired");
+      assert.equal(activeRequest?.status, "pending");
+      assert.equal(expiredSession?.status, "expired");
+      assert.equal(activeSession?.status, "pending");
+    } finally {
+      persistedNonceStore.close();
+      linkageStore.close();
+      rmSync(dbDir, { recursive: true, force: true });
+    }
+  });
+
+  await test("LinkageStoreNonceResolver sweepExpiredNonces() is a no-op", async () => {
+    const store = new InMemoryLinkageStore();
+    const resolver = new LinkageStoreNonceResolver(store);
+
+    const result = await resolver.sweepExpiredNonces();
+    assert.equal(result.linkSessionsExpired, 0);
+    assert.equal(result.pendingProofRequestsExpired, 0);
+    assert.equal(result.totalExpired, 0);
   });
 
   await test("parsePresenceRequest() parses Android format and marks platform explicit", async () => {
