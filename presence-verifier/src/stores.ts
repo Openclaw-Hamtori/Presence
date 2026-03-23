@@ -1,13 +1,16 @@
 /**
- * Presence Verifier - In-Memory Store Implementations
+ * Presence Verifier - Store Implementations
  *
- * These are reference implementations for testing and development.
- * Production deployments SHOULD use persistent stores (Redis, DB, etc.).
+ * - In-memory stores: reference defaults for tests and local development
+ * - SQLite-backed stores: small-team/single-server persistence path
  *
- * NonceStore: tracks issued and used nonces
- * TofuStore:  persists first-seen public keys per iss (Android TOFU)
+ * NonceStore tracks issued/used nonces.
+ * TofuStore persists first-seen public keys per iss (Android TOFU).
  */
 
+import { mkdirSync } from "node:fs";
+import { dirname } from "node:path";
+import Database from "better-sqlite3";
 import type { NonceStore, TofuStore } from "./types.js";
 
 // ─── In-Memory Nonce Store ────────────────────────────────────────────────────
@@ -105,5 +108,99 @@ export class InMemoryTofuStore implements TofuStore {
   /** List all registered iss values */
   list(): string[] {
     return Array.from(this.store.keys());
+  }
+}
+
+// ─── SQLite-backed TOFU Store ────────────────────────────────────────────────
+
+export interface SqliteTofuStoreOptions {
+  /**
+   * Filesystem DB path for TOFU persistence (single-server / single-team use).
+   */
+  dbPath: string;
+  /**
+   * Journal mode for sqlite-backed stores.
+   */
+  journalMode?: "WAL" | "DELETE";
+}
+
+export const SQLITE_TOFU_SCHEMA = `
+CREATE TABLE IF NOT EXISTS tofu_keys (
+  iss TEXT PRIMARY KEY,
+  public_key BLOB NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+`.trim();
+
+/**
+ * SqliteTofuStore
+ *
+ * Small-team/SQLite-first TOFU persistence helper.
+ *
+ * This keeps TOFU bindings across process restarts while preserving the same
+ * TOFU API contract as InMemoryTofuStore.
+ */
+export class SqliteTofuStore implements TofuStore {
+  readonly dbPath: string;
+  private readonly db: Database.Database;
+  private isClosed = false;
+
+  constructor(options: SqliteTofuStoreOptions) {
+    this.dbPath = options.dbPath;
+    if (this.dbPath !== ":memory:") {
+      mkdirSync(dirname(this.dbPath), { recursive: true });
+    }
+
+    this.db = new Database(this.dbPath);
+    this.db.exec(`PRAGMA journal_mode = ${options.journalMode ?? "WAL"};`);
+    this.db.exec(SQLITE_TOFU_SCHEMA);
+  }
+
+  async get(iss: string): Promise<Uint8Array | null> {
+    this.assertOpen();
+
+    const row = this.db.prepare("SELECT public_key FROM tofu_keys WHERE iss = ?").get(iss) as
+      | { public_key: Buffer }
+      | undefined;
+
+    if (!row?.public_key) {
+      return null;
+    }
+
+    return new Uint8Array(row.public_key);
+  }
+
+  async set(iss: string, publicKey: Uint8Array): Promise<void> {
+    this.assertOpen();
+
+    const now = Math.floor(Date.now() / 1000);
+    this.db.prepare(`
+      INSERT INTO tofu_keys (iss, public_key, updated_at)
+      VALUES (@iss, @public_key, @updated_at)
+      ON CONFLICT(iss) DO UPDATE SET
+        public_key = excluded.public_key,
+        updated_at = excluded.updated_at
+    `).run({
+      iss,
+      public_key: Buffer.from(publicKey),
+      updated_at: now,
+    });
+  }
+
+  /**
+   * For explicit cleanup in service/container lifecycles.
+   */
+  close(): void {
+    if (this.isClosed) {
+      return;
+    }
+    this.isClosed = true;
+    this.db.close();
+  }
+
+  private assertOpen(): void {
+    if (this.isClosed) {
+      throw new Error("SqliteTofuStore is closed");
+    }
   }
 }

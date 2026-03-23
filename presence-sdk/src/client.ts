@@ -10,8 +10,12 @@
  *   - persistent linkage / revoke / recovery flows
  */
 
-import { verify as coreVerify, InMemoryTofuStore } from "presence-verifier";
-import type { VerifierContext } from "presence-verifier";
+import {
+  verify as coreVerify,
+  InMemoryTofuStore,
+  SqliteTofuStore,
+  type VerifierContext,
+} from "presence-verifier";
 import { createNonce, InMemoryManagedNonceStore } from "./nonce.js";
 import { parsePresenceRequest } from "./transport.js";
 import type {
@@ -35,6 +39,7 @@ import type {
   ListAuditEventsFilter,
   LinkageStore,
   PersistedNonceStore,
+  TofuStore,
   DevicePushToken,
   DevicePushTokenEnvironment,
   DevicePushTokenPlatform,
@@ -68,7 +73,7 @@ function isNonceIssuer(store: NonceStore | undefined): store is NonceStore & Non
 export class PresenceClient {
   private readonly config: PresenceClientConfig & { nonceTtlSeconds: number };
   private readonly managedNonces: InMemoryManagedNonceStore;
-  private readonly tofuStore: InMemoryTofuStore;
+  private readonly tofuStore: TofuStore;
   /**
    * Public for admin/debug surfaces that need direct store reads.
    * Prefer the higher-level client methods for normal linkage mutations.
@@ -85,10 +90,10 @@ export class PresenceClient {
     }
 
     this.config = { ...config, nonceTtlSeconds: ttl };
-    this.managedNonces = new InMemoryManagedNonceStore(ttl);
-    this.tofuStore = new InMemoryTofuStore();
     this.linkageStore = config.linkageStore ?? new InMemoryLinkageStore();
     this.persistedNonceStore = config.persistedNonceStore ?? this.selectPersistedNonceStore(this.linkageStore);
+    this.tofuStore = this.selectTofuStore(config.tofuStore);
+    this.managedNonces = new InMemoryManagedNonceStore(ttl);
 
     this.warn = config.silent ? () => {} : config.logger?.warn ?? ((msg) => console.warn(msg));
 
@@ -99,7 +104,11 @@ export class PresenceClient {
         "[presence-sdk] Custom nonceStore does not implement issue(). PresenceClient.generateNonce() will issue into the SDK fallback store instead. For a single effective store, pass a ManagedNonceStore-compatible implementation or issue externally."
       );
     }
-    if (!config.tofuStore) {
+    if (!config.tofuStore && this.tofuStore instanceof SqliteTofuStore) {
+      this.warn(
+        "[presence-sdk] Auto-configured SqliteTofuStore using linkage dbPath for Android TOFU persistence."
+      );
+    } else if (!config.tofuStore) {
       this.warn("[presence-sdk] Using InMemoryTofuStore. Replace with a persistent store in production.");
     }
     if (!config.linkageStore) {
@@ -116,6 +125,21 @@ export class PresenceClient {
     }
 
     return new LinkageStorePersistedNonceStore(store);
+  }
+
+  private selectTofuStore(configured: TofuStore | undefined): TofuStore {
+    if (configured) {
+      return configured;
+    }
+
+    const capabilities = this.linkageStore.getCapabilities?.();
+    const sqliteDbPath = (this.linkageStore as { dbPath?: string }).dbPath;
+
+    if (capabilities?.kind === "sqlite" && sqliteDbPath) {
+      return new SqliteTofuStore({ dbPath: sqliteDbPath });
+    }
+
+    return new InMemoryTofuStore();
   }
 
   generateNonce(options: NonceOptions = {}): GeneratedNonce {

@@ -11,7 +11,12 @@
 export { verify } from "./verifier.js";
 export type { VerifierContext } from "./verifier.js";
 
-export { InMemoryNonceStore, InMemoryTofuStore } from "./stores.js";
+export {
+  InMemoryNonceStore,
+  InMemoryTofuStore,
+  SqliteTofuStore,
+  SQLITE_TOFU_SCHEMA,
+} from "./stores.js";
 
 export type {
   PresenceAttestation,
@@ -30,6 +35,8 @@ export type {
   IosClaims,
   AndroidClaims,
 } from "./types.js";
+
+export type { SqliteTofuStoreOptions } from "./stores.js";
 
 export { PresenceVerifierError } from "./types.js";
 

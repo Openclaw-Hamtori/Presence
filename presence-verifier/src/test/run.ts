@@ -6,3 +6,4 @@
 
 import "./jcs.test.js";
 import "./verifier.test.js";
+import "./sqlite-tofu-store.test.js";

@@ -32,7 +32,7 @@ Current limitations preventing true self-host production credibility:
 - Reference persistence is still mostly file-backed (`FileSystemLinkageStore`); durable shared state under concurrency is incomplete.
 - A `RedisLinkageStore` exists in `presence-sdk` and serializes all entities over a Redis-like client, but it uses a full-blob read/write pattern — no row-level atomicity or transactional nonce safety.
 - Nonce/request lifecycle is not fully decoupled for long-lived reliability across restart/pod churn.
-- `InMemoryTofuStore` (used by `PresenceClient` for Android TOFU) is not persistent; a restart discards all first-seen public keys.
+- `InMemoryTofuStore` was the default in-memory TOFU implementation; for sqlite-first deployments `PresenceClient` can now auto-pick `SqliteTofuStore` when linked via SQLite-backed linkage persistence, preserving Android TOFU across restarts.
 - Authz/authn boundaries between public app APIs, operator actions, and service requests still need hardening.
 - Operational controls, alerting hooks, and tenant-safe isolation are still lightweight.
 
@@ -104,7 +104,7 @@ The pending request must survive restarts and be idempotently consumed.
   - `linked_devices`
   - `pending_proof_requests`
   - `nonce_store` (or nonce table) with single-use + expiry semantics
-  - `tofu_store` with per-iss public key and revocation semantics (currently `InMemoryTofuStore` in `PresenceClient` — non-persistent, loses all Android TOFU entries on restart)
+  - `tofu_store` with per-iss public key and revocation semantics (`SqliteTofuStore` now available for SQLite-backed single-service deployments)
   - `audit_events` (not `proof_events` — matches existing `LinkageAuditEvent` type)
 - Ensure **nonce state is durable/shared**, not ephemeral:
   - issuance, single-use marking, and verification reads should be atomic transactionally.

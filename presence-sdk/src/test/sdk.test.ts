@@ -12,6 +12,7 @@ import {
   sha256Hex,
   deriveIss,
   InMemoryNonceStore,
+  SqliteTofuStore,
 } from "presence-verifier";
 import { PresenceClient } from "../client.js";
 import {
@@ -159,6 +160,20 @@ function buildAndroidBody(
 
     assert.ok(await nonceStore.isValid(nonce.value));
     assert.ok(!(await client.nonceStore.isUsed(nonce.value)));
+  });
+
+  await test("PresenceClient auto-configures SqliteTofuStore from sqlite linkageStore", async () => {
+    const dbDir = mkdtempSync(join(tmpdir(), "presence-sqlite-tofu-auto-"));
+    const dbPath = join(dbDir, "presence-linkage.db");
+    const store = new SqliteLinkageStore({ dbPath, mode: "single-team" });
+
+    try {
+      const client = new PresenceClient({ silent: true, linkageStore: store, serviceId: "svc" });
+      const resolved = (client as unknown as { tofuStore?: unknown }).tofuStore;
+      assert.ok(resolved instanceof SqliteTofuStore, "expected SqliteTofuStore instance for sqlite linkage");
+    } finally {
+      rmSync(dbDir, { recursive: true, force: true });
+    }
   });
 
   await test("LinkageStoreNonceResolver returns issue time for active pending proof request", async () => {

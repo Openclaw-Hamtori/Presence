@@ -28,6 +28,10 @@ Platform attestation status is now split more clearly:
 
 Remaining production TODOs are now mostly about trust material and real environment inputs, not a hardcoded STUB path.
 
+### Small-team persistence helper
+
+For SQLite-first/single-server deployments, Presence verifier now includes `SqliteTofuStore` in `src/stores.ts`. It persists Android TOFU key bindings by `iss` in a local sqlite database so Android key continuity survives server restarts.
+
 ---
 
 ## Role in the linked architecture
