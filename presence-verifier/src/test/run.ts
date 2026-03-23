@@ -4,6 +4,7 @@
  * Or:  npx tsx src/test/run.ts
  */
 
+import "./attestation.test.js";
 import "./jcs.test.js";
 import "./verifier.test.js";
 import "./sqlite-tofu-store.test.js";

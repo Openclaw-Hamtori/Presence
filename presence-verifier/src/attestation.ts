@@ -7,7 +7,7 @@
  * Based on Verifier Spec v0.4 Steps 8–10 and Android Appendix v0.1
  */
 
-import { createHash, createVerify, X509Certificate as NodeX509Certificate } from "crypto";
+import { createHash, createVerify, timingSafeEqual, X509Certificate as NodeX509Certificate } from "crypto";
 import { decodeFirst as cborDecodeFirst } from "cbor";
 import { X509Certificate, X509ChainBuilder, cryptoProvider } from "@peculiar/x509";
 import { webcrypto } from "crypto";
@@ -520,5 +520,5 @@ function ensureStringArray(value: unknown, message: string): string[] {
 
 function buffersEqual(a: Uint8Array, b: Uint8Array): boolean {
   if (a.length !== b.length) return false;
-  return a.every((byte, i) => byte === b[i]);
+  return timingSafeEqual(Buffer.from(a), Buffer.from(b));
 }

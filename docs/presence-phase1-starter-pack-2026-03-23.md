@@ -126,7 +126,7 @@ The goal of this phase is **opt-in production-hardening**, without destabilizing
 ## Known accepted Phase 1 debt
 
 - `SqliteLinkageStore.listAuditEvents()` currently applies filters in memory after loading rows, instead of pushing filtering into SQL. This is acceptable for the current small-team SQLite baseline, but should be moved to SQL-level filtering in Phase 2.
-- `SqliteLinkageStore` does not yet expose explicit `close()` / `destroy()` lifecycle semantics for the underlying sqlite handle. This is acceptable for the current single-process baseline and tests, but should be hardened in Phase 2.
+- `SqliteLinkageStore` currently exposes lifecycle methods (`close()` and `destroy()`) for explicit sqlite handle cleanup, so the single-process baseline and tests are explicit about shutdown behavior. Future phases can refine how and when these are invoked in multi-process topologies.
 
 ## Next immediate implementation slice (recommended)
 

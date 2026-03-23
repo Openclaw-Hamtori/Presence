@@ -166,6 +166,12 @@ async function main() {
   const serviceId = process.env.PRESENCE_SERVICE_ID || "demo-service";
   const publicBaseUrl = (process.env.PUBLIC_BASE_URL || `http://${host}:${port}`).replace(/\/$/, "");
   const serviceDomain = process.env.PRESENCE_SERVICE_DOMAIN || "";
+  const serviceApiKeyEnv = process.env.PRESENCE_SERVICE_API_KEY;
+  if (!serviceApiKeyEnv) {
+    console.warn(
+      "[presence-sdk] warning: PRESENCE_SERVICE_API_KEY is unset; service-to-service endpoints are not protected by API key."
+    );
+  }
   const serviceAuthEnabled = Boolean(getServiceApiKey());
   const storageRoot = process.env.PRESENCE_STORAGE_ROOT || join(process.cwd(), "var", "presence");
   mkdirSync(storageRoot, { recursive: true });
