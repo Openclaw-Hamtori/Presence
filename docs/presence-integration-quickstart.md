@@ -94,6 +94,7 @@ If you use `presence-happy-path/app/server.cjs` or the same pattern, these setti
 - `ROUTE_BASE_PATH`
 - `PUBLIC_BASE_URL`
 - `PRESENCE_SERVICE_DOMAIN`
+- `PRESENCE_SERVICE_API_KEY` (optional)
 
 ### `ROUTE_BASE_PATH`
 
@@ -128,6 +129,35 @@ For the server-local path map:
 - Server-internal routes remain `/presence/*`.
 - Public links and trust checks should remain aligned to `PUBLIC_BASE_URL` + `/presence`.
 - Don’t mix `ROUTE_BASE_PATH` into `allowed_url_prefixes`; keep trust prefixes on the public API base that mobile receives.
+
+## Service auth (minimum baseline path)
+
+For a small-team deployment, you can enable a shared-secret guard: `PRESENCE_SERVICE_API_KEY`.
+
+When set, the reference server protects service-owned operations with either:
+- `Authorization: Bearer <key>`
+- `x-presence-service-api-key: <key>`
+
+Protected routes (server-only operations):
+- all `/presence/*` handlers except callback endpoints listed below
+- `POST /presence/link-sessions`
+- `GET /presence/link-sessions/:sessionId`
+- `POST /presence/linked-accounts/:accountId/nonce`
+- `POST /presence/linked-accounts/:accountId/pending-proof-requests`
+- `GET /presence/linked-accounts/:accountId/pending-proof-requests`
+- `GET /presence/linked-accounts/:accountId/status`
+- `POST /presence/linked-accounts/:accountId/unlink`
+- `POST /presence/devices/:deviceIss/revoke`
+- `GET /presence/devices/:deviceIss/bindings`
+- `GET /presence/audit-events`
+- `GET /presence/pending-proof-requests/:requestId`
+
+The public callback/deep-link endpoints remain open by design to support the user device flow:
+- `POST /presence/link-sessions/:sessionId/complete`
+- `POST /presence/linked-accounts/:accountId/verify`
+- `POST /presence/pending-proof-requests/:requestId/respond`
+
+The auth check is opt-in; leave unset to keep baseline local/dev behavior.
 
 ---
 

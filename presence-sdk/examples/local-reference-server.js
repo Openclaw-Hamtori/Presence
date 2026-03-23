@@ -38,6 +38,65 @@ function absolutize(baseUrl, value) {
   if (!value.startsWith("/")) return value;
   return `${baseUrl}${value}`;
 }
+function getServiceApiKey() {
+  return process.env.PRESENCE_SERVICE_API_KEY || process.env.PRESENCE_API_KEY || "";
+}
+
+function extractServiceApiKey(req) {
+  const authHeader = req.headers.authorization || req.headers.Authorization;
+  if (typeof authHeader === "string") {
+    const trimmed = authHeader.trim();
+    if (trimmed.toLowerCase().startsWith("bearer ")) {
+      return trimmed.slice(7).trim();
+    }
+    return trimmed;
+  }
+
+  const apiKeyHeader = req.headers["x-presence-service-api-key"] || req.headers["x-presence-api-key"];
+  if (Array.isArray(apiKeyHeader)) {
+    return apiKeyHeader[0] || "";
+  }
+  if (typeof apiKeyHeader === "string") {
+    return apiKeyHeader.trim();
+  }
+
+  return "";
+}
+
+function isProtectedServiceRoute(method, pathname) {
+  if (!pathname.startsWith("/presence/")) {
+    return false;
+  }
+
+  // Callback endpoints stay public for end-user app traffic.
+  if (method === "POST" && /^\/presence\/link-sessions\/[^/]+\/complete$/.test(pathname)) {
+    return false;
+  }
+  if (method === "POST" && /^\/presence\/linked-accounts\/[^/]+\/verify$/.test(pathname)) {
+    return false;
+  }
+  if (method === "POST" && /^\/presence\/pending-proof-requests\/[^/]+\/respond$/.test(pathname)) {
+    return false;
+  }
+
+  return true;
+}
+
+function isAuthorizedServiceRequest(req, pathname) {
+  const serviceApiKey = getServiceApiKey();
+  if (!serviceApiKey) {
+    return true;
+  }
+
+  const method = (req.method || "").toUpperCase();
+  if (!isProtectedServiceRoute(method, pathname)) {
+    return true;
+  }
+
+  const provided = extractServiceApiKey(req);
+  return Boolean(provided) && provided === serviceApiKey;
+}
+
 
 async function main() {
   const port = Number(process.env.PORT || 8787);
@@ -45,6 +104,7 @@ async function main() {
   const serviceId = process.env.PRESENCE_SERVICE_ID || "demo-service";
   const publicBaseUrl = (process.env.PUBLIC_BASE_URL || `http://${host}:${port}`).replace(/\/$/, "");
   const serviceDomain = process.env.PRESENCE_SERVICE_DOMAIN || "";
+  const serviceAuthEnabled = Boolean(getServiceApiKey());
   const storageRoot = process.env.PRESENCE_STORAGE_ROOT || join(process.cwd(), "var", "presence");
   mkdirSync(storageRoot, { recursive: true });
   const storePath = fileLinkageStorePath(storageRoot);
@@ -81,6 +141,11 @@ async function main() {
     try {
       const url = new URL(req.url || "/", `http://${host}:${port}`);
       const method = req.method || "GET";
+
+      if (!isAuthorizedServiceRequest(req, url.pathname)) {
+        send(401, { ok: false, code: "ERR_AUTH_REQUIRED", message: "invalid or missing service API key" });
+        return;
+      }
 
       if (method === "GET" && url.pathname === "/health") {
         send(200, { ok: true, serviceId, serviceDomain: serviceDomain || undefined, storePath });
@@ -460,6 +525,10 @@ async function main() {
   await new Promise((resolve) => server.listen(port, host, resolve));
   console.log(`[presence-sdk] local reference server listening on ${publicBaseUrl}`);
   console.log(`[presence-sdk] linkage store: ${storePath}`);
+  if (serviceAuthEnabled) {
+    console.log(`[presence-sdk] service API auth: enabled via PRESENCE_SERVICE_API_KEY`);
+  }
+  console.log(`[presence-sdk] service API auth header: x-presence-service-api-key or Authorization: Bearer <key>`);
   if (serviceDomain) {
     console.log(`[presence-sdk] trust metadata: ${publicBaseUrl}/.well-known/presence.json`);
   }

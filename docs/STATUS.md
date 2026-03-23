@@ -27,6 +27,7 @@ _Last updated: 2026-03-23_
   - Documented in `projects/presence-happy-path-pending-proof-redeploy-2026-03-22.md` and `projects/presence-happy-path-deploy-guardrails-2026-03-21.md`.
 - **Live route-base/URL compatibility fixed** for `https://noctu.link/presence-demo/presence` through `ROUTE_BASE_PATH` stripping (`presence-happy-path/app/server.cjs`, commit `d37d550`; follow-up note `projects/presence-push-live-route-fix-2026-03-22.md`).
 - **Push token upload path hardened** and route accepts persisted token formats only (`projects/presence-push-token-apns-format-fix-2026-03-22.md`, `projects/presence-ios-push-entitlement-debug-2026-03-22.md`).
+- **Minimal service auth boundary added** to the reference server (`PRESENCE_SERVICE_API_KEY`) for service-owned endpoints; callback proof endpoints remain public and auth is opt-in for local/dev (`presence-happy-path/app/server.cjs`, `scripts/check-server-auth.mjs`).
 - **SQLite-backed `SqliteLinkageStore` now persists pending-proof request records and their status transitions** (`presence-sdk/src/sqlite-store.ts`, `presence-sdk/src/test/sdk.test.ts`).
 
 ## 3) Non-canonical / optional / experimental
