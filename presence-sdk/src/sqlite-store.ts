@@ -11,6 +11,7 @@ import type {
   PendingProofRequestStatus,
   LinkedDevice,
   ListAuditEventsFilter,
+  PersistedNonceStore,
 } from "./types.js";
 
 /**
@@ -754,6 +755,64 @@ export class SqliteLinkageStore implements LinkageStore {
       signalDispatch: row.signal_dispatch_json ? safeJsonParse(row.signal_dispatch_json) : undefined,
       metadata: row.metadata_json ? safeJsonParse(row.metadata_json) : undefined,
     };
+  }
+}
+
+export interface SqlitePersistedNonceStoreOptions {
+  dbPath: string;
+  mode?: "single-team" | "external";
+}
+
+/**
+ * SQLite-backed persisted-nonce resolver that reads issuance times directly from
+ * link-session and pending-proof state tables.
+ */
+export class SqlitePersistedNonceStore implements PersistedNonceStore {
+  private readonly db: Database.Database;
+  private isClosed = false;
+
+  constructor(options: SqlitePersistedNonceStoreOptions) {
+    this.db = new Database(options.dbPath);
+  }
+
+  async resolvePendingProofNonceIssueTime(params: {
+    serviceId: string;
+    accountId: string;
+    nonce: string;
+    now: number;
+  }): Promise<number | null> {
+    const row = this.db
+      .prepare(
+        `SELECT requested_at
+         FROM pending_proof_requests
+         WHERE service_id = ? AND account_id = ? AND nonce = ? AND status = 'pending' AND expires_at > ?
+         ORDER BY requested_at DESC
+         LIMIT 1`
+      )
+      .get(params.serviceId, params.accountId, params.nonce, params.now) as { requested_at?: number } | undefined;
+
+    return row?.requested_at ?? null;
+  }
+
+  async resolveLinkSessionIssueTime(params: { sessionId: string; now: number }): Promise<number | null> {
+    const row = this.db
+      .prepare(
+        `SELECT requested_at
+         FROM link_sessions
+         WHERE id = ? AND status = 'pending' AND expires_at > ?
+         LIMIT 1`
+      )
+      .get(params.sessionId, params.now) as { requested_at?: number } | undefined;
+
+    return row?.requested_at ?? null;
+  }
+
+  close(): void {
+    if (this.isClosed) {
+      return;
+    }
+    this.isClosed = true;
+    this.db.close();
   }
 }
 

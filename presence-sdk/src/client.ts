@@ -34,6 +34,7 @@ import type {
   LinkageAuditEvent,
   ListAuditEventsFilter,
   LinkageStore,
+  PersistedNonceStore,
   DevicePushToken,
   DevicePushTokenEnvironment,
   DevicePushTokenPlatform,
@@ -53,7 +54,10 @@ import {
   defaultLinkCompletion,
   randomId,
 } from "./linkage.js";
-import { LinkageStoreNonceResolver } from "./nonce-rehydration.js";
+import {
+  LinkageStorePersistedNonceStore,
+} from "./nonce-rehydration.js";
+import { SqlitePersistedNonceStore } from "./sqlite-store.js";
 
 export { ParseError } from "./transport.js";
 
@@ -72,7 +76,7 @@ export class PresenceClient {
   readonly linkageStore: LinkageStore;
   private readonly warn: (msg: string) => void;
   private hasWarnedLegacyPlatform = false;
-  private readonly persistedNonceResolver: LinkageStoreNonceResolver;
+  private readonly persistedNonceStore: PersistedNonceStore;
 
   constructor(config: PresenceClientConfig = {}) {
     const ttl = config.nonceTtlSeconds ?? 300;
@@ -84,7 +88,7 @@ export class PresenceClient {
     this.managedNonces = new InMemoryManagedNonceStore(ttl);
     this.tofuStore = new InMemoryTofuStore();
     this.linkageStore = config.linkageStore ?? new InMemoryLinkageStore();
-    this.persistedNonceResolver = new LinkageStoreNonceResolver(this.linkageStore);
+    this.persistedNonceStore = config.persistedNonceStore ?? this.selectPersistedNonceStore(this.linkageStore);
 
     this.warn = config.silent ? () => {} : config.logger?.warn ?? ((msg) => console.warn(msg));
 
@@ -101,6 +105,17 @@ export class PresenceClient {
     if (!config.linkageStore) {
       this.warn("[presence-sdk] Using InMemoryLinkageStore. Replace with a persistent binding store in production.");
     }
+  }
+
+  private selectPersistedNonceStore(store: LinkageStore): PersistedNonceStore {
+    const capabilities = store.getCapabilities?.();
+    const sqliteDbPath = (store as { dbPath?: string }).dbPath;
+
+    if (capabilities?.kind === "sqlite" && sqliteDbPath) {
+      return new SqlitePersistedNonceStore({ dbPath: sqliteDbPath, mode: "single-team" });
+    }
+
+    return new LinkageStorePersistedNonceStore(store);
   }
 
   generateNonce(options: NonceOptions = {}): GeneratedNonce {
@@ -161,7 +176,7 @@ export class PresenceClient {
   }
 
   private async ensurePendingProofNonceDurability(serviceId: string, accountId: string, nonce: string): Promise<void> {
-    const issuedAt = await this.persistedNonceResolver.resolvePendingProofNonceIssueTime({
+    const issuedAt = await this.persistedNonceStore.resolvePendingProofNonceIssueTime({
       serviceId,
       accountId,
       nonce,
@@ -178,7 +193,7 @@ export class PresenceClient {
   }
 
   private async ensureLinkSessionNonceDurability(session: { id: string; issuedNonce: string; status: string }): Promise<void> {
-    const issuedAt = await this.persistedNonceResolver.resolveLinkSessionIssueTime({
+    const issuedAt = await this.persistedNonceStore.resolveLinkSessionIssueTime({
       sessionId: session.id,
       now: Math.floor(Date.now() / 1000),
     });

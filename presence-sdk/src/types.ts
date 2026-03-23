@@ -101,6 +101,20 @@ export interface NonceIssuer {
   issue(nonce: string, now?: number): void;
 }
 
+export interface PersistedNonceStore {
+  resolvePendingProofNonceIssueTime(params: {
+    serviceId: string;
+    accountId: string;
+    nonce: string;
+    now: number;
+  }): Promise<number | null>;
+
+  resolveLinkSessionIssueTime(params: {
+    sessionId: string;
+    now: number;
+  }): Promise<number | null>;
+}
+
 export type ManagedNonceStore = NonceStore & NonceIssuer;
 
 export interface RawPresenceRequestBody {
@@ -142,6 +156,7 @@ export interface PresenceClientConfig {
   bindingPolicy?: BindingPolicy;
   nonceStore?: NonceStore;
   tofuStore?: TofuStore;
+  persistedNonceStore?: PersistedNonceStore;
   iosAppId?: string;
   iosAppleRootCA?: Uint8Array | string;
   androidPackageName?: string;

@@ -1,53 +1,53 @@
-import type { LinkageStore } from "./types.js";
+import type { LinkageStore, LinkSession, PersistedNonceStore } from "./types.js";
 
-export interface PersistedNonceResolver {
-  resolvePendingProofNonceIssueTime(params: {
-    serviceId: string;
-    accountId: string;
-    nonce: string;
-    now: number;
-  }): Promise<number | null>;
+interface PendingProofRequestLookup {
+  serviceId: string;
+  accountId: string;
+  nonce: string;
+  now: number;
+}
 
-  resolveLinkSessionIssueTime(params: {
-    sessionId: string;
-    now: number;
-  }): Promise<number | null>;
+interface LinkSessionLookup {
+  sessionId: string;
+  now: number;
 }
 
 /**
- * Resolve persisted nonces from linkage sessions/requests so verification paths can
- * rehydrate nonces after process restarts.
+ * Resolve persisted nonces from durable linkage state so verification can recover
+ * across restarts (pending proof + link session flows).
  */
-export class LinkageStoreNonceResolver implements PersistedNonceResolver {
+export class LinkageStorePersistedNonceStore implements PersistedNonceStore {
   constructor(private readonly linkageStore: LinkageStore) {}
 
-  async resolvePendingProofNonceIssueTime(params: {
-    serviceId: string;
-    accountId: string;
-    nonce: string;
-    now: number;
-  }): Promise<number | null> {
+  async resolvePendingProofNonceIssueTime({ serviceId, accountId, nonce, now }: PendingProofRequestLookup): Promise<number | null> {
     const requests = await this.linkageStore.listPendingProofRequests({
-      serviceId: params.serviceId,
-      accountId: params.accountId,
+      serviceId,
+      accountId,
       statuses: ["pending"],
     });
 
-    const request = requests.find((entry) => entry.nonce === params.nonce && entry.expiresAt > params.now);
+    const request = requests.find((entry) => entry.nonce === nonce && entry.expiresAt > now);
     return request?.requestedAt ?? null;
   }
 
-  async resolveLinkSessionIssueTime(params: {
-    sessionId: string;
-    now: number;
-  }): Promise<number | null> {
-    const session = await this.linkageStore.getLinkSession(params.sessionId);
+  async resolveLinkSessionIssueTime({ sessionId, now }: LinkSessionLookup): Promise<number | null> {
+    const session = await this.linkageStore.getLinkSession(sessionId);
     if (!session) {
       return null;
     }
     if (session.status !== "pending") {
       return null;
     }
-    return session.requestedAt;
+    return isStillActiveSession(session, now) ? session.requestedAt : null;
   }
 }
+
+function isStillActiveSession(session: LinkSession, now: number): boolean {
+  return session.expiresAt > now;
+}
+
+/**
+ * Backward-compatible name used in earlier phase: keep a direct export so callers
+ * continue to work while we migrate to `PersistedNonceStore` naming.
+ */
+export class LinkageStoreNonceResolver extends LinkageStorePersistedNonceStore {}

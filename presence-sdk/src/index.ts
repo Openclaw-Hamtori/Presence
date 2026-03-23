@@ -12,6 +12,10 @@ export { PresenceClient } from "./client.js";
 export { createNonce, generateNonce, InMemoryManagedNonceStore } from "./nonce.js";
 export { parsePresenceRequest, ParseError } from "./transport.js";
 export {
+  LinkageStorePersistedNonceStore,
+  LinkageStoreNonceResolver,
+} from "./nonce-rehydration.js";
+export {
   InMemoryLinkageStore,
   FileSystemLinkageStore,
   LinkageStoreCorruptionError,
@@ -25,11 +29,13 @@ export {
 } from "./redis.js";
 export {
   SqliteLinkageStore,
+  SqlitePersistedNonceStore,
   renderSqliteSchema,
   SQLITE_LINKAGE_SCHEMA,
   SQLITE_LINKAGE_MAPPINGS,
   SQLITE_FIRST_MODE,
   type SqliteLinkageStoreOptions,
+  type SqlitePersistedNonceStoreOptions,
   type SqliteSchemaArtifact,
   type SqliteLinkageMappingRow,
 } from "./sqlite-store.js";
@@ -106,6 +112,7 @@ export type {
   LinkCompletion,
   LinkCompletionMethod,
   PendingProofRequestStatus,
+  PersistedNonceStore,
   PresenceBackendFlow,
   PresenceCompletionEndpointContract,
   CompletionEndpointDescriptor,

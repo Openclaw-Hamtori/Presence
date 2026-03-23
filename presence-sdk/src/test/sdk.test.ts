@@ -23,7 +23,7 @@ import {
   rewriteLinkSessionForPublicBase,
 } from "../api.js";
 import { InMemoryLinkageStore, FileSystemLinkageStore, LinkageStoreCorruptionError, fileLinkageStorePath } from "../linkage.js";
-import { SqliteLinkageStore } from "../sqlite-store.js";
+import { SqliteLinkageStore, SqlitePersistedNonceStore } from "../sqlite-store.js";
 import { parsePresenceRequest, ParseError } from "../transport.js";
 import { createNonce, generateNonce } from "../nonce.js";
 import { LinkageStoreNonceResolver } from "../nonce-rehydration.js";
@@ -237,6 +237,55 @@ function buildAndroidBody(
       now,
     });
     assert.equal(issuedAt, null);
+  });
+
+  await test("SqlitePersistedNonceStore resolves pending and link-session nonce issue time", async () => {
+    const dbDir = mkdtempSync(join(tmpdir(), "presence-sqlite-persisted-nonce-"));
+    const dbPath = join(dbDir, "presence-linkage.db");
+    const linkageStore = new SqliteLinkageStore({ dbPath, mode: "single-team" });
+    const persistedNonceStore = new SqlitePersistedNonceStore({ dbPath, mode: "single-team" });
+    const now = Math.floor(Date.now() / 1000);
+
+    try {
+      await linkageStore.savePendingProofRequest({
+        id: "ppreq-sqlite-resolve",
+        serviceId: "svc",
+        accountId: "acct-sqlite-resolver",
+        bindingId: "bind-1",
+        deviceIss: "presence:device:1",
+        nonce: "sqlite-pending-nonce",
+        requestedAt: now - 4,
+        expiresAt: now + 40,
+        status: "pending",
+      });
+
+      const issuedAtPending = await persistedNonceStore.resolvePendingProofNonceIssueTime({
+        serviceId: "svc",
+        accountId: "acct-sqlite-resolver",
+        nonce: "sqlite-pending-nonce",
+        now,
+      });
+      assert.equal(issuedAtPending, now - 4);
+
+      await linkageStore.saveLinkSession({
+        id: "plink-sqlite-resolve",
+        serviceId: "svc",
+        accountId: "acct-sqlite-resolver",
+        issuedNonce: "sqlite-session-nonce",
+        requestedAt: now - 9,
+        expiresAt: now + 40,
+        status: "pending",
+      });
+
+      const issuedAtSession = await persistedNonceStore.resolveLinkSessionIssueTime({
+        sessionId: "plink-sqlite-resolve",
+        now,
+      });
+      assert.equal(issuedAtSession, now - 9);
+    } finally {
+      persistedNonceStore.close();
+      rmSync(dbDir, { recursive: true, force: true });
+    }
   });
 
   await test("parsePresenceRequest() parses Android format and marks platform explicit", async () => {
@@ -1403,6 +1452,50 @@ function buildAndroidBody(
     assert.equal(result.verification.verified, true);
     const afterValid = await restartedNonceStore.nonceStore.isValid(session.issuedNonce, Math.floor(Date.now() / 1000));
     assert.equal(afterValid, true);
+  });
+
+  await test("completeLinkSession() rehydrates link-session nonce from sqlite persistence without explicit resolver config", async () => {
+    const dbDir = mkdtempSync(join(tmpdir(), "presence-sqlite-rehydration-"));
+    const dbPath = join(dbDir, "presence-linkage.db");
+    const store = new SqliteLinkageStore({ dbPath, mode: "single-team" });
+
+    try {
+      const bootstrap = new PresenceClient({ silent: true, linkageStore: store, serviceId: "svc" });
+      const { session } = await bootstrap.createLinkSession({ serviceId: "svc", accountId: "acct-sqlite-restart" });
+      const body = buildAndroidBody(
+        buildAttestation(keys.publicKeyDer, keys.privateKeyDer, session.issuedNonce),
+        keys.publicKeyDer,
+        undefined,
+        true
+      );
+      const iss = deriveIss(keys.publicKeyDer);
+
+      const restarted = new PresenceClient({ silent: true, linkageStore: store, serviceId: "svc" });
+      const restartedNonceStore = (restarted as unknown as { managedNonces: { nonceStore: { isValid: (nonce: string, now: number) => Promise<boolean> } } }).managedNonces;
+      const beforeValid = await restartedNonceStore.nonceStore.isValid(session.issuedNonce, Math.floor(Date.now() / 1000));
+      assert.equal(beforeValid, false);
+
+      const verifyStub = async () => ({
+        verified: true as const,
+        pol_version: "1.0",
+        iss,
+        iat: NOW,
+        state_created_at: STATE_CREATED,
+        state_valid_until: STATE_VALID_UNTIL,
+        human: true as const,
+        pass: true as const,
+        signals: ["heart_rate", "steps"] as const,
+        nonce: session.issuedNonce,
+      });
+      (restarted as unknown as { verify: typeof verifyStub }).verify = verifyStub;
+
+      const result = await restarted.completeLinkSession({ sessionId: session.id, body });
+      assert.equal(result.verification.verified, true);
+      const afterValid = await restartedNonceStore.nonceStore.isValid(session.issuedNonce, Math.floor(Date.now() / 1000));
+      assert.equal(afterValid, true);
+    } finally {
+      rmSync(dbDir, { recursive: true, force: true });
+    }
   });
 
   await test("completeLinkSession() persists Android platform metadata from parsed request", async () => {
