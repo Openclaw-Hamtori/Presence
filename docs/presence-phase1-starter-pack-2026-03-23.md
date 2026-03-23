@@ -120,6 +120,11 @@ The goal of this phase is **opt-in production-hardening**, without destabilizing
   - create/respond lifecycle status transitions in a single DB-backed store.
 - Extended `presence-sdk` test coverage to lock these semantics for SQLite-backed `createPendingProofRequest()` and `respondToPendingProofRequest()` paths.
 
+## Known accepted Phase 1 debt
+
+- `SqliteLinkageStore.listAuditEvents()` currently applies filters in memory after loading rows, instead of pushing filtering into SQL. This is acceptable for the current small-team SQLite baseline, but should be moved to SQL-level filtering in Phase 2.
+- `SqliteLinkageStore` does not yet expose explicit `close()` / `destroy()` lifecycle semantics for the underlying sqlite handle. This is acceptable for the current single-process baseline and tests, but should be hardened in Phase 2.
+
 ## Next immediate implementation slice (recommended)
 
 1. Expand `check:phase1-smoke` to include optional, explicit endpoint smoke calls against a configured local dev server.

@@ -42,6 +42,8 @@ _Last updated: 2026-03-23_
 - Finish **reliable APNs live delivery path** (token flow + notification wake + app hydration evidence) with same linked account/device used on-device.
 - Close remaining validation gap around **relink/unlink and stale-link cleanup** on fresh sessions in long-running manual runs.
 - Finish durable shared nonce storage + operator hardening (still phase 2), while small-server SQLite path for pending-proof request state transitions remains the validated Phase 1 baseline slice. (SQLite/WAL design referenced in `projects/presence-sqlite-design-2026-03-21.md`).
+- Known accepted Phase 1 debt in `SqliteLinkageStore`: `listAuditEvents()` still loads/filter-in-memory instead of pushing filters into SQL; acceptable for small-team baseline scale, but should move to SQL-level filtering in Phase 2.
+- Known accepted Phase 1 debt in `SqliteLinkageStore`: sqlite handle lifecycle does not yet expose explicit `close()`/`destroy()` semantics; acceptable for current single-process baseline/tests, but should be hardened in Phase 2.
 
 ## 5) Notes for future reviewers/operators
 - Single source of truth for deployable server runtime should stay in-repo (`presence-happy-path/app/server.cjs`) and be installed via tarball+restart, not manual drift edits on VPS.
