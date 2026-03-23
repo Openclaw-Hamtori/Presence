@@ -28,6 +28,9 @@ Canonical meaning:
    - detailed pending-proof responder lifecycle and recovery cases
 4. `docs/presence-push-setup-vs-steady-state.md`
    - why push is best-effort and experimental in this branch
+5. `docs/presence-live-retest-reset-playbook.md`
+   - operator-facing reset/retest rule
+   - deploy + restart + authoritative status check + explicit unlink + relink/fresh request sequence
 
 ## Package-level guidance
 
