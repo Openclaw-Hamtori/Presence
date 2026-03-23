@@ -134,6 +134,26 @@ async function main() {
     const sessionId = String(createWithAuth.payload?.session?.id || "");
     assert(sessionId, "createSession should return session id");
 
+    const createWithAuthAltHeader = await requestJson(baseUrl, "/presence/link-sessions", {
+      method: "POST",
+      body: { accountId, metadata: { source: "auth-check-alt" } },
+      headers: { "x-presence-service-api-key": key },
+    });
+    assert(createWithAuthAltHeader.response.status === 200, "x-presence-service-api-key should also authenticate");
+
+    const createWithWrongAuth = await requestJson(baseUrl, "/presence/link-sessions", {
+      method: "POST",
+      body: { accountId, metadata: { source: "auth-check" } },
+    }, `${key}bad`);
+    assert(createWithWrongAuth.response.status === 401, "wrong service API key should fail");
+
+    const createWithShortAuth = await requestJson(baseUrl, "/presence/link-sessions", {
+      method: "POST",
+      headers: { "x-presence-service-api-key": key.slice(0, -1) },
+      body: { accountId, metadata: { source: "auth-check" } },
+    });
+    assert(createWithShortAuth.response.status === 401, "shorter service API key should fail");
+
     const sessionGetNoAuth = await requestJson(baseUrl, `/presence/link-sessions/${encodeURIComponent(sessionId)}`);
     assert(sessionGetNoAuth.response.status === 401, "session status route should require auth");
 

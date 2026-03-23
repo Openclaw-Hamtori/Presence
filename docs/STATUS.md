@@ -44,8 +44,7 @@ _Last updated: 2026-03-23_
     - `projects/presence-phase2-closeout-2026-03-23.md`
   - Expected final-check result: `POST /presence/pending-proof-requests/:requestId/respond` returns 200 with `ok: true` and `request.status === "verified"`, and linked-account readiness reflects an updated `lastVerifiedAt` / `stateValidUntil`.
 - Finish **reliable APNs live delivery path** (token flow + notification wake + app hydration evidence) and then rerun the same request/replay path with that linked device.
-- Known accepted Phase 1 debt in `SqliteLinkageStore`: `listAuditEvents()` still applies filters in-memory after loading rows; acceptable for small-team baseline scale, with SQL-level filtering deferred.
-- Known accepted Phase 1 debt in `SqliteLinkageStore`: sqlite handle lifecycle does not yet expose explicit `close()`/`destroy()` semantics; acceptable for current single-process SQLite-first baseline and long-tail tests, but should be hardened in later phase.
+- `SqliteLinkageStore` now uses a versioned schema migration path with `_schema_migrations` and explicit schema setup, matching the verifier's migration style while keeping SQLite-first single-team ergonomics.
 
 ## 5) Notes for future reviewers/operators
 - Single source of truth for deployable server runtime should stay in-repo (`presence-happy-path/app/server.cjs`) and be installed via tarball+restart, not manual drift edits on VPS.

@@ -1,5 +1,6 @@
 import { createServer } from "http";
 import { mkdirSync } from "fs";
+import { timingSafeEqual } from "node:crypto";
 import { join } from "path";
 import {
   PresenceClient,
@@ -145,7 +146,17 @@ function isAuthorizedServiceRequest(req, pathname) {
   }
 
   const provided = extractServiceApiKey(req);
-  return Boolean(provided) && provided === serviceApiKey;
+  if (!provided) {
+    return false;
+  }
+
+  const providedBytes = Buffer.from(provided, "utf8");
+  const expectedBytes = Buffer.from(serviceApiKey, "utf8");
+  if (providedBytes.length !== expectedBytes.length) {
+    return false;
+  }
+
+  return timingSafeEqual(providedBytes, expectedBytes);
 }
 
 

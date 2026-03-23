@@ -49,9 +49,11 @@ export interface SqliteLinkageMappingRow {
   columns: readonly string[];
 }
 
+export const SQLITE_LINKAGE_SCHEMA_VERSION = 1;
+
 export const SQLITE_LINKAGE_SCHEMA: readonly SqliteSchemaArtifact[] = [
   {
-    version: 1,
+    version: SQLITE_LINKAGE_SCHEMA_VERSION,
     sql: `
 CREATE TABLE IF NOT EXISTS link_sessions (
   id TEXT PRIMARY KEY,
@@ -145,6 +147,23 @@ CREATE INDEX IF NOT EXISTS idx_audit_events_occurred_at ON audit_events(occurred
 `.trim(),
   },
 ] as const;
+
+const SQLITE_LINKAGE_SCHEMA_MIGRATIONS_TABLE = `
+CREATE TABLE IF NOT EXISTS _schema_migrations (
+  version INTEGER PRIMARY KEY,
+  applied_at INTEGER NOT NULL
+);
+`.trim();
+
+const LINKAGE_MIGRATIONS: ReadonlyArray<{ version: number; up: string[] }> = [
+  {
+    version: SQLITE_LINKAGE_SCHEMA_VERSION,
+    up: [
+      ...SQLITE_LINKAGE_SCHEMA.map((artifact) => artifact.sql),
+      `INSERT OR IGNORE INTO _schema_migrations (version, applied_at) VALUES (${SQLITE_LINKAGE_SCHEMA_VERSION}, strftime('%s','now'));`,
+    ],
+  },
+];
 
 
 export class SqliteLinkageStore implements LinkageStore {
@@ -576,11 +595,27 @@ export class SqliteLinkageStore implements LinkageStore {
   }
 
   private initializeSchema(): void {
-    this.withTransaction(() => {
-      for (const artifact of SQLITE_LINKAGE_SCHEMA) {
-        this.getDb().exec(artifact.sql);
+    const migrate = this.db.transaction(() => {
+      this.db.exec(SQLITE_LINKAGE_SCHEMA_MIGRATIONS_TABLE);
+
+      const currentVersion = Number(
+        (
+          this.db
+            .prepare("SELECT COALESCE(MAX(version), 0) AS version FROM _schema_migrations;")
+            .get() as { version: number } | undefined
+        )?.version ?? 0
+      );
+
+      for (const migration of LINKAGE_MIGRATIONS) {
+        if (migration.version > currentVersion) {
+          for (const statement of migration.up) {
+            this.db.exec(statement);
+          }
+        }
       }
     });
+
+    migrate();
   }
 
   /**

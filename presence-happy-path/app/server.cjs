@@ -1,6 +1,7 @@
 "use strict";
 
 const { createServer } = require("http");
+const { timingSafeEqual } = require("node:crypto");
 const { mkdirSync } = require("fs");
 const { join } = require("path");
 const { resolvePresenceServerConfig } = require("./presence-config.cjs");
@@ -205,7 +206,17 @@ function isAuthorizedServiceRequest(req, pathname) {
   }
 
   const provided = extractServiceApiKey(req);
-  return Boolean(provided) && provided === serviceApiKey;
+  if (!provided) {
+    return false;
+  }
+
+  const providedBytes = Buffer.from(provided, "utf8");
+  const expectedBytes = Buffer.from(serviceApiKey, "utf8");
+  if (providedBytes.length !== expectedBytes.length) {
+    return false;
+  }
+
+  return timingSafeEqual(providedBytes, expectedBytes);
 }
 
 function resolvePendingProofSignalTransport({ iosAppId }) {

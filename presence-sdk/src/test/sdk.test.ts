@@ -4,6 +4,7 @@
 
 import { strict as assert } from "assert";
 import { existsSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from "fs";
+import Database from "better-sqlite3";
 import { tmpdir } from "os";
 import { join } from "path";
 import { generateKeyPairSync, createSign } from "crypto";
@@ -171,6 +172,25 @@ function buildAndroidBody(
       const client = new PresenceClient({ silent: true, linkageStore: store, serviceId: "svc" });
       const resolved = (client as unknown as { tofuStore?: unknown }).tofuStore;
       assert.ok(resolved instanceof SqliteTofuStore, "expected SqliteTofuStore instance for sqlite linkage");
+    } finally {
+      rmSync(dbDir, { recursive: true, force: true });
+    }
+  });
+
+  await test("SqliteLinkageStore creates and records schema migration version", async () => {
+    const dbDir = mkdtempSync(join(tmpdir(), "presence-sqlite-migration-version-"));
+    const dbPath = join(dbDir, "presence-linkage.db");
+
+    try {
+      new SqliteLinkageStore({ dbPath, mode: "single-team" });
+
+      const db = new Database(dbPath);
+      const migrationRow = db.prepare("SELECT version FROM _schema_migrations ORDER BY version DESC LIMIT 1").get() as
+        | { version: number }
+        | undefined;
+      assert.ok(migrationRow, "expected schema migration row");
+      assert.equal(migrationRow.version, 1);
+      db.close();
     } finally {
       rmSync(dbDir, { recursive: true, force: true });
     }
