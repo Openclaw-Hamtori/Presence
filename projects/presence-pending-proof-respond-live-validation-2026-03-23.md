@@ -42,41 +42,30 @@ curl -sS -H 'content-type: application/json' --data '{"nonce":"abc","proof":{"fo
 # => 400 + ERR_INVALID_FORMAT
 ```
 
-## Why true happy-path could not be completed yet
-- I could not discover a known `(accountId, requestId)` pair in this environment.
-- I also could not read live server store files over SSH (permission denied for `/home/openclaw/presence-happy-path/app/var/presence/*` from this runner), so no safe linked account/request extraction was possible.
-- Because of that, single-session real-device `/respond` replay with real attested proof could not be executed from this pass.
+## Final live validation result
+The previously missing real-device happy-path replay was completed successfully later the same day.
 
-## Exact handoff for human-run replay
-Use this once a linked device/account is available:
+Successful live replay details:
+- `accountId`: `user_1774092848`
+- `bindingId`: `pbind_kbrvgmki`
+- `device`: `presence:device:73efbbd49e9dd0812011d4ebcc8ce41d`
+- final replay `requestId`: `ppreq_lgct3mkw`
 
-1. On a linked phone, get it into pending-proof action UI and capture:
-   - `requestId` (from server-side pending request ID)
-   - proof request payload fields (`nonce`, `requestId`)
-2. Run:
+Observed result:
+- `POST /presence/pending-proof-requests/:requestId/respond` completed successfully
+- request status became `verified`
+- linked-account readiness returned `ready: true`
+- linked snapshot returned `pass: true`
 
-```bash
-REQ_ID=<captured-request-id>
-BASE=https://noctu.link/presence-demo/presence
-
-curl -sS ${BASE}/pending-proof-requests/${REQ_ID}
-# expect: 200 + status "pending"
-
-curl -sS -X POST ${BASE}/pending-proof-requests/${REQ_ID}/respond \
-  -H 'content-type: application/json' \
-  --data '<full-request-body-from-device-log-or-app-net-log>'
-# expect: 200 + { ok: true, state: "linked", request.status: "verified" }
-
-curl -sS ${BASE}/pending-proof-requests/${REQ_ID}
-# expect: 404 OR status != "pending" (ideally "verified" with completedAt)
-
-curl -sS /presence-demo/presence/linked-accounts/<accountId>/status
-# expect: readiness reflects linked and lastVerifiedAt/stateValidUntil advances
-```
-
-3. Report back the successful/failed payloads (request/response JSON + timestamp) so this validation can be closed as fully confirmed.
+A second latest-deploy clean retest was then also completed successfully after authoritative unlink → relink → fresh request:
+- relink session: `plink_c99d5bdc5edc8e8d`
+- fresh request: `ppreq_b41138f5ca96adf4`
+- request status became `verified`
+- readiness remained `ready: true`
+- snapshot remained `pass: true`
 
 ## Closeout status (2026-03-23)
-- **Phase 2 is now closed except for this final live-device `respond` replay.**
-- Local/route-level checks are complete; the only explicit blocker is real-device proof replay confirmation against a linked `(accountId, requestId)` pair on live server.
+- **Phase 2 is fully closed, including final live-device `respond` replay confirmation.**
+- Local checks, route-level checks, first real-device replay, and later clean retest on the latest deployed server all succeeded.
 - Keep SQLite-first small-team deployment assumptions intact (single-node file/SQLite path remains default baseline).
+- For future live retests, follow `docs/presence-live-retest-reset-playbook.md` and use authoritative unlink → relink rather than inferring reset from indirect state inspection.
