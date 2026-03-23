@@ -1,3 +1,4 @@
+// INTENTIONAL_FORK: test app keeps a shorter validation hint because no persistent request context is needed.
 import React from "react";
 import {
   View,

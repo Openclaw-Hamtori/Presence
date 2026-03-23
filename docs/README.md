@@ -52,4 +52,5 @@ Canonical meaning:
 ## Regression baseline (start here before Phase 1/2 changes)
 
 - `docs/presence-phase1-starter-pack-2026-03-23.md`: durable baseline checklist and concrete Phase 1 starter execution plan.
-- Run smoke preflight with `npm run check:phase1-smoke` before touching persistence/storage boundaries.
+- `npm run check:phase1-smoke` runs the baseline smoke preflight checks.
+- `npm run ci:phase1` is the CI baseline guardrail target for PRs: it validates the server contract (`check:server-contract`) and then runs the phase 1 smoke preflight.

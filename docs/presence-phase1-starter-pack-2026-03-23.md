@@ -31,7 +31,10 @@ It captures the **current known-good Presence regression baseline** and a concre
 ## Preflight (must pass before any code changes)
 
 ### Automated preflight
-- [ ] `npm run check:mobile-sync`
+- [ ] `npm run ci:phase1`
+- [ ] `npm run check:mobile-sync` (still useful for focused duplicate-sync auditing)
+
+Equivalent legacy commands covered by `npm run ci:phase1`:
 - [ ] `npm run test -w presence-sdk`
 - [ ] `npm run test -w presence-verifier`
 - [ ] `npm run type-check -w presence-mobile`

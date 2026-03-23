@@ -9,9 +9,10 @@ const testAppRoot = path.join(repoRoot, "presence-test-app/src");
 
 const mirroredDuplicates = [
   "attestation/appAttest.ts",
+  "crypto/crypto.test.mjs",
+  "crypto/sha256.ts",
   "health/pass.test.mjs",
   "ui/assets/presence-orb.png",
-  "ui/components/PresenceStatusCard.tsx",
   "ui/screens/OnboardingScreen.tsx",
   "ui/usePresenceState.ts",
 ];
@@ -37,6 +38,7 @@ const intentionalForks = {
   "service.ts": "test app preserves app-specific proof orchestration and local-state behavior",
   "state/presenceState.ts": "test app compresses timing and carries app-only hydration helpers for validation",
   "sync/linkedBindings.ts": "test app records detailed linked-sync diagnostics and stricter debug guardrails",
+  "ui/components/PresenceStatusCard.tsx": "test app keeps a shorter validation hint because no persistent request context is needed",
   "ui/usePresenceBackgroundSync.ts": "test app disables background scheduling for the on-demand linked-service flow",
 };
 

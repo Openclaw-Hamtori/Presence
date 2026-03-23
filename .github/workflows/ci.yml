@@ -20,17 +20,5 @@ jobs:
       - name: Install workspace dependencies
         run: npm install
 
-      - name: Check mobile sync guardrails
-        run: npm run check:mobile-sync
-
-      - name: Verify verifier
-        run: npm run test -w presence-verifier
-
-      - name: Verify sdk
-        run: npm run test -w presence-sdk
-
-      - name: Type-check mobile
-        run: npm run type-check -w presence-mobile
-
-      - name: Type-check test app
-        run: npm run type-check -w presence-test-app
+      - name: Run Presence Phase 1 baseline guardrail
+        run: npm run ci:phase1
