@@ -1,6 +1,6 @@
 # Presence status / closeout (after latest stabilization cycle)
 
-_Last updated: 2026-03-22_
+_Last updated: 2026-03-23_
 
 ## 1) Current canonical flow (what is intended default)
 - `link once -> stay linked -> service requests PASS -> user opens Presence -> pending request hydrates/nonce -> user submits fresh proof -> server verifies and stores authoritative readiness`
