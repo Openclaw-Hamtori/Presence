@@ -40,7 +40,14 @@ function createBodyParseError(code, message, statusCode = 400) {
   return error;
 }
 
-function readJson(req) {
+function isPlainObject(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function readJson(req, {
+  required = true,
+  allowObject = true,
+} = {}) {
   const maxBodyBytes = getMaxBodyBytes();
   const contentLength = Number.parseInt(req.headers["content-length"] || "", 10);
   if (Number.isFinite(contentLength) && contentLength > maxBodyBytes) {
@@ -70,12 +77,21 @@ function readJson(req) {
 
     req.on("end", () => {
       try {
-        const raw = Buffer.concat(chunks).toString("utf8");
+        const raw = Buffer.concat(chunks).toString("utf8").trim();
         if (!raw) {
+          if (required) {
+            reject(createBodyParseError("ERR_EMPTY_BODY", "Request body required", 400));
+            return;
+          }
           resolve({});
           return;
         }
-        resolve(JSON.parse(raw));
+        const parsed = JSON.parse(raw);
+        if (allowObject && !isPlainObject(parsed)) {
+          reject(createBodyParseError("ERR_INVALID_BODY", "Request body must be a JSON object", 400));
+          return;
+        }
+        resolve(parsed);
       } catch (error) {
         reject(createBodyParseError(
           "ERR_INVALID_JSON",
@@ -93,6 +109,22 @@ function readJson(req) {
       ));
     });
   });
+}
+
+function decodePathParam(raw, label) {
+  try {
+    const value = decodeURIComponent(raw || "");
+    if (!value) {
+      throw new Error("path parameter is empty");
+    }
+    return value;
+  } catch (error) {
+    throw createBodyParseError(
+      "ERR_INVALID_PATH_PARAM",
+      `Invalid ${label} path parameter`,
+      400
+    );
+  }
 }
 
 function absolutize(baseUrl, value) {
@@ -393,7 +425,7 @@ async function main() {
       if (method === "POST" && completeMatch) {
         const body = await readJson(req);
         const result = await presence.completeLinkSession({
-          sessionId: decodeURIComponent(completeMatch[1]),
+          sessionId: decodePathParam(completeMatch[1], "sessionId"),
           body,
         });
 
@@ -417,7 +449,7 @@ async function main() {
 
       const sessionMatch = url.pathname.match(/^\/presence\/link-sessions\/([^/]+)$/);
       if (method === "GET" && sessionMatch) {
-        const session = await presence.linkageStore.getLinkSession(decodeURIComponent(sessionMatch[1]));
+        const session = await presence.linkageStore.getLinkSession(decodePathParam(sessionMatch[1], "sessionId"));
         if (!session) {
           send(404, { ok: false, code: "ERR_SESSION_NOT_FOUND" });
           return;
@@ -435,7 +467,7 @@ async function main() {
       const linkedNonceMatch = url.pathname.match(/^\/presence\/linked-accounts\/([^/]+)\/nonce$/);
       if (method === "POST" && linkedNonceMatch) {
         const request = await presence.createLinkedProofRequest({
-          accountId: decodeURIComponent(linkedNonceMatch[1]),
+          accountId: decodePathParam(linkedNonceMatch[1], "accountId"),
         });
 
         if (request.ok) {
@@ -490,7 +522,7 @@ async function main() {
       const pendingMatch = url.pathname.match(/^\/presence\/linked-accounts\/([^/]+)\/pending-proof-requests$/);
       if (pendingMatch && method === "POST") {
         const request = await presence.createPendingProofRequest({
-          accountId: decodeURIComponent(pendingMatch[1]),
+          accountId: decodePathParam(pendingMatch[1], "accountId"),
         });
 
         if (!request.ok) {
@@ -554,7 +586,7 @@ async function main() {
       const pendingRequestMatch = url.pathname.match(/^\/presence\/pending-proof-requests\/([^/]+)$/);
       if (pendingRequestMatch && method === "GET") {
         const request = await presence.getPendingProofRequest({
-          requestId: decodeURIComponent(pendingRequestMatch[1]),
+          requestId: decodePathParam(pendingRequestMatch[1], "requestId"),
         });
         if (!request) {
           send(404, { ok: false, code: "ERR_PENDING_PROOF_REQUEST_NOT_FOUND" });
@@ -579,7 +611,7 @@ async function main() {
       if (respondPendingMatch && method === "POST") {
         const body = await readJson(req);
         const result = await presence.respondToPendingProofRequest({
-          requestId: decodeURIComponent(respondPendingMatch[1]),
+          requestId: decodePathParam(respondPendingMatch[1], "requestId"),
           body,
         });
 
@@ -614,7 +646,7 @@ async function main() {
         const nonceHeader = req.headers["x-presence-nonce"];
         const nonce = Array.isArray(nonceHeader) ? nonceHeader[0] : nonceHeader;
         const result = await presence.verifyLinkedAccount(body, {
-          accountId: decodeURIComponent(verifyMatch[1]),
+          accountId: decodePathParam(verifyMatch[1], "accountId"),
           nonce: String(nonce || ""),
         });
 
@@ -644,7 +676,7 @@ async function main() {
       const statusMatch = url.pathname.match(/^\/presence\/linked-accounts\/([^/]+)\/status$/);
       if (method === "GET" && statusMatch) {
         const readiness = await presence.getLinkedAccountReadiness({
-          accountId: decodeURIComponent(statusMatch[1]),
+          accountId: decodePathParam(statusMatch[1], "accountId"),
         });
         send(200, createLinkedAccountReadinessResponse(readiness));
         return;
@@ -654,7 +686,7 @@ async function main() {
       if (method === "POST" && unlinkMatch) {
         const body = await readJson(req);
         const result = await presence.unlinkAccount({
-          accountId: decodeURIComponent(unlinkMatch[1]),
+          accountId: decodePathParam(unlinkMatch[1], "accountId"),
           reason: body.reason || "user_requested",
         });
         if (!result) {
@@ -677,7 +709,7 @@ async function main() {
       if (method === "POST" && revokeMatch) {
         const body = await readJson(req);
         const events = await presence.revokeDevice({
-          deviceIss: decodeURIComponent(revokeMatch[1]),
+          deviceIss: decodePathParam(revokeMatch[1], "deviceIss"),
           reason: body.reason || "manual_revoke",
         });
         send(200, { ok: true, events });
@@ -693,7 +725,7 @@ async function main() {
 
       const deviceBindingsMatch = url.pathname.match(/^\/presence\/devices\/([^/]+)\/bindings$/);
       if (method === "GET" && deviceBindingsMatch) {
-        const deviceIss = decodeURIComponent(deviceBindingsMatch[1]);
+        const deviceIss = decodePathParam(deviceBindingsMatch[1], "deviceIss");
         const [device, bindings] = await Promise.all([
           presence.linkageStore.getLinkedDevice(deviceIss),
           presence.linkageStore.listBindingsForDevice(deviceIss),
@@ -719,10 +751,18 @@ async function main() {
         return;
       }
 
-      if (error && error.code === "ERR_INVALID_JSON") {
+      if (
+        error &&
+        [
+          "ERR_INVALID_JSON",
+          "ERR_INVALID_BODY",
+          "ERR_EMPTY_BODY",
+          "ERR_INVALID_PATH_PARAM",
+        ].includes(error.code)
+      ) {
         send(400, {
           ok: false,
-          code: "ERR_INVALID_JSON",
+          code: error.code,
           message: error.message,
         });
         return;

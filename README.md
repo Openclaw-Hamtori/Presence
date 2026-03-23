@@ -65,7 +65,14 @@ Run full local checks:
 
 ```bash
 npm run ci:phase1
+npm run check:server-request-contract
 npm run check:server-auth
+```
+
+Release-style smoke (local-only, optional):
+
+```bash
+PRESENCE_SMOKE_LOCAL=1 npm run check:runtime-smoke
 ```
 
 ---

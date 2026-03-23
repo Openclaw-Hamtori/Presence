@@ -36,6 +36,24 @@ Set size limits to protect endpoint handlers from oversized payloads:
 - `PRESENCE_MAX_BODY_BYTES` (optional, default `65536`).
 - Lower this if you need tighter limits in front of hostile traffic.
 
+### Practical abuse / rate-limiting posture
+
+Reference implementations intentionally keep protocol-level hardening minimal and portable.
+For public deployments, layer abuse controls at the edge/proxy first:
+
+- enforce per-IP and per-service token request rate caps,
+- add short burst limits on session/proof write endpoints,
+- set connection/body size ceilings (`PRESENCE_MAX_BODY_BYTES`, load balancer limits),
+- block repeated malformed requests rapidly and observe elevated `4xx`/parse errors,
+- keep callback/public proof endpoints reachable but monitor abuse spikes.
+
+Recommended quick defaults for a first production posture:
+
+- `429` for request bursts above your chosen quota (at infra layer),
+- `ERR_INVALID_*` response codes are deliberately stable for malformed body/path payloads on the reference server.
+
+The reference server does not currently implement a distributed rate limiter by default; avoid adding a heavy framework in single-process reference deployments.
+
 ### Runtime health and cleanup tuning
 
 - `PRESENCE_CLEANUP_INTERVAL_SECONDS` (default `300`, max `3600`, `0` disables sweep).
@@ -66,6 +84,13 @@ Run from repo root:
 ```bash
 npm run check:server-contract
 npm run check:server-auth
+npm run check:server-request-contract
+```
+
+Use for release-readiness smoke checks:
+
+```bash
+PRESENCE_SMOKE_LOCAL=1 npm run check:runtime-smoke
 ```
 
 ### 4) Runtime smoke (optional)

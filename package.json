@@ -11,9 +11,11 @@
     "check:mobile-sync": "node scripts/check-mobile-sync.mjs",
     "check:phase1-smoke": "node scripts/phase1-baseline-smoke.mjs",
     "check:server-contract": "node scripts/check-server-contract.mjs",
+    "check:server-auth": "node scripts/check-server-auth.mjs",
+    "check:server-request-contract": "node scripts/check-server-request-contract.mjs",
     "check:runtime-smoke": "node scripts/check-runtime-presence-smoke.mjs",
-    "ci:phase1": "npm run check:server-contract && npm run check:phase1-smoke",
+    "ci:phase1": "npm run check:server-contract && npm run check:server-auth && npm run check:server-request-contract && npm run check:phase1-smoke",
     "test": "npm run check:mobile-sync && npm run test -w presence-verifier && npm run test -w presence-sdk && npm run type-check -w presence-mobile && npm run type-check -w presence-test-app",
-    "check:server-auth": "node scripts/check-server-auth.mjs"
+    "check:server-release-readiness": "npm run check:server-contract && npm run check:server-auth && npm run check:server-request-contract && PRESENCE_SMOKE_LOCAL=1 npm run check:runtime-smoke"
   }
 }

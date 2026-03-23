@@ -22,3 +22,14 @@ jobs:
 
       - name: Run Presence Phase 1 baseline guardrail
         run: npm run ci:phase1
+
+      - name: Run release-readiness hardening checks
+        run: npm run check:server-release-readiness
+        env:
+          PRESENCE_SMOKE_PUBLIC_BASE_URL: http://127.0.0.1:18920
+          PRESENCE_SMOKE_LOCAL: 1
+          PRESENCE_SMOKE_PENDING_PROOF_PROBE: 0
+          PRESENCE_SMOKE_ROUTE_BASE: ""
+          PRESENCE_SMOKE_SERVICE_DOMAIN: presence.example
+          PRESENCE_SMOKE_HOST: 127.0.0.1
+          PRESENCE_SMOKE_PORT: 18920

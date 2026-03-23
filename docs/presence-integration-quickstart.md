@@ -186,6 +186,25 @@ This keeps cleanup behavior predictable without external cron jobs for the local
 
 ---
 
+## Request validation and malformed-request contract
+
+Reference server handlers now enforce a stricter parse contract for JSON entry points in this release round:
+
+- `ERR_INVALID_JSON` for malformed JSON documents,
+- `ERR_INVALID_BODY` when a request body is valid JSON but not an object,
+- `ERR_EMPTY_BODY` when a required JSON body is missing,
+- `ERR_INVALID_PATH_PARAM` when a URL path parameter cannot be safely decoded.
+
+For deployment readiness, treat these as low-risk hardening checks and keep response shape stable (`{ ok:false, code, message }`) so clients can reliably route invalid input cases.
+
+Add this to your production checklists:
+
+- smoke malformed payload samples against service-owned endpoints,
+- monitor parse-failure rates in logs and alert on spikes,
+- ensure callback endpoints (`.../complete`, `/verify`, `/respond`) remain publicly reachable but are still protected against body abuse.
+
+---
+
 ## 1. Link once
 
 Your backend creates a one-time session and returns normalized completion metadata:
