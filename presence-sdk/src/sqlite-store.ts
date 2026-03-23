@@ -143,7 +143,6 @@ CREATE INDEX IF NOT EXISTS idx_audit_events_occurred_at ON audit_events(occurred
   },
 ] as const;
 
-const STUB_ERROR = "SQLiteLinkageStore is a prepared scaffold and not yet wired to runtime persistence";
 
 export class SqliteLinkageStore implements LinkageStore {
   readonly kind: "sqlite" = "sqlite";
@@ -295,22 +294,97 @@ export class SqliteLinkageStore implements LinkageStore {
     return rows.map((row) => this.rowToServiceBinding(row));
   }
 
-  async savePendingProofRequest(_request: PendingProofRequest): Promise<void> {
-    throwStoreStub("savePendingProofRequest");
+  async savePendingProofRequest(request: PendingProofRequest): Promise<void> {
+    await this.withAutoTransaction(async () => {
+      const row = this.pendingProofRequestToRow(request);
+      const stmt = this.db.prepare(`
+        INSERT INTO pending_proof_requests (
+          id,
+          service_id,
+          account_id,
+          binding_id,
+          device_iss,
+          nonce,
+          requested_at,
+          expires_at,
+          status,
+          completed_at,
+          recovery_reason,
+          signal_json,
+          signal_dispatch_json,
+          metadata_json
+        ) VALUES (@id, @service_id, @account_id, @binding_id, @device_iss, @nonce, @requested_at, @expires_at, @status, @completed_at, @recovery_reason, @signal_json, @signal_dispatch_json, @metadata_json)
+        ON CONFLICT(id) DO UPDATE SET
+          service_id = excluded.service_id,
+          account_id = excluded.account_id,
+          binding_id = excluded.binding_id,
+          device_iss = excluded.device_iss,
+          nonce = excluded.nonce,
+          requested_at = excluded.requested_at,
+          expires_at = excluded.expires_at,
+          status = excluded.status,
+          completed_at = excluded.completed_at,
+          recovery_reason = excluded.recovery_reason,
+          signal_json = excluded.signal_json,
+          signal_dispatch_json = excluded.signal_dispatch_json,
+          metadata_json = excluded.metadata_json
+      `);
+      stmt.run(row);
+    });
   }
 
-  async getPendingProofRequest(_requestId: string): Promise<PendingProofRequest | null> {
-    throwStoreStub("getPendingProofRequest");
+  async getPendingProofRequest(requestId: string): Promise<PendingProofRequest | null> {
+    const row = this.db.prepare("SELECT * FROM pending_proof_requests WHERE id = ?").get(requestId) as SqlitePendingProofRequestRow | undefined;
+    if (!row) {
+      return null;
+    }
+    return this.rowToPendingProofRequest(row);
   }
 
-  async listPendingProofRequests(_filter?: {
+  async listPendingProofRequests(filter?: {
     serviceId?: string;
     accountId?: string;
     bindingId?: string;
     deviceIss?: string;
     statuses?: PendingProofRequestStatus[];
   }): Promise<PendingProofRequest[]> {
-    throwStoreStub("listPendingProofRequests");
+    const clauses: string[] = [];
+    const params: Array<string | number> = [];
+
+    if (filter?.serviceId) {
+      clauses.push("service_id = ?");
+      params.push(filter.serviceId);
+    }
+    if (filter?.accountId) {
+      clauses.push("account_id = ?");
+      params.push(filter.accountId);
+    }
+    if (filter?.bindingId) {
+      clauses.push("binding_id = ?");
+      params.push(filter.bindingId);
+    }
+    if (filter?.deviceIss) {
+      clauses.push("device_iss = ?");
+      params.push(filter.deviceIss);
+    }
+
+    const statuses = filter?.statuses?.length
+      ? new Set(filter.statuses)
+      : null;
+    if (statuses) {
+      const placeholders = Array.from(statuses, () => "?").join(", ");
+      clauses.push(`status IN (${placeholders})`);
+      params.push(...statuses);
+    }
+
+    const sql = [
+      "SELECT * FROM pending_proof_requests",
+      clauses.length ? `WHERE ${clauses.join(" AND ")}` : "",
+      "ORDER BY requested_at DESC, id DESC",
+    ].filter(Boolean).join(" ");
+
+    const rows = this.db.prepare(sql).all(...params) as SqlitePendingProofRequestRow[];
+    return rows.map((row) => this.rowToPendingProofRequest(row));
   }
 
   async getLinkedDevice(deviceIss: string): Promise<LinkedDevice | null> {
@@ -552,10 +626,44 @@ export class SqliteLinkageStore implements LinkageStore {
       metadata: row.metadata_json ? safeJsonParse(row.metadata_json) : undefined,
     };
   }
-}
 
-function throwStoreStub(operation: string): never {
-  throw new Error(`${operation}: ${STUB_ERROR}`);
+  private pendingProofRequestToRow(request: PendingProofRequest): Record<string, unknown> {
+    return {
+      id: request.id,
+      service_id: request.serviceId,
+      account_id: request.accountId,
+      binding_id: request.bindingId,
+      device_iss: request.deviceIss,
+      nonce: request.nonce,
+      requested_at: request.requestedAt,
+      expires_at: request.expiresAt,
+      status: request.status,
+      completed_at: request.completedAt ?? null,
+      recovery_reason: request.recoveryReason ?? null,
+      signal_json: request.signal ? JSON.stringify(request.signal) : null,
+      signal_dispatch_json: request.signalDispatch ? JSON.stringify(request.signalDispatch) : null,
+      metadata_json: request.metadata ? JSON.stringify(request.metadata) : null,
+    };
+  }
+
+  private rowToPendingProofRequest(row: SqlitePendingProofRequestRow): PendingProofRequest {
+    return {
+      id: row.id,
+      serviceId: row.service_id,
+      accountId: row.account_id,
+      bindingId: row.binding_id,
+      deviceIss: row.device_iss,
+      nonce: row.nonce,
+      requestedAt: row.requested_at,
+      expiresAt: row.expires_at,
+      status: row.status as PendingProofRequest["status"],
+      completedAt: row.completed_at ?? undefined,
+      recoveryReason: row.recovery_reason ?? undefined,
+      signal: row.signal_json ? safeJsonParse(row.signal_json) : undefined,
+      signalDispatch: row.signal_dispatch_json ? safeJsonParse(row.signal_dispatch_json) : undefined,
+      metadata: row.metadata_json ? safeJsonParse(row.metadata_json) : undefined,
+    };
+  }
 }
 
 function safeJsonParse<T>(value: string): T | undefined {
@@ -600,6 +708,23 @@ interface SqliteServiceBindingRow {
   reauth_required_at: number | null;
   recovery_started_at: number | null;
   recovery_reason: string | null;
+  metadata_json: string | null;
+}
+
+interface SqlitePendingProofRequestRow {
+  id: string;
+  service_id: string;
+  account_id: string;
+  binding_id: string;
+  device_iss: string;
+  nonce: string;
+  requested_at: number;
+  expires_at: number;
+  status: string;
+  completed_at: number | null;
+  recovery_reason: string | null;
+  signal_json: string | null;
+  signal_dispatch_json: string | null;
   metadata_json: string | null;
 }
 

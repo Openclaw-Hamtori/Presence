@@ -27,6 +27,7 @@ _Last updated: 2026-03-22_
   - Documented in `projects/presence-happy-path-pending-proof-redeploy-2026-03-22.md` and `projects/presence-happy-path-deploy-guardrails-2026-03-21.md`.
 - **Live route-base/URL compatibility fixed** for `https://noctu.link/presence-demo/presence` through `ROUTE_BASE_PATH` stripping (`presence-happy-path/app/server.cjs`, commit `d37d550`; follow-up note `projects/presence-push-live-route-fix-2026-03-22.md`).
 - **Push token upload path hardened** and route accepts persisted token formats only (`projects/presence-push-token-apns-format-fix-2026-03-22.md`, `projects/presence-ios-push-entitlement-debug-2026-03-22.md`).
+- **SQLite-backed `SqliteLinkageStore` now persists pending-proof request records and their status transitions** (`presence-sdk/src/sqlite-store.ts`, `presence-sdk/src/test/sdk.test.ts`).
 
 ## 3) Non-canonical / optional / experimental
 - **APNs wake path** is optional and non-authoritative (`docs/presence-push-setup-vs-steady-state.md` and `docs/README.md`).
@@ -40,7 +41,7 @@ _Last updated: 2026-03-22_
   - Outstanding: single-session real-device `respond` happy-path replay with a known `requestId` and linked account/device pair.
 - Finish **reliable APNs live delivery path** (token flow + notification wake + app hydration evidence) with same linked account/device used on-device.
 - Close remaining validation gap around **relink/unlink and stale-link cleanup** on fresh sessions in long-running manual runs.
-- Finish operational hardening path to a durable canonical store choice (SQLite/WAL design referenced in `projects/presence-sqlite-design-2026-03-21.md`).
+- Finish durable shared nonce storage + operator hardening (still phase 2), while small-server SQLite path for pending-proof request state transitions remains the validated Phase 1 baseline slice. (SQLite/WAL design referenced in `projects/presence-sqlite-design-2026-03-21.md`).
 
 ## 5) Notes for future reviewers/operators
 - Single source of truth for deployable server runtime should stay in-repo (`presence-happy-path/app/server.cjs`) and be installed via tarball+restart, not manual drift edits on VPS.

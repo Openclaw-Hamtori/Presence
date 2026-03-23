@@ -326,6 +326,145 @@ function buildAndroidBody(
       rmSync(dbDir, { recursive: true, force: true });
     }
   });
+
+  await test("sqlite-backed createPendingProofRequest() persists and lists server-side requests", async () => {
+    const dbDir = mkdtempSync(join(tmpdir(), "presence-sqlite-pending-"));
+    const store = new SqliteLinkageStore({ dbPath: join(dbDir, "presence-linkage.db"), mode: "single-team" });
+    const client = new PresenceClient({ silent: true, linkageStore: store, serviceId: "svc" });
+
+    try {
+      const now = Math.floor(Date.now() / 1000);
+      await store.saveServiceBinding({
+        bindingId: "sqlite_bind_pending",
+        serviceId: "svc",
+        accountId: "acct-sqlite-pending",
+        deviceIss: "presence:device:sqlite-pending",
+        createdAt: now,
+        updatedAt: now,
+        status: "linked",
+        lastLinkedAt: now,
+        lastVerifiedAt: now,
+        lastAttestedAt: now,
+      });
+
+      const pending = await client.createPendingProofRequest({
+        accountId: "acct-sqlite-pending",
+        metadata: { source: "sdk-test" },
+      });
+      assert.equal(pending.ok, true);
+      if (!pending.ok) {
+        throw new Error("expected pending proof request");
+      }
+
+      const persisted = await store.getPendingProofRequest(pending.request.id);
+      assert.equal(persisted?.status, "pending");
+      assert.equal(persisted?.accountId, "acct-sqlite-pending");
+      assert.equal(persisted?.metadata?.source, "sdk-test");
+
+      const list = await client.listPendingProofRequests({ accountId: "acct-sqlite-pending" });
+      assert.equal(list.length, 1);
+      assert.equal(list[0]?.id, pending.request.id);
+      assert.equal(list[0]?.status, "pending");
+    } finally {
+      rmSync(dbDir, { recursive: true, force: true });
+    }
+  });
+
+  await test("sqlite-backed respondToPendingProofRequest() marks request verified", async () => {
+    const dbDir = mkdtempSync(join(tmpdir(), "presence-sqlite-pending-verify-"));
+    const store = new SqliteLinkageStore({ dbPath: join(dbDir, "presence-linkage.db"), mode: "single-team" });
+    const client = new PresenceClient({ silent: true, linkageStore: store, serviceId: "svc" });
+
+    try {
+      const now = Math.floor(Date.now() / 1000);
+      const binding = {
+        bindingId: "sqlite_bind_pending_verify",
+        serviceId: "svc",
+        accountId: "acct-sqlite-pending-verify",
+        deviceIss: "presence:device:pending-verify-sqlite",
+        createdAt: now,
+        updatedAt: now,
+        status: "linked" as const,
+        lastLinkedAt: now,
+        lastVerifiedAt: now,
+        lastAttestedAt: now,
+      };
+      await store.saveServiceBinding(binding);
+
+      const pending = await client.createPendingProofRequest({ accountId: "acct-sqlite-pending-verify" });
+      assert.equal(pending.ok, true);
+      if (!pending.ok) {
+        throw new Error("expected pending proof request");
+      }
+
+      const verifyLinked = async () => ({
+        verified: true as const,
+        pol_version: "1.0" as const,
+        iss: binding.deviceIss,
+        iat: NOW,
+        state_created_at: STATE_CREATED,
+        state_valid_until: STATE_VALID_UNTIL,
+        human: true as const,
+        pass: true as const,
+        signals: ["heart_rate", "steps"] as const,
+        nonce: pending.request.nonce,
+      });
+      (client as unknown as { verifyLinkedAccount: typeof verifyLinked }).verifyLinkedAccount = verifyLinked;
+
+      const result = await client.respondToPendingProofRequest({ requestId: pending.request.id, body: { ok: true } });
+      assert.equal(result.verified, true);
+      const saved = await store.getPendingProofRequest(pending.request.id);
+      assert.equal(saved?.status, "verified");
+      assert.ok(saved?.completedAt);
+    } finally {
+      rmSync(dbDir, { recursive: true, force: true });
+    }
+  });
+
+  await test("sqlite-backed pending proof request expiry transitions to expired", async () => {
+    const dbDir = mkdtempSync(join(tmpdir(), "presence-sqlite-pending-expired-"));
+    const store = new SqliteLinkageStore({ dbPath: join(dbDir, "presence-linkage.db"), mode: "single-team" });
+    const client = new PresenceClient({ silent: true, linkageStore: store, serviceId: "svc" });
+
+    try {
+      const now = Math.floor(Date.now() / 1000);
+      await store.saveServiceBinding({
+        bindingId: "sqlite_bind_pending_expired",
+        serviceId: "svc",
+        accountId: "acct-sqlite-pending-expired",
+        deviceIss: "presence:device:pending-expired-sqlite",
+        createdAt: now,
+        updatedAt: now,
+        status: "linked",
+        lastLinkedAt: now,
+        lastVerifiedAt: now,
+        lastAttestedAt: now,
+      });
+
+      await store.savePendingProofRequest({
+        id: "ppreq_sqlite_expired",
+        serviceId: "svc",
+        accountId: "acct-sqlite-pending-expired",
+        bindingId: "sqlite_bind_pending_expired",
+        deviceIss: "presence:device:pending-expired-sqlite",
+        nonce: "fixture-nonce",
+        requestedAt: now - 60,
+        expiresAt: now - 1,
+        status: "pending",
+      });
+
+      const expired = await client.getPendingProofRequest({ requestId: "ppreq_sqlite_expired" });
+      assert.equal(expired?.status, "expired");
+      assert.ok(expired?.completedAt);
+
+      const list = await client.listPendingProofRequests({ accountId: "acct-sqlite-pending-expired", includeInactive: true });
+      const byId = list.find((request) => request.id === "ppreq_sqlite_expired");
+      assert.equal(byId?.status, "expired");
+    } finally {
+      rmSync(dbDir, { recursive: true, force: true });
+    }
+  });
+
   await test("createCompletionSessionResponse() prefers session completion URLs over contract defaults", async () => {
     const store = new InMemoryLinkageStore();
     const client = new PresenceClient({ silent: true, linkageStore: store, serviceId: "svc" });

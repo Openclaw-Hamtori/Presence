@@ -112,8 +112,15 @@ The goal of this phase is **opt-in production-hardening**, without destabilizing
 - This harness executes read-only checks and mirrors the checklist preflight in code form.
 - It does not modify runtime behavior or persistence paths.
 
+- Added SQLite-backed persistence slice for pending-proof requests so the following now work against `SqliteLinkageStore`:
+  - create + persist pending request records,
+  - read one by id,
+  - list by account/binding/device/status,
+  - expiry transition handling exercised by SDK freshness checks,
+  - create/respond lifecycle status transitions in a single DB-backed store.
+- Extended `presence-sdk` test coverage to lock these semantics for SQLite-backed `createPendingProofRequest()` and `respondToPendingProofRequest()` paths.
+
 ## Next immediate implementation slice (recommended)
 
-1. Add a small **baseline fixture test** in `presence-sdk` for pending-proof state transition invariants (no external storage dependency).
-2. Expand `check:phase1-smoke` to include optional, explicit endpoint smoke calls against a configured local dev server.
-3. Freeze this checklist link in `docs/README.md` and `docs/STATUS.md` as required pre-flight before any Phase 1 changes.
+1. Expand `check:phase1-smoke` to include optional, explicit endpoint smoke calls against a configured local dev server.
+2. Freeze this checklist link in `docs/README.md` and `docs/STATUS.md` as required pre-flight before any Phase 1 changes.
