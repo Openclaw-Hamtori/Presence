@@ -109,8 +109,8 @@ const COPY_STATUS_RESET_MS = 1800;
 const RECENT_VERIFIED_PASS_HOLD_MS = 10_000;
 const INITIAL_LINK_CONNECTED_HOLD_MS = 10_000;
 const RECENT_PROOF_FAILURE_HOLD_MS = 10_000;
-// Keep pending-proof hydration on the publicly readable /presence-demo/presence surface until the trust contract changes end-to-end.
-const PRESENCE_DEMO_API_BASE_URL = "https://noctu.link/presence-demo/presence";
+// Keep pending-proof hydration on the example /presence-demo/presence surface for test/demos.
+const PRESENCE_DEMO_API_BASE_URL = "https://example.com/presence-demo/presence";
 
 type LinkedProofRequestState =
   | { requestKey: string; status: RequestedProofUiStatus }

@@ -97,7 +97,7 @@ The pending request must survive restarts and be idempotently consumed.
 **Primary goal:** replace reference file defaults with production-credible persistence and deterministic lifecycle semantics.
 
 - Implement repository-level store abstraction in `presence-sdk` with at least one production adapter (Postgres/SQLite first-class choice; MySQL later optional).
-- Align on schema naming with the existing SQLite design (`projects/presence-sqlite-design-2026-03-21.md`) before implementation. Current domain model uses `ServiceBinding`, not "linked account" — table names must reflect the actual data model.
+- Align on schema naming with the existing SQLite design (`docs/archive/projects/presence-sqlite-design-2026-03-21.md`) before implementation. Current domain model uses `ServiceBinding`, not "linked account" — table names must reflect the actual data model.
 - Add/solidify schemas:
   - `service_bindings` (not `linked_accounts` — a binding is scoped to (serviceId, accountId, deviceIss))
   - `link_sessions`
@@ -253,4 +253,4 @@ The pending request must survive restarts and be idempotently consumed.
 
 ## Tracking and next doc artifacts
 
-Treat this as the implementation blueprint for the next cycle. For phase execution, add dated entries under `projects/` for concrete work and validation, and update `docs/STATUS.md` with completion status as phases land.
+Treat this as the implementation blueprint for the next cycle. For phase execution, add dated entries under `docs/archive/projects/` for concrete work and validation, and update `docs/STATUS.md` with completion status as phases land.

@@ -6,7 +6,7 @@ import {
   selectPendingProofRequestsForBindings,
 } from "./pendingProofHydration.ts";
 
-const API_BASE_URL = "https://noctu.link/presence-demo/presence";
+const API_BASE_URL = "https://example.com/presence-demo/presence";
 
 test("hydrateBindingWithCanonicalSync() fills canonical linked-account sync URLs for recovered bindings", () => {
   const hydrated = hydrateBindingWithCanonicalSync({
@@ -19,11 +19,11 @@ test("hydrateBindingWithCanonicalSync() fills canonical linked-account sync URLs
   }, API_BASE_URL);
 
   assert.deepEqual(hydrated.sync, {
-    serviceDomain: "noctu.link",
-    nonceUrl: "https://noctu.link/presence-demo/presence/linked-accounts/acct%201/nonce",
-    verifyUrl: "https://noctu.link/presence-demo/presence/linked-accounts/acct%201/verify",
-    statusUrl: "https://noctu.link/presence-demo/presence/linked-accounts/acct%201/status",
-    pendingRequestsUrl: "https://noctu.link/presence-demo/presence/linked-accounts/acct%201/pending-proof-requests",
+    serviceDomain: "example.com",
+    nonceUrl: "https://example.com/presence-demo/presence/linked-accounts/acct%201/nonce",
+    verifyUrl: "https://example.com/presence-demo/presence/linked-accounts/acct%201/verify",
+    statusUrl: "https://example.com/presence-demo/presence/linked-accounts/acct%201/status",
+    pendingRequestsUrl: "https://example.com/presence-demo/presence/linked-accounts/acct%201/pending-proof-requests",
   });
 });
 
@@ -43,7 +43,7 @@ test("hydrateBindingWithCanonicalSync() preserves existing sync values while bac
 
   assert.equal(hydrated.sync?.serviceDomain, "presence.example.com");
   assert.equal(hydrated.sync?.pendingRequestsUrl, "https://presence.example.com/custom/pending");
-  assert.equal(hydrated.sync?.verifyUrl, "https://noctu.link/presence-demo/presence/linked-accounts/acct-1/verify");
+  assert.equal(hydrated.sync?.verifyUrl, "https://example.com/presence-demo/presence/linked-accounts/acct-1/verify");
 });
 
 test("selectPendingProofRequestsForBindings() keeps only actionable requests for the current device and bindings", () => {

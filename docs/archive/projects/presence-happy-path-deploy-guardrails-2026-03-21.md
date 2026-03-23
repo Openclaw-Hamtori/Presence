@@ -7,7 +7,7 @@ This note is the deploy-side guardrail until the live server source is fully mir
 
 Update on 2026-03-22:
 - repo-tracked live source now exists at `presence-happy-path/app/server.cjs`
-- pending proof request rollout steps live in `projects/presence-happy-path-pending-proof-redeploy-2026-03-22.md`
+- pending proof request rollout steps live in `docs/archive/projects/presence-happy-path-pending-proof-redeploy-2026-03-22.md`
 
 ---
 
