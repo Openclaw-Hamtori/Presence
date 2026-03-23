@@ -369,6 +369,89 @@ function buildAndroidBody(
     assert.equal(result.totalExpired, 0);
   });
 
+  await test("cleanupPersistedNonces() reports in-memory and persisted nonce expiration counts", async () => {
+    const dbDir = mkdtempSync(join(tmpdir(), "presence-sqlite-maintenance-"));
+    const dbPath = join(dbDir, "presence-linkage.db");
+    const linkageStore = new SqliteLinkageStore({ dbPath, mode: "single-team" });
+    const client = new PresenceClient({
+      linkageStore,
+      silent: true,
+      nonceTtlSeconds: 300,
+      serviceId: "svc",
+    });
+
+    const now = Math.floor(Date.now() / 1000);
+
+    try {
+      client.issueNonce("expired-memory-nonce", now - 500);
+      client.issueNonce("fresh-memory-nonce", now);
+
+      await linkageStore.savePendingProofRequest({
+        id: "ppreq-maintenance-expired",
+        serviceId: "svc",
+        accountId: "acct-maintenance",
+        bindingId: "bind-maintenance",
+        deviceIss: "presence:device:maintenance",
+        nonce: "maintenance-expired-nonce",
+        requestedAt: now - 500,
+        expiresAt: now - 20,
+        status: "pending",
+      });
+
+      await linkageStore.savePendingProofRequest({
+        id: "ppreq-maintenance-active",
+        serviceId: "svc",
+        accountId: "acct-maintenance",
+        bindingId: "bind-maintenance",
+        deviceIss: "presence:device:maintenance",
+        nonce: "maintenance-active-nonce",
+        requestedAt: now,
+        expiresAt: now + 120,
+        status: "pending",
+      });
+
+      await linkageStore.saveLinkSession({
+        id: "plink-maintenance-expired",
+        serviceId: "svc",
+        accountId: "acct-maintenance",
+        issuedNonce: "plink-expired-nonce",
+        requestedAt: now - 500,
+        expiresAt: now - 20,
+        status: "pending",
+      });
+
+      await linkageStore.saveLinkSession({
+        id: "plink-maintenance-active",
+        serviceId: "svc",
+        accountId: "acct-maintenance",
+        issuedNonce: "plink-active-nonce",
+        requestedAt: now,
+        expiresAt: now + 120,
+        status: "pending",
+      });
+
+      const report = await client.cleanupPersistedNonces({ now });
+
+      assert.equal(report.inMemoryNoncesExpired, 1);
+      assert.equal(report.persistedExpired.linkSessionsExpired, 1);
+      assert.equal(report.persistedExpired.pendingProofRequestsExpired, 1);
+      assert.equal(report.persistedExpired.totalExpired, 2);
+      assert.equal(report.totalExpired, 3);
+
+      const expiredProofRequest = await linkageStore.getPendingProofRequest("ppreq-maintenance-expired");
+      const activeProofRequest = await linkageStore.getPendingProofRequest("ppreq-maintenance-active");
+      const expiredSession = await linkageStore.getLinkSession("plink-maintenance-expired");
+      const activeSession = await linkageStore.getLinkSession("plink-maintenance-active");
+      assert.equal(expiredProofRequest?.status, "expired");
+      assert.equal(activeProofRequest?.status, "pending");
+      assert.equal(expiredSession?.status, "expired");
+      assert.equal(activeSession?.status, "pending");
+    } finally {
+      linkageStore.close();
+      rmSync(dbDir, { recursive: true, force: true });
+    }
+  });
+
   await test("parsePresenceRequest() parses Android format and marks platform explicit", async () => {
     const attestation = buildAttestation(keys.publicKeyDer, keys.privateKeyDer, "dGVzdC1ub25jZS0xMjM0NTY");
     const body = buildAndroidBody(attestation, keys.publicKeyDer, undefined, true);

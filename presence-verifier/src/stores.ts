@@ -58,13 +58,17 @@ export class InMemoryNonceStore implements NonceStore {
     if (entry) entry.used = true;
   }
 
-  /** Cleanup expired entries (call periodically in production) */
-  cleanup(now = Math.floor(Date.now() / 1000)): void {
+  /** Cleanup expired entries (call periodically in production). Returns number removed. */
+  cleanup(now = Math.floor(Date.now() / 1000)): number {
+    let removed = 0;
+
     for (const [nonce, entry] of this.store.entries()) {
       if (now - entry.issuedAt > entry.ttlSeconds) {
         this.store.delete(nonce);
+        removed += 1;
       }
     }
+    return removed;
   }
 }
 

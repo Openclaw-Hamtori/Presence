@@ -99,9 +99,9 @@ export class InMemoryManagedNonceStore implements NonceIssuer {
     return this.store;
   }
 
-  /** Cleanup expired nonces (call periodically in production) */
-  cleanup(): void {
-    this.store.cleanup();
+  /** Cleanup expired nonces (call periodically in production). Returns number removed. */
+  cleanup(): number {
+    return (this.store.cleanup as () => number)();
   }
 }
 

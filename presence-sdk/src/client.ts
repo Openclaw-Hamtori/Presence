@@ -1207,6 +1207,27 @@ export class PresenceClient {
     this.managedNonces.cleanup();
   }
 
+  async cleanupPersistedNonces(options: { now?: number } = {}): Promise<{
+    inMemoryNoncesExpired: number;
+    persistedExpired: {
+      linkSessionsExpired: number;
+      pendingProofRequestsExpired: number;
+      totalExpired: number;
+    };
+    totalExpired: number;
+  }> {
+    const now = options.now ?? Math.floor(Date.now() / 1000);
+    const inMemoryNoncesExpired = this.managedNonces.cleanup();
+
+    const persistedExpired = await this.persistedNonceStore.sweepExpiredNonces({ now });
+
+    return {
+      inMemoryNoncesExpired,
+      persistedExpired,
+      totalExpired: inMemoryNoncesExpired + persistedExpired.totalExpired,
+    };
+  }
+
   private async appendAudit(event: Omit<LinkageAuditEvent, "eventId" | "occurredAt"> & { occurredAt?: number }) {
     return this.appendAuditWithStore(this.linkageStore, event);
   }
