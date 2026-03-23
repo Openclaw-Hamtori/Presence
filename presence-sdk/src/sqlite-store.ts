@@ -10,6 +10,7 @@ import type {
   ServiceBinding,
   PendingProofRequestStatus,
   LinkedDevice,
+  ListAuditEventsFilter,
 } from "./types.js";
 
 /**
@@ -490,9 +491,9 @@ export class SqliteLinkageStore implements LinkageStore {
     });
   }
 
-  async listAuditEvents(filter?: { serviceId?: string; accountId?: string; bindingId?: string }): Promise<LinkageAuditEvent[]> {
+  async listAuditEvents(filter?: ListAuditEventsFilter): Promise<LinkageAuditEvent[]> {
     const clauses: string[] = [];
-    const params: string[] = [];
+    const params: Array<string | number> = [];
 
     if (filter?.serviceId) {
       clauses.push("service_id = ?");
@@ -507,20 +508,50 @@ export class SqliteLinkageStore implements LinkageStore {
       params.push(filter.bindingId);
     }
 
-    const rows = this.getDb().prepare([
+    const hasLimit = filter?.limit !== undefined;
+    const rawLimit = typeof filter?.limit === "number" ? filter.limit : undefined;
+    const limit = hasLimit && Number.isFinite(rawLimit) ? Math.floor(rawLimit as number) : undefined;
+    if (hasLimit && (typeof rawLimit !== "number" || !Number.isFinite(rawLimit) || rawLimit <= 0)) {
+      return [];
+    }
+    const rawOffset = filter?.offset;
+    const offset = hasLimit && typeof rawOffset === "number" ? Math.floor(rawOffset) : 0;
+    const usePagination = hasLimit && limit !== undefined && limit > 0;
+
+    const queryParts = [
       "SELECT * FROM audit_events",
       clauses.length ? `WHERE ${clauses.join(" AND ")}` : "",
-    ].filter(Boolean).join(" ")).all(...params) as {
-      event_id: string;
-      occurred_at: number;
-      type: string;
-      service_id: string | null;
-      account_id: string | null;
-      binding_id: string | null;
-      device_iss: string | null;
-      reason: string | null;
-      metadata_json: string | null;
-    }[];
+      usePagination ? "ORDER BY rowid ASC" : "",
+      usePagination ? "LIMIT ?" : "",
+      usePagination && offset > 0 ? "OFFSET ?" : "",
+    ].filter(Boolean);
+
+    const query = this.getDb().prepare(queryParts.join(" "));
+    const queryLimit = limit ?? 0;
+    const rows = usePagination
+      ? (offset > 0
+          ? query.all(...params, queryLimit, offset) : query.all(...params, queryLimit)) as {
+            event_id: string;
+            occurred_at: number;
+            type: string;
+            service_id: string | null;
+            account_id: string | null;
+            binding_id: string | null;
+            device_iss: string | null;
+            reason: string | null;
+            metadata_json: string | null;
+          }[]
+      : query.all(...params) as {
+        event_id: string;
+        occurred_at: number;
+        type: string;
+        service_id: string | null;
+        account_id: string | null;
+        binding_id: string | null;
+        device_iss: string | null;
+        reason: string | null;
+        metadata_json: string | null;
+      }[];
 
     return rows
       .map((row) => ({

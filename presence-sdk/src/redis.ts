@@ -7,6 +7,7 @@ import type {
   LinkageAuditEvent,
   PendingProofRequest,
   PendingProofRequestStatus,
+  ListAuditEventsFilter,
 } from "./types.js";
 
 interface RedisLinkageStoreData {
@@ -113,14 +114,26 @@ export class RedisLinkageStore implements LinkageStore {
     });
   }
 
-  async listAuditEvents(filter?: { serviceId?: string; accountId?: string; bindingId?: string }): Promise<LinkageAuditEvent[]> {
+  async listAuditEvents(filter?: ListAuditEventsFilter): Promise<LinkageAuditEvent[]> {
     const data = await this.readData();
-    return data.auditEvents.filter((event) => {
+    const filtered = data.auditEvents.filter((event) => {
       if (filter?.serviceId && event.serviceId !== filter.serviceId) return false;
       if (filter?.accountId && event.accountId !== filter.accountId) return false;
       if (filter?.bindingId && event.bindingId !== filter.bindingId) return false;
       return true;
     });
+
+    if (!filter || filter.limit == null) {
+      return filtered.map((event) => ({ ...event }));
+    }
+
+    const limit = Math.floor(filter.limit);
+    if (!Number.isFinite(limit) || limit <= 0) {
+      return [];
+    }
+
+    const offset = Math.max(0, Math.floor(filter.offset ?? 0));
+    return filtered.slice(offset, offset + limit).map((event) => ({ ...event }));
   }
 
   async mutate<T>(mutator: (store: LinkageStore) => Promise<T>): Promise<T> {

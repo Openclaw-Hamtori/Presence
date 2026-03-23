@@ -390,6 +390,59 @@ function buildAndroidBody(
     }
   });
 
+  await test("sqlite-backed listAuditEvents() supports simple pagination", async () => {
+    const dbDir = mkdtempSync(join(tmpdir(), "presence-sqlite-audit-pagination-"));
+    const store = new SqliteLinkageStore({
+      dbPath: join(dbDir, "presence-linkage.db"),
+      mode: "single-team",
+    });
+
+    try {
+      const eventIds = ["evt-1", "evt-2", "evt-3", "evt-4", "evt-5"];
+      for (const [index, eventId] of eventIds.entries()) {
+        await store.appendAuditEvent({
+          eventId,
+          type: "link_started",
+          serviceId: index < 3 ? "svc-a" : "svc-b",
+          accountId: index < 3 ? "acct-a" : "acct-b",
+          bindingId: index % 2 === 0 ? "bind-a" : "bind-b",
+          occurredAt: 1700000000 + index,
+        });
+      }
+
+      const filteredFirstPage = await store.listAuditEvents({
+        serviceId: "svc-a",
+        accountId: "acct-a",
+        limit: 2,
+        offset: 0,
+      });
+      assert.deepEqual(filteredFirstPage.map((event) => event.eventId), ["evt-1", "evt-2"]);
+
+      const filteredSecondPage = await store.listAuditEvents({
+        serviceId: "svc-a",
+        accountId: "acct-a",
+        limit: 2,
+        offset: 2,
+      });
+      assert.deepEqual(filteredSecondPage.map((event) => event.eventId), ["evt-3"]);
+
+      const filteredNoPagination = await store.listAuditEvents({
+        serviceId: "svc-a",
+        accountId: "acct-a",
+      });
+      assert.deepEqual(filteredNoPagination.map((event) => event.eventId), ["evt-1", "evt-2", "evt-3"]);
+
+      const limitZero = await store.listAuditEvents({
+        serviceId: "svc-a",
+        accountId: "acct-a",
+        limit: 0,
+      });
+      assert.equal(limitZero.length, 0);
+    } finally {
+      rmSync(dbDir, { recursive: true, force: true });
+    }
+  });
+
   await test("sqlite-backed SqliteLinkageStore.close() blocks operations", async () => {
     const dbDir = mkdtempSync(join(tmpdir(), "presence-sqlite-close-"));
     const store = new SqliteLinkageStore({

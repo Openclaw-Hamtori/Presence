@@ -224,12 +224,26 @@ export interface LinkageStore {
   getLinkedDevice(deviceIss: string): Promise<LinkedDevice | null>;
   saveLinkedDevice(device: LinkedDevice): Promise<void>;
   appendAuditEvent(event: LinkageAuditEvent): Promise<void>;
-  listAuditEvents(filter?: { serviceId?: string; accountId?: string; bindingId?: string }): Promise<LinkageAuditEvent[]>;
+  listAuditEvents(filter?: ListAuditEventsFilter): Promise<LinkageAuditEvent[]>;
   mutate?<T>(mutator: (store: LinkageStore) => Promise<T>): Promise<T>;
   /**
    * Optional capability surface. Implemented as optional so legacy adapters remain safe.
    */
   getCapabilities?: () => LinkageStoreCapabilities;
+}
+
+export interface ListAuditEventsFilter {
+  serviceId?: string;
+  accountId?: string;
+  bindingId?: string;
+  /**
+   * Optional pagination helpers for bounded reads.
+   */
+  limit?: number;
+  /**
+   * Optional offset for paginated reads. Ignored unless limit is also provided.
+   */
+  offset?: number;
 }
 
 export interface CreateLinkSessionOptions {
@@ -372,15 +386,8 @@ export class InMemoryLinkageStore implements LinkageStore {
     this.auditEvents.push({ ...event });
   }
 
-  async listAuditEvents(filter?: { serviceId?: string; accountId?: string; bindingId?: string }): Promise<LinkageAuditEvent[]> {
-    return this.auditEvents
-      .filter((event) => {
-        if (filter?.serviceId && event.serviceId !== filter.serviceId) return false;
-        if (filter?.accountId && event.accountId !== filter.accountId) return false;
-        if (filter?.bindingId && event.bindingId !== filter.bindingId) return false;
-        return true;
-      })
-      .map((event) => ({ ...event }));
+  async listAuditEvents(filter?: ListAuditEventsFilter): Promise<LinkageAuditEvent[]> {
+    return filterAuditEvents(this.auditEvents, filter).map((event) => ({ ...event }));
   }
 
   async mutate<T>(mutator: (store: LinkageStore) => Promise<T>): Promise<T> {
@@ -514,14 +521,26 @@ function normalizeFileLinkageStoreData(parsed: unknown): FileLinkageStoreData {
 
 function filterAuditEvents(
   events: readonly LinkageAuditEvent[],
-  filter?: { serviceId?: string; accountId?: string; bindingId?: string }
+  filter?: ListAuditEventsFilter
 ): LinkageAuditEvent[] {
-  return events.filter((event) => {
+  const filtered = events.filter((event) => {
     if (filter?.serviceId && event.serviceId !== filter.serviceId) return false;
     if (filter?.accountId && event.accountId !== filter.accountId) return false;
     if (filter?.bindingId && event.bindingId !== filter.bindingId) return false;
     return true;
   });
+
+  if (!filter || filter.limit == null) {
+    return filtered;
+  }
+
+  const limit = Math.floor(filter.limit);
+  if (!Number.isFinite(limit) || limit <= 0) {
+    return [];
+  }
+
+  const offset = Math.max(0, Math.floor(filter.offset ?? 0));
+  return filtered.slice(offset, offset + limit);
 }
 
 function filterPendingProofRequests(
@@ -632,9 +651,9 @@ export class FileSystemLinkageStore implements LinkageStore {
     });
   }
 
-  async listAuditEvents(filter?: { serviceId?: string; accountId?: string; bindingId?: string }): Promise<LinkageAuditEvent[]> {
+  async listAuditEvents(filter?: ListAuditEventsFilter): Promise<LinkageAuditEvent[]> {
     const data = await this.readData();
-    return filterAuditEvents(data.auditEvents, filter).map((event) => cloneAuditEvent(event));
+    return filterAuditEvents(data.auditEvents, filter).map((event) => ({ ...event, metadata: cloneMetadata(event.metadata) }));
   }
 
   async mutate<T>(mutator: (store: LinkageStore) => Promise<T>): Promise<T> {

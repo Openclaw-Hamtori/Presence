@@ -40,6 +40,7 @@ import type {
   BindingMutationResult,
   LinkageAuditEvent,
   LinkageStoreCapabilities,
+  ListAuditEventsFilter,
   LinkCompletion,
   LinkCompletionMethod,
 } from "./linkage.js";
@@ -259,6 +260,7 @@ export type {
   BindingMutationResult,
   LinkageAuditEvent,
   LinkageStoreCapabilities,
+  ListAuditEventsFilter,
   LinkCompletion,
   LinkCompletionMethod,
   PresenceBackendFlow,

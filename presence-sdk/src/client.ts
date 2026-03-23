@@ -32,6 +32,7 @@ import type {
   LinkedAccountReadiness,
   BindingMutationResult,
   LinkageAuditEvent,
+  ListAuditEventsFilter,
   LinkageStore,
   DevicePushToken,
   DevicePushTokenEnvironment,
@@ -1031,7 +1032,7 @@ export class PresenceClient {
     return events;
   }
 
-  async listAuditEvents(filter?: { serviceId?: string; accountId?: string; bindingId?: string }) {
+  async listAuditEvents(filter?: ListAuditEventsFilter) {
     return this.linkageStore.listAuditEvents(filter);
   }
 
