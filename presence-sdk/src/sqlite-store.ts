@@ -464,7 +464,26 @@ export class SqliteLinkageStore implements LinkageStore {
   }
 
   async listAuditEvents(filter?: { serviceId?: string; accountId?: string; bindingId?: string }): Promise<LinkageAuditEvent[]> {
-    const rows = this.db.prepare("SELECT * FROM audit_events").all() as {
+    const clauses: string[] = [];
+    const params: string[] = [];
+
+    if (filter?.serviceId) {
+      clauses.push("service_id = ?");
+      params.push(filter.serviceId);
+    }
+    if (filter?.accountId) {
+      clauses.push("account_id = ?");
+      params.push(filter.accountId);
+    }
+    if (filter?.bindingId) {
+      clauses.push("binding_id = ?");
+      params.push(filter.bindingId);
+    }
+
+    const rows = this.db.prepare([
+      "SELECT * FROM audit_events",
+      clauses.length ? `WHERE ${clauses.join(" AND ")}` : "",
+    ].filter(Boolean).join(" ")).all(...params) as {
       event_id: string;
       occurred_at: number;
       type: string;
@@ -487,13 +506,7 @@ export class SqliteLinkageStore implements LinkageStore {
         deviceIss: row.device_iss ?? undefined,
         reason: row.reason ?? undefined,
         metadata: row.metadata_json ? safeJsonParse<Record<string, string>>(row.metadata_json) : undefined,
-      }))
-      .filter((event) => {
-        if (filter?.serviceId && event.serviceId !== filter.serviceId) return false;
-        if (filter?.accountId && event.accountId !== filter.accountId) return false;
-        if (filter?.bindingId && event.bindingId !== filter.bindingId) return false;
-        return true;
-      });
+      }));
   }
 
   async mutate<T>(mutator: (store: LinkageStore) => Promise<T>): Promise<T> {

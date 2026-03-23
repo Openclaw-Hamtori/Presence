@@ -327,6 +327,69 @@ function buildAndroidBody(
     }
   });
 
+  await test("sqlite-backed listAuditEvents() filters by service/account/binding", async () => {
+    const dbDir = mkdtempSync(join(tmpdir(), "presence-sqlite-audit-filter-"));
+    const store = new SqliteLinkageStore({
+      dbPath: join(dbDir, "presence-linkage.db"),
+      mode: "single-team",
+    });
+    const now = Math.floor(Date.now() / 1000);
+
+    try {
+      await store.appendAuditEvent({
+        eventId: "evt-1",
+        type: "link_started",
+        serviceId: "svc-a",
+        accountId: "acct-1",
+        bindingId: "bind-a",
+        occurredAt: now + 1,
+      });
+      await store.appendAuditEvent({
+        eventId: "evt-2",
+        type: "link_started",
+        serviceId: "svc-a",
+        accountId: "acct-2",
+        bindingId: "bind-b",
+        occurredAt: now + 2,
+      });
+      await store.appendAuditEvent({
+        eventId: "evt-3",
+        type: "link_completed",
+        serviceId: "svc-b",
+        accountId: "acct-1",
+        bindingId: "bind-a",
+        occurredAt: now + 3,
+      });
+      await store.appendAuditEvent({
+        eventId: "evt-4",
+        type: "binding_unlinked",
+        serviceId: "svc-b",
+        accountId: "acct-1",
+        occurredAt: now + 4,
+      });
+
+      const all = await store.listAuditEvents();
+      assert.equal(all.length, 4);
+
+      const byService = await store.listAuditEvents({ serviceId: "svc-a" });
+      assert.deepEqual(byService.map((event) => event.eventId).sort(), ["evt-1", "evt-2"]);
+
+      const byAccount = await store.listAuditEvents({ accountId: "acct-1" });
+      assert.deepEqual(byAccount.map((event) => event.eventId).sort(), ["evt-1", "evt-3", "evt-4"]);
+
+      const byBinding = await store.listAuditEvents({ bindingId: "bind-a" });
+      assert.deepEqual(byBinding.map((event) => event.eventId).sort(), ["evt-1", "evt-3"]);
+
+      const byServiceAndBinding = await store.listAuditEvents({ serviceId: "svc-a", bindingId: "bind-b" });
+      assert.deepEqual(byServiceAndBinding.map((event) => event.eventId), ["evt-2"]);
+
+      const byServiceAndAccount = await store.listAuditEvents({ serviceId: "svc-b", accountId: "acct-2" });
+      assert.equal(byServiceAndAccount.length, 0);
+    } finally {
+      rmSync(dbDir, { recursive: true, force: true });
+    }
+  });
+
   await test("sqlite-backed createPendingProofRequest() persists and lists server-side requests", async () => {
     const dbDir = mkdtempSync(join(tmpdir(), "presence-sqlite-pending-"));
     const store = new SqliteLinkageStore({ dbPath: join(dbDir, "presence-linkage.db"), mode: "single-team" });
