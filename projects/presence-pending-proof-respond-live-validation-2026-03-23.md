@@ -75,3 +75,8 @@ curl -sS /presence-demo/presence/linked-accounts/<accountId>/status
 ```
 
 3. Report back the successful/failed payloads (request/response JSON + timestamp) so this validation can be closed as fully confirmed.
+
+## Closeout status (2026-03-23)
+- **Phase 2 is now closed except for this final live-device `respond` replay.**
+- Local/route-level checks are complete; the only explicit blocker is real-device proof replay confirmation against a linked `(accountId, requestId)` pair on live server.
+- Keep SQLite-first small-team deployment assumptions intact (single-node file/SQLite path remains default baseline).

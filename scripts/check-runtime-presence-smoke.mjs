@@ -137,6 +137,10 @@ async function main() {
   const serviceDomain = process.env.PRESENCE_SMOKE_SERVICE_DOMAIN || "presence.example";
   const shouldRunPendingProofProbe = process.env.PRESENCE_SMOKE_PENDING_PROOF_PROBE === "1";
 
+  // NOTE: This probe only validates error-shape + contract reachability for pending-proof.
+  // End-to-end success-path respond validation still requires a real linked account/request
+  // captured from an actual device flow.
+
   const baseUrl = explicitUrl
     ? `${String(explicitUrl).replace(/\/$/, "")}`
     : String(publicBaseUrl).replace(/\/$/, "");

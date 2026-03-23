@@ -36,18 +36,14 @@ _Last updated: 2026-03-23_
 - **Local measurement PASS** is not equivalent to server-access PASS unless verified flow completes.
 
 ## 4) Remaining follow-ups / backlog
-- Confirm **real-device end-to-end completion** of pending-proof request RESPOND route against live server (`/presence/pending-proof-requests/:requestId/respond`) after latest push-token/setup and route-base fixes.
-  - Scope for this pass (2026-03-23): route-level live checks and local SDK happy-path round-trip are green, but true real-device `respond` replay is still blocked (no known linked `accountId`/`requestId` available in this environment).
-  - Evidence now in:
-    - `projects/presence-happy-path-pending-proof-redeploy-2026-03-22.md`
-    - `projects/presence-pending-proof-respond-live-validation-2026-03-22.md`
-    - `projects/presence-pending-proof-respond-live-validation-2026-03-23.md`.
-  - Next action: perform single-session real-device `/respond` replay with a known active requestId/account/device pair and capture 200 response with `request.status === "verified"` plus server readiness/time fields advancing.
-- Finish **reliable APNs live delivery path** (token flow + notification wake + app hydration evidence) with same linked account/device used on-device.
-- Close remaining validation gap around **relink/unlink and stale-link cleanup** on fresh sessions in long-running manual runs.
-- Finish durable shared nonce storage + operator hardening (still phase 2), while small-server SQLite path for pending-proof request state transitions remains the validated Phase 1 baseline slice. (SQLite/WAL design referenced in `projects/presence-sqlite-design-2026-03-21.md`).
-- Known accepted Phase 1 debt in `SqliteLinkageStore`: `listAuditEvents()` still loads/filter-in-memory instead of pushing filters into SQL; acceptable for small-team baseline scale, but should move to SQL-level filtering in Phase 2.
-- Known accepted Phase 1 debt in `SqliteLinkageStore`: sqlite handle lifecycle does not yet expose explicit `close()`/`destroy()` semantics; acceptable for current single-process baseline/tests, but should be hardened in Phase 2.
+- **Phase 2 is otherwise closed.** The only explicit blocker left is the **final real-device happy-path replay of pending-proof `respond`** against a known `(accountId, requestId)` on live server.
+  - Evidence and current status are tracked in:
+    - `projects/presence-pending-proof-respond-live-validation-2026-03-23.md`
+    - `projects/presence-phase2-closeout-2026-03-23.md`
+  - Expected final-check result: `POST /presence/pending-proof-requests/:requestId/respond` returns 200 with `ok: true` and `request.status === "verified"`, and linked-account readiness reflects an updated `lastVerifiedAt` / `stateValidUntil`.
+- Finish **reliable APNs live delivery path** (token flow + notification wake + app hydration evidence) and then rerun the same request/replay path with that linked device.
+- Known accepted Phase 1 debt in `SqliteLinkageStore`: `listAuditEvents()` still applies filters in-memory after loading rows; acceptable for small-team baseline scale, with SQL-level filtering deferred.
+- Known accepted Phase 1 debt in `SqliteLinkageStore`: sqlite handle lifecycle does not yet expose explicit `close()`/`destroy()` semantics; acceptable for current single-process SQLite-first baseline and long-tail tests, but should be hardened in later phase.
 
 ## 5) Notes for future reviewers/operators
 - Single source of truth for deployable server runtime should stay in-repo (`presence-happy-path/app/server.cjs`) and be installed via tarball+restart, not manual drift edits on VPS.
