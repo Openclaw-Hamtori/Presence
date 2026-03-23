@@ -390,6 +390,74 @@ function buildAndroidBody(
     }
   });
 
+  await test("sqlite-backed SqliteLinkageStore.close() blocks operations", async () => {
+    const dbDir = mkdtempSync(join(tmpdir(), "presence-sqlite-close-"));
+    const store = new SqliteLinkageStore({
+      dbPath: join(dbDir, "presence-linkage.db"),
+      mode: "single-team",
+    });
+    const now = Math.floor(Date.now() / 1000);
+
+    try {
+      await store.saveServiceBinding({
+        bindingId: "sqlite_bind_close",
+        serviceId: "svc",
+        accountId: "acct-close",
+        deviceIss: "presence:device:close",
+        createdAt: now,
+        updatedAt: now,
+        status: "linked",
+        lastLinkedAt: now,
+        lastVerifiedAt: now,
+        lastAttestedAt: now,
+      });
+
+      store.close();
+
+      await assert.rejects(
+        () => store.getServiceBinding("svc", "acct-close"),
+        /closed/i
+      );
+      assert.doesNotThrow(() => store.close());
+    } finally {
+      rmSync(dbDir, { recursive: true, force: true });
+    }
+  });
+
+  await test("sqlite-backed destroy() is idempotent and allows reopening", async () => {
+    const dbDir = mkdtempSync(join(tmpdir(), "presence-sqlite-destroy-"));
+    const dbPath = join(dbDir, "presence-linkage.db");
+    const now = Math.floor(Date.now() / 1000);
+
+    const writer = new SqliteLinkageStore({ dbPath, mode: "single-team" });
+    try {
+      await writer.saveServiceBinding({
+        bindingId: "sqlite_bind_reopen",
+        serviceId: "svc",
+        accountId: "acct-reopen",
+        deviceIss: "presence:device:reopen",
+        createdAt: now,
+        updatedAt: now,
+        status: "linked",
+        lastLinkedAt: now,
+        lastVerifiedAt: now,
+        lastAttestedAt: now,
+      });
+      writer.destroy();
+
+      const reopened = new SqliteLinkageStore({ dbPath, mode: "single-team" });
+      try {
+        const rehydrated = await reopened.getServiceBinding("svc", "acct-reopen");
+        assert.equal(rehydrated?.deviceIss, "presence:device:reopen");
+      } finally {
+        assert.doesNotThrow(() => reopened.destroy());
+        assert.doesNotThrow(() => reopened.destroy());
+      }
+    } finally {
+      rmSync(dbDir, { recursive: true, force: true });
+    }
+  });
+
   await test("sqlite-backed createPendingProofRequest() persists and lists server-side requests", async () => {
     const dbDir = mkdtempSync(join(tmpdir(), "presence-sqlite-pending-"));
     const store = new SqliteLinkageStore({ dbPath: join(dbDir, "presence-linkage.db"), mode: "single-team" });

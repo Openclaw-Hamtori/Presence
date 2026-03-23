@@ -150,6 +150,7 @@ export class SqliteLinkageStore implements LinkageStore {
   readonly options: SqliteLinkageStoreOptions;
   private readonly db: Database.Database;
   private txDepth = 0;
+  private isClosed = false;
 
   constructor(options: SqliteLinkageStoreOptions) {
     this.options = { ...options, mode: options.mode ?? SQLITE_FIRST_MODE };
@@ -158,7 +159,7 @@ export class SqliteLinkageStore implements LinkageStore {
       mkdirSync(dirname(this.dbPath), { recursive: true });
     }
     this.db = new Database(this.dbPath);
-    this.db.exec(`PRAGMA journal_mode = ${options.journalMode ?? "WAL"};`);
+    this.getDb().exec(`PRAGMA journal_mode = ${options.journalMode ?? "WAL"};`);
     this.initializeSchema();
   }
 
@@ -171,10 +172,36 @@ export class SqliteLinkageStore implements LinkageStore {
     };
   }
 
+  close(): void {
+    this.destroy();
+  }
+
+  destroy(): void {
+    if (this.isClosed) {
+      return;
+    }
+    if (this.txDepth > 0) {
+      throw new Error("Cannot destroy SqliteLinkageStore while a transaction is active");
+    }
+    this.isClosed = true;
+    this.db.close();
+  }
+
+  private getDb(): Database.Database {
+    this.assertOpen();
+    return this.db;
+  }
+
+  private assertOpen(): void {
+    if (this.isClosed) {
+      throw new Error("SqliteLinkageStore is closed");
+    }
+  }
+
   async saveLinkSession(session: LinkSession): Promise<void> {
     await this.withAutoTransaction(async () => {
       const row = this.sessionToRow(session);
-      const stmt = this.db.prepare(`
+      const stmt = this.getDb().prepare(`
         INSERT INTO link_sessions (
           id,
           service_id,
@@ -209,7 +236,7 @@ export class SqliteLinkageStore implements LinkageStore {
   }
 
   async getLinkSession(sessionId: string): Promise<LinkSession | null> {
-    const row = this.db.prepare("SELECT * FROM link_sessions WHERE id = ?").get(sessionId) as SqliteLinkSessionRow | undefined;
+    const row = this.getDb().prepare("SELECT * FROM link_sessions WHERE id = ?").get(sessionId) as SqliteLinkSessionRow | undefined;
     if (!row) {
       return null;
     }
@@ -218,7 +245,7 @@ export class SqliteLinkageStore implements LinkageStore {
 
   async saveServiceBinding(binding: ServiceBinding): Promise<void> {
     await this.withAutoTransaction(async () => {
-      const stmt = this.db.prepare(`
+      const stmt = this.getDb().prepare(`
         INSERT INTO service_bindings (
           binding_id,
           service_id,
@@ -280,7 +307,7 @@ export class SqliteLinkageStore implements LinkageStore {
   }
 
   async getServiceBinding(serviceId: string, accountId: string): Promise<ServiceBinding | null> {
-    const row = this.db.prepare(
+    const row = this.getDb().prepare(
       "SELECT * FROM service_bindings WHERE service_id = ? AND account_id = ?"
     ).get(serviceId, accountId) as SqliteServiceBindingRow | undefined;
     if (!row) {
@@ -290,14 +317,14 @@ export class SqliteLinkageStore implements LinkageStore {
   }
 
   async listBindingsForDevice(deviceIss: string): Promise<ServiceBinding[]> {
-    const rows = this.db.prepare("SELECT * FROM service_bindings WHERE device_iss = ?").all(deviceIss) as SqliteServiceBindingRow[];
+    const rows = this.getDb().prepare("SELECT * FROM service_bindings WHERE device_iss = ?").all(deviceIss) as SqliteServiceBindingRow[];
     return rows.map((row) => this.rowToServiceBinding(row));
   }
 
   async savePendingProofRequest(request: PendingProofRequest): Promise<void> {
     await this.withAutoTransaction(async () => {
       const row = this.pendingProofRequestToRow(request);
-      const stmt = this.db.prepare(`
+      const stmt = this.getDb().prepare(`
         INSERT INTO pending_proof_requests (
           id,
           service_id,
@@ -334,7 +361,7 @@ export class SqliteLinkageStore implements LinkageStore {
   }
 
   async getPendingProofRequest(requestId: string): Promise<PendingProofRequest | null> {
-    const row = this.db.prepare("SELECT * FROM pending_proof_requests WHERE id = ?").get(requestId) as SqlitePendingProofRequestRow | undefined;
+    const row = this.getDb().prepare("SELECT * FROM pending_proof_requests WHERE id = ?").get(requestId) as SqlitePendingProofRequestRow | undefined;
     if (!row) {
       return null;
     }
@@ -383,12 +410,12 @@ export class SqliteLinkageStore implements LinkageStore {
       "ORDER BY requested_at DESC, id DESC",
     ].filter(Boolean).join(" ");
 
-    const rows = this.db.prepare(sql).all(...params) as SqlitePendingProofRequestRow[];
+    const rows = this.getDb().prepare(sql).all(...params) as SqlitePendingProofRequestRow[];
     return rows.map((row) => this.rowToPendingProofRequest(row));
   }
 
   async getLinkedDevice(deviceIss: string): Promise<LinkedDevice | null> {
-    const row = this.db.prepare("SELECT * FROM linked_devices WHERE iss = ?").get(deviceIss) as SqliteLinkedDeviceRow | undefined;
+    const row = this.getDb().prepare("SELECT * FROM linked_devices WHERE iss = ?").get(deviceIss) as SqliteLinkedDeviceRow | undefined;
     if (!row) {
       return null;
     }
@@ -397,7 +424,7 @@ export class SqliteLinkageStore implements LinkageStore {
 
   async saveLinkedDevice(device: LinkedDevice): Promise<void> {
     await this.withAutoTransaction(async () => {
-      const stmt = this.db.prepare(`
+      const stmt = this.getDb().prepare(`
         INSERT INTO linked_devices (
           iss,
           platform,
@@ -436,7 +463,7 @@ export class SqliteLinkageStore implements LinkageStore {
 
   async appendAuditEvent(event: LinkageAuditEvent): Promise<void> {
     await this.withAutoTransaction(async () => {
-      const stmt = this.db.prepare(`
+      const stmt = this.getDb().prepare(`
         INSERT INTO audit_events (
           event_id,
           occurred_at,
@@ -480,7 +507,7 @@ export class SqliteLinkageStore implements LinkageStore {
       params.push(filter.bindingId);
     }
 
-    const rows = this.db.prepare([
+    const rows = this.getDb().prepare([
       "SELECT * FROM audit_events",
       clauses.length ? `WHERE ${clauses.join(" AND ")}` : "",
     ].filter(Boolean).join(" ")).all(...params) as {
@@ -517,20 +544,20 @@ export class SqliteLinkageStore implements LinkageStore {
     const shouldStartTransaction = this.txDepth === 0;
     this.txDepth += 1;
     if (shouldStartTransaction) {
-      this.db.exec("BEGIN IMMEDIATE");
+      this.getDb().exec("BEGIN IMMEDIATE");
     }
 
     try {
       for (const artifact of SQLITE_LINKAGE_SCHEMA) {
-        this.db.exec(artifact.sql);
+        this.getDb().exec(artifact.sql);
       }
       if (shouldStartTransaction) {
-        this.db.exec("COMMIT");
+        this.getDb().exec("COMMIT");
       }
     } catch (error) {
       if (shouldStartTransaction) {
         try {
-          this.db.exec("ROLLBACK");
+          this.getDb().exec("ROLLBACK");
         } catch {
           // ignore rollback failures while surfacing original schema error
         }
@@ -545,19 +572,19 @@ export class SqliteLinkageStore implements LinkageStore {
     const shouldStartTransaction = this.txDepth === 0;
     this.txDepth += 1;
     if (shouldStartTransaction) {
-      this.db.exec("BEGIN IMMEDIATE");
+      this.getDb().exec("BEGIN IMMEDIATE");
     }
 
     try {
       const result = await operation();
       if (shouldStartTransaction) {
-        this.db.exec("COMMIT");
+        this.getDb().exec("COMMIT");
       }
       return result;
     } catch (error) {
       if (shouldStartTransaction) {
         try {
-          this.db.exec("ROLLBACK");
+          this.getDb().exec("ROLLBACK");
         } catch {
           // ignore rollback failures while surfacing original cause
         }
