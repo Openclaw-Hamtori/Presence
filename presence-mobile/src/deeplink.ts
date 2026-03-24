@@ -99,25 +99,11 @@ function splitBaseUrl(baseUrl: string): { prefix: string; path: string } {
 }
 
 export function buildPresenceLinkUrl(envelope: LinkCompletionEnvelope, baseUrl = "presence://link"): string {
-  const params: Array<[string, string]> = [["session_id", envelope.sessionId]];
-  if (envelope.serviceId) params.push(["service_id", envelope.serviceId]);
-  if (envelope.serviceDomain) params.push(["service_domain", envelope.serviceDomain]);
-  if (envelope.accountId) params.push(["account_id", envelope.accountId]);
-  if (envelope.bindingId) params.push(["binding_id", envelope.bindingId]);
-  if (envelope.flow) params.push(["flow", envelope.flow]);
-  if (envelope.method) params.push(["method", envelope.method]);
-  if (envelope.nonce) params.push(["nonce", envelope.nonce]);
-  if (envelope.returnUrl) params.push(["return_url", envelope.returnUrl]);
-  if (envelope.code) params.push(["code", envelope.code]);
-  if (envelope.nonceUrl) params.push(["nonce_url", envelope.nonceUrl]);
-  if (envelope.verifyUrl) params.push(["verify_url", envelope.verifyUrl]);
-  if (envelope.statusUrl) params.push(["status_url", envelope.statusUrl]);
-  if (envelope.pendingRequestsUrl) params.push(["pending_url", envelope.pendingRequestsUrl]);
-
+  const params: Array<[string, string]> = [["s", envelope.sessionId]];
   const query = params.map(([k, v]) => `${encodeParam(k)}=${encodeParam(v)}`).join("&");
   const { prefix, path } = splitBaseUrl(baseUrl);
   const root = `${prefix}${path}`;
-  return query ? `${root}?${query}` : root;
+  return `${root}?${query}`;
 }
 
 export function parsePresenceLinkUrl(rawUrl: string): LinkCompletionEnvelope | null {
@@ -126,13 +112,14 @@ export function parsePresenceLinkUrl(rawUrl: string): LinkCompletionEnvelope | n
     if (!trimmed) return null;
 
     const search = parseUrlToMap(trimmed);
-    const sessionId = search.get("session_id");
+    const sessionId = search.get("s") || search.get("session_id");
     if (!sessionId) return null;
 
+    const serviceDomain = search.get("service_domain") ?? undefined;
     return {
       sessionId,
       serviceId: search.get("service_id") ?? undefined,
-      serviceDomain: search.get("service_domain") ?? undefined,
+      serviceDomain,
       accountId: search.get("account_id") ?? undefined,
       bindingId: search.get("binding_id") ?? undefined,
       flow: (search.get("flow") as LinkFlow | undefined) ?? undefined,

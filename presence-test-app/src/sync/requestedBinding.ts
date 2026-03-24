@@ -3,6 +3,124 @@ import type { ProveOptions } from "../service";
 import { mergeBindingSyncMetadata, normalizeBindingSyncMetadata } from "../state/bindingSync.ts";
 import type { ServiceBinding } from "../types/index";
 
+interface LinkSessionHydrationState {
+  ok: true;
+  value: LinkCompletionEnvelope;
+}
+
+interface LinkSessionHydrationFailure {
+  ok: false;
+  code: string;
+  message: string;
+}
+
+interface LinkSessionFromServer {
+  id: string;
+  serviceId: string;
+  accountId?: string;
+  issuedNonce: string;
+  requestedAt?: number;
+  expiresAt?: number;
+  status?: string;
+  relinkOfBindingId?: string;
+  recoveryReason?: string;
+  completion?: {
+    method?: string;
+    fallbackCode?: string;
+    sessionStatusUrl?: string;
+    completionApiUrl?: string;
+    linkedNonceApiUrl?: string;
+    verifyLinkedAccountApiUrl?: string;
+    pendingProofRequestsApiUrl?: string;
+  };
+}
+
+export type LinkSessionHydrationResult = LinkSessionHydrationState | LinkSessionHydrationFailure;
+
+function nowSeconds(): number {
+  return Math.floor(Date.now() / 1000);
+}
+
+function inferServiceDomain(value?: string): string | undefined {
+  if (!value) return undefined;
+  try {
+    const url = new URL(value);
+    return url.hostname;
+  } catch {
+    return undefined;
+  }
+}
+
+export function hydrateLinkCompletionEnvelopeFromSession(
+  session: LinkSessionFromServer,
+  existing?: LinkCompletionEnvelope | null,
+  now: number = nowSeconds()
+): LinkSessionHydrationResult {
+  const effectiveSessionId = session.id ?? existing?.sessionId;
+  if (!effectiveSessionId) {
+    return {
+      ok: false,
+      code: "ERR_LINK_SESSION_MISSING_ID",
+      message: "Session payload was missing a session id."
+    };
+  }
+
+  if (!session.issuedNonce) {
+    return {
+      ok: false,
+      code: "ERR_LINK_SESSION_MISSING_NONCE",
+      message: "This Presence link was already stripped of session credentials and cannot be completed safely."
+    };
+  }
+
+  if (typeof session.expiresAt === "number" && now >= session.expiresAt) {
+    return {
+      ok: false,
+      code: "ERR_LINK_SESSION_EXPIRED",
+      message: "This Presence link has expired."
+    };
+  }
+
+  if (session.status && session.status !== "pending") {
+    return {
+      ok: false,
+      code: `ERR_LINK_SESSION_${String(session.status).toUpperCase()}`,
+      message: session.status === "consumed"
+        ? "This Presence link was already used. Ask for a new link from the service."
+        : `This Presence link is no longer usable (status=${session.status}). Ask for a new link from the service.`,
+    };
+  }
+
+  const completion = session.completion || {};
+  const serviceDomain = existing?.serviceDomain
+    ?? inferServiceDomain(completion.sessionStatusUrl)
+    ?? inferServiceDomain(completion.linkedNonceApiUrl)
+    ?? inferServiceDomain(completion.verifyLinkedAccountApiUrl)
+    ?? inferServiceDomain(completion.pendingProofRequestsApiUrl);
+
+  return {
+    ok: true,
+    value: {
+      sessionId: effectiveSessionId,
+      serviceId: session.serviceId || existing?.serviceId,
+      serviceDomain,
+      accountId: session.accountId,
+      bindingId: session.relinkOfBindingId,
+      flow: session.recoveryReason ? "recovery" : session.relinkOfBindingId ? "relink" : undefined,
+      method: existing?.method ?? "deeplink",
+      nonce: session.issuedNonce,
+      code: completion.fallbackCode || existing?.code,
+      statusUrl: completion.sessionStatusUrl || existing?.statusUrl,
+      nonceUrl: completion.linkedNonceApiUrl || existing?.nonceUrl,
+      verifyUrl: completion.verifyLinkedAccountApiUrl || existing?.verifyUrl,
+      pendingRequestsUrl: completion.pendingProofRequestsApiUrl || existing?.pendingRequestsUrl,
+      returnUrl: existing?.returnUrl,
+    },
+  };
+}
+
+
+
 function isKnownFlow(flow: string | undefined): LinkCompletionEnvelope["flow"] | "invalid" | undefined {
   if (flow === undefined) {
     return undefined;

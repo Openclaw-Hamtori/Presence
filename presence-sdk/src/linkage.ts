@@ -883,28 +883,23 @@ export class FileSystemLinkageStore implements LinkageStore {
 
 export function defaultLinkCompletion(
   sessionId: string,
-  serviceId: string,
+  _serviceId: string,
   accountId: string,
-  nonce: string,
+  _nonce: string,
   expiresAt: number
 ): LinkCompletion {
+  void _serviceId;
+  void _nonce;
   const code = sessionId.slice(-6).toUpperCase();
   const linkedNonceApiUrl = `/presence/linked-accounts/${encodeURIComponent(accountId)}/nonce`;
   const verifyLinkedAccountApiUrl = `/presence/linked-accounts/${encodeURIComponent(accountId)}/verify`;
   const pendingProofRequestsApiUrl = `/presence/linked-accounts/${encodeURIComponent(accountId)}/pending-proof-requests`;
-  const query =
-    `session_id=${encodeURIComponent(sessionId)}` +
-    `&service_id=${encodeURIComponent(serviceId)}` +
-    `&account_id=${encodeURIComponent(accountId)}` +
-    `&nonce=${encodeURIComponent(nonce)}` +
-    `&nonce_url=${encodeURIComponent(linkedNonceApiUrl)}` +
-    `&verify_url=${encodeURIComponent(verifyLinkedAccountApiUrl)}` +
-    `&pending_url=${encodeURIComponent(pendingProofRequestsApiUrl)}` +
-    `&status_url=${encodeURIComponent(`/presence/link-sessions/${encodeURIComponent(sessionId)}`)}`;
+  const pointerQuery = `s=${encodeURIComponent(sessionId)}`;
+
   return {
     method: "deeplink",
-    qrUrl: `presence://link?${query}`,
-    deeplinkUrl: `https://presence.local/link?${query}`,
+    qrUrl: `presence://link?${pointerQuery}`,
+    deeplinkUrl: `https://presence.local/link?${pointerQuery}`,
     fallbackCode: code,
     expiresAt,
     sessionStatusUrl: `/presence/link-sessions/${encodeURIComponent(sessionId)}`,

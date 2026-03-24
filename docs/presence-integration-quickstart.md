@@ -133,8 +133,8 @@ This value drives trust metadata for deeplink validation:
 - `rewriteLinkSessionForPublicBase()` adds `service_domain` to link/deeplink metadata when provided, and infers it from an HTTPS `PUBLIC_BASE_URL` if omitted.
 - For a secure mobile trust path, set `PRESENCE_SERVICE_DOMAIN` explicitly to your public HTTPS host. If you keep it blank and use non-HTTPS `PUBLIC_BASE_URL`, link sessions are rejected at runtime with a clear `ERR_MOBILE_TRUST_CONFIG` error.
 - `allowed_url_prefixes` from well-known must cover the absolute URLs you emit (e.g., `https://presence.example.com/presence`).
-- The app checks these URLs against well-known before it uses `nonce_url` / `verify_url` / `pending_url`.
-- Verify a freshly minted completion by checking the returned `qrUrl` contains `service_domain=<your-public-host>` and that `nonce_url`/`verify_url` are absolute URLs under that host.
+- The app checks hydrated sync URLs against well-known before it uses `nonce_url` / `verify_url` / `pending_url`.
+- Verify a freshly minted completion by checking the returned `qrUrl` contains `service_domain=<your-public-host>`, and that the hydrated completion metadata contains absolute `nonce_url`/`verify_url` under that host.
 
 For the server-local path map:
 

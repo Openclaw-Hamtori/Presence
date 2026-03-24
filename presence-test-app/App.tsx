@@ -78,6 +78,7 @@ import {
   syncFromEnvelope,
   shouldUseLinkedVerifyRoute,
   buildProveOptionsFromEnvelope,
+  hydrateLinkCompletionEnvelopeFromSession,
 } from "./src/sync/requestedBinding";
 import {
   buildRequestedProofKey,
@@ -244,6 +245,28 @@ interface CompletionBindingRecord {
   updatedAt?: number;
   lastLinkedAt?: number;
   lastVerifiedAt?: number;
+}
+
+interface LinkSessionLookupResponse {
+  ok: true;
+  session: {
+    id: string;
+    serviceId: string;
+    accountId: string;
+    issuedNonce: string;
+    status?: string;
+    expiresAt?: number;
+    relinkOfBindingId?: string;
+    recoveryReason?: string;
+    completion?: {
+      method?: string;
+      fallbackCode?: string;
+      sessionStatusUrl?: string;
+      linkedNonceApiUrl?: string;
+      verifyLinkedAccountApiUrl?: string;
+      pendingProofRequestsApiUrl?: string;
+    };
+  };
 }
 
 interface CompletionSuccessResponse {
@@ -497,6 +520,7 @@ export default function App() {
   const [localError, setLocalError] = useState<string | null>(null);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [showConnection, setShowConnection] = useState(false);
+  const [hydratingLinkSession, setHydratingLinkSession] = useState(false);
   const [showService, setShowService] = useState(false);
   const [showLogs, setShowLogs] = useState(false);
   const [scannerSupported, setScannerSupported] = useState(false);
@@ -793,16 +817,47 @@ export default function App() {
     setLocalError(null);
     setLinkedProofRequestState(null);
     setRecentVerifiedProof(null);
-    const normalizedServiceDomain = debugNormalizeServiceDomain(parsed.serviceDomain);
-    const envelopeSync = syncFromEnvelope(parsed);
-    addLog(`🔎 ${source} parse session=${parsed.sessionId} service=${parsed.serviceId ?? "-"}`);
+    setHydratingLinkSession(true);
+
+    let hydrated = parsed;
+    if (!hydrated.nonce) {
+      try {
+        addLog("🔎 hydration lookup session=" + parsed.sessionId);
+        const response = await fetchJson<LinkSessionLookupResponse>(
+          `${PRESENCE_DEMO_API_BASE_URL}/link-sessions/${encodeURIComponent(parsed.sessionId)}`
+        );
+        const hydration = hydrateLinkCompletionEnvelopeFromSession(response.session, parsed);
+        if (!hydration.ok) {
+          setOpenedEnvelope(null);
+          setConnectionError(hydration.message);
+          addLog(`❌ ${hydration.code} — ${hydration.message}`);
+          return false;
+        }
+        hydrated = hydration.value;
+        addLog("✅ hydration success session=" + (hydrated.sessionId ?? parsed.sessionId));
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        setOpenedEnvelope(null);
+        setConnectionError("Unable to load full link session details: " + message);
+        addLog("❌ hydration failed for " + parsed.sessionId + " — " + message);
+        return false;
+      } finally {
+        setHydratingLinkSession(false);
+      }
+    } else {
+      setHydratingLinkSession(false);
+    }
+
+    const normalizedServiceDomain = debugNormalizeServiceDomain(hydrated.serviceDomain);
+    const envelopeSync = syncFromEnvelope(hydrated);
+    addLog(`🔎 ${source} parse session=${hydrated.sessionId} service=${hydrated.serviceId ?? "-"}`);
     addLog(
-      `🔎 envelope boundary source=${source} flow=${parsed.flow ?? (parsed.bindingId ? "reauth" : "initial_link")} binding=${parsed.bindingId ?? "-"} ${describeBindingSync(envelopeSync)}`
+      `🔎 envelope boundary source=${source} flow=${hydrated.flow ?? (hydrated.bindingId ? "reauth" : "initial_link")} binding=${hydrated.bindingId ?? "-"} ${describeBindingSync(envelopeSync)}`
     );
-    addLog(`🔎 service_domain raw=${JSON.stringify(parsed.serviceDomain ?? null)} normalized=${JSON.stringify(normalizedServiceDomain)}`);
-    addLog(`🔎 nonce_url=${parsed.nonceUrl ?? "-"}`);
-    addLog(`🔎 verify_url=${parsed.verifyUrl ?? "-"}`);
-    const trustValidation = await validateLinkCompletionEnvelope(parsed);
+    addLog(`🔎 service_domain raw=${JSON.stringify(hydrated.serviceDomain ?? null)} normalized=${JSON.stringify(normalizedServiceDomain)}`);
+    addLog(`🔎 nonce_url=${hydrated.nonceUrl ?? "-"}`);
+    addLog(`🔎 verify_url=${hydrated.verifyUrl ?? "-"}`);
+    const trustValidation = await validateLinkCompletionEnvelope(hydrated);
     if (!trustValidation.ok) {
       setOpenedEnvelope(null);
       setConnectionError(trustValidation.error.message);
@@ -812,11 +867,12 @@ export default function App() {
     }
 
     setConnectionError(null);
-    setOpenedEnvelope(parsed);
-    addLog(`✅ trust validation passed for ${parsed.serviceId ?? "unknown-service"} on ${normalizedServiceDomain ?? "unknown-domain"}`);
-    addLog(`${source === "qr" ? "📷" : source === "system" ? "🔗" : "📲"} Opened ${source} session ${parsed.sessionId}`);
+    setOpenedEnvelope(hydrated);
+    addLog(`✅ trust validation passed for ${hydrated.serviceId ?? "unknown-service"} on ${normalizedServiceDomain ?? "unknown-domain"}`);
+    addLog(`${source === "qr" ? "📷" : source === "system" ? "🔗" : "📲"} Opened ${source} session ${hydrated.sessionId}`);
     return true;
   }, [addLog]);
+
 
   useEffect(() => {
     LogBox.ignoreAllLogs();
@@ -1470,6 +1526,7 @@ export default function App() {
     setRawLink("");
     setConnectionError(null);
     setLinkedProofRequestState(null);
+    setHydratingLinkSession(false);
     setShowConnection(false);
   }, []);
 
@@ -2175,6 +2232,12 @@ export default function App() {
                         <Text style={styles.primaryActionButtonText}>Open request</Text>
                       </TouchableOpacity>
 
+                      {hydratingLinkSession ? (
+                        <View style={styles.connectionErrorBox}>
+                          <Text style={styles.connectionErrorCode}>LOADING</Text>
+                          <Text style={styles.connectionErrorText}>Loading session details for this link…</Text>
+                        </View>
+                      ) : null}
                       {connectionError ? (
                         <View style={styles.connectionErrorBox}>
                           <Text style={styles.connectionErrorCode}>CONNECT</Text>

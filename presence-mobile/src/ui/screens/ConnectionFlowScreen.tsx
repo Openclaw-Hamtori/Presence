@@ -264,7 +264,7 @@ export function ConnectionFlowScreen({
               setEnvelope(null);
               setLocalError(null);
             }}
-            placeholder="presence://link?session_id=..."
+            placeholder="presence://link?s=..."
             placeholderTextColor="#777"
             autoCapitalize="none"
             autoCorrect={false}

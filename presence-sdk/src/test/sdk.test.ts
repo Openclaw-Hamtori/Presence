@@ -1122,9 +1122,11 @@ function buildAndroidBody(
     assert.equal(rewritten.completion?.linkedNonceApiUrl, "https://presence.example.com/presence/linked-accounts/acct-public/nonce");
     assert.equal(rewritten.completion?.verifyLinkedAccountApiUrl, "https://presence.example.com/presence/linked-accounts/acct-public/verify");
     assert.equal(qrUrl.searchParams.get("service_domain"), "presence.example.com");
-    assert.equal(qrUrl.searchParams.get("status_url"), `https://presence.example.com/presence/link-sessions/${encodeURIComponent(session.id)}`);
-    assert.equal(qrUrl.searchParams.get("nonce_url"), "https://presence.example.com/presence/linked-accounts/acct-public/nonce");
-    assert.equal(qrUrl.searchParams.get("verify_url"), "https://presence.example.com/presence/linked-accounts/acct-public/verify");
+    assert.equal(qrUrl.searchParams.get("s"), session.id);
+    assert.equal(qrUrl.searchParams.has("session_id"), false);
+    assert.equal(qrUrl.searchParams.has("status_url"), false);
+    assert.equal(qrUrl.searchParams.has("nonce_url"), false);
+    assert.equal(qrUrl.searchParams.has("verify_url"), false);
 
     const response = createCompletionSessionResponse({
       session: rewritten,
@@ -1136,6 +1138,24 @@ function buildAndroidBody(
     });
     assert.equal(response.completion.endpoints.complete.path, `https://presence.example.com/presence/link-sessions/${encodeURIComponent(session.id)}/complete`);
     assert.equal(response.completion.endpoints.status?.path, `https://presence.example.com/presence/link-sessions/${encodeURIComponent(session.id)}`);
+  });
+
+  await test("defaultLinkCompletion emits canonical short pointer URL", async () => {
+    const store = new InMemoryLinkageStore();
+    const client = new PresenceClient({ silent: true, linkageStore: store, serviceId: "svc" });
+    const { session } = await client.createLinkSession({ serviceId: "svc", accountId: "acct-short" });
+    const rewritten = rewriteLinkSessionForPublicBase(session, {
+      publicBaseUrl: "https://presence.example.com",
+    });
+    const qrUrl = new URL(rewritten.completion?.qrUrl ?? "");
+
+    assert.equal(qrUrl.searchParams.get("s"), session.id);
+    assert.equal(qrUrl.searchParams.has("session_id"), false);
+    assert.equal(qrUrl.searchParams.has("nonce_url"), false);
+    assert.equal(qrUrl.searchParams.has("verify_url"), false);
+    assert.equal(qrUrl.searchParams.has("status_url"), false);
+    assert.equal(qrUrl.searchParams.has("pending_url"), false);
+    assert.equal(qrUrl.searchParams.has("service_id"), false);
   });
 
   await test("rewriteLinkSessionForPublicBase() infers service_domain from HTTPS publicBaseUrl when omitted", async () => {

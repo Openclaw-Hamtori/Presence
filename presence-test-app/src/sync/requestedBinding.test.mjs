@@ -6,7 +6,73 @@ import {
   resolveRequestedLinkedBinding,
   shouldUseLinkedVerifyRoute,
   syncFromEnvelope,
+  hydrateLinkCompletionEnvelopeFromSession,
 } from "./requestedBinding.ts";
+
+test("hydrateLinkCompletionEnvelopeFromSession() enriches a short pointer payload", () => {
+  const hydrated = hydrateLinkCompletionEnvelopeFromSession(
+    {
+      id: "plink_abc",
+      serviceId: "presence-demo",
+      accountId: "acct-1",
+      issuedNonce: "n0nce",
+      status: "pending",
+      expiresAt: Math.floor(Date.now() / 1000) + 120,
+      completion: {
+        sessionStatusUrl: "https://demo.presence.local/presence/link-sessions/plink_abc",
+        linkedNonceApiUrl: "https://demo.presence.local/presence/linked-accounts/acct-1/nonce",
+        verifyLinkedAccountApiUrl: "https://demo.presence.local/presence/linked-accounts/acct-1/verify",
+        pendingProofRequestsApiUrl: "https://demo.presence.local/presence/linked-accounts/acct-1/pending-proof-requests",
+        fallbackCode: "ABC123",
+      },
+    }
+  );
+
+  assert.equal(hydrated.ok, true);
+  if (!hydrated.ok) {
+    return;
+  }
+
+  assert.equal(hydrated.value.nonce, "n0nce");
+  assert.equal(hydrated.value.serviceDomain, "demo.presence.local");
+  assert.equal(hydrated.value.statusUrl, "https://demo.presence.local/presence/link-sessions/plink_abc");
+  assert.equal(hydrated.value.nonceUrl, "https://demo.presence.local/presence/linked-accounts/acct-1/nonce");
+  assert.equal(hydrated.value.verifyUrl, "https://demo.presence.local/presence/linked-accounts/acct-1/verify");
+  assert.equal(hydrated.value.code, "ABC123");
+});
+
+test("hydrateLinkCompletionEnvelopeFromSession() fails when session is consumed or expired", () => {
+  const expired = hydrateLinkCompletionEnvelopeFromSession({
+    id: "plink_expired",
+    serviceId: "presence-demo",
+    accountId: "acct-1",
+    issuedNonce: "n0nce",
+    status: "pending",
+    expiresAt: Math.floor(Date.now() / 1000) - 1,
+    completion: {},
+  });
+  assert.equal(expired.ok, false);
+  if (expired.ok) {
+    return;
+  }
+  assert.equal(expired.code, "ERR_LINK_SESSION_EXPIRED");
+
+  const consumed = hydrateLinkCompletionEnvelopeFromSession({
+    id: "plink_consumed",
+    serviceId: "presence-demo",
+    accountId: "acct-1",
+    issuedNonce: "n0nce",
+    status: "consumed",
+    completion: {
+      sessionStatusUrl: "https://demo.presence.local/presence/link-sessions/plink_consumed",
+    },
+  });
+  assert.equal(consumed.ok, false);
+  if (consumed.ok) {
+    return;
+  }
+  assert.equal(consumed.code, "ERR_LINK_SESSION_CONSUMED");
+});
 
 test("resolveRequestedLinkedBinding() reuses the existing linked binding and merges sync metadata from the request", () => {
   const binding = {

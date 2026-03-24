@@ -435,19 +435,20 @@ Minimal reference model in this phase:
 - display name: there is no mandatory protocol field today; clients should treat missing display name as optional and avoid surfacing raw IDs as primary human text.
 
 4. Mobile app opens the deeplink and extracts:
-   - `session_id`
-   - `service_id`
-   - optional `service_domain`
-   - optional `binding_id`
-   - optional `flow`
-   - optional fallback `code`
-   - optional `nonce_url`, `verify_url`, `pending_url`
-5. If the deeplink/session includes sync URLs like `nonce_url`, `verify_url`, or `pending_url`, mobile should validate them against `https://{service_domain}/.well-known/presence.json` before proof submission or pending-request hydration.
-   Relative `status_url`, `nonce_url`, `verify_url`, and `pending_url` values must be rewritten to public absolute URLs before the link reaches mobile.
+   - short pointer: `s` (session id)
+   - optional `service_id` / `service_domain` hints
+
+5. Mobile app hydrates full request metadata from `GET /presence/link-sessions/:sessionId` and reconstructs a completion envelope for trust/submit flow:
+   - includes `nonce_url`, `verify_url`, `pending_url`, `status_url`, and `fallbackCode`
+   - validates hydrated sync URLs against `/.well-known/presence.json` (if available)
+   - may infer trust host from hydrated sync URLs when explicit `service_domain` is absent
+
 6. Mobile produces proof and posts to `session.completion.completionApiUrl` or the standardized completion endpoint.
 7. Later, when the service needs PASS for a linked account, backend either:
    - calls `createLinkedProofRequest()` and returns a normalized `/presence/linked-accounts/:accountId/nonce` response containing a fresh nonce plus verify/status metadata
    - or calls `createPendingProofRequest()` and exposes the pending proof request endpoints for app-open hydration
+8. Mobile submits PASS to `verifyLinkedAccountApiUrl` for linked nonce flows or to `/presence/pending-proof-requests/:requestId/respond` for pending-request flows.
+9. Service calls `completeLinkSession()`, `verifyLinkedAccount()`, `respondToPendingProofRequest()`, or `getLinkedAccountReadiness()` and returns a normalized linked/recovery/readiness payload.
 
 ### Important TTL caveat for pending proof requests
 
@@ -457,9 +458,6 @@ That means:
 - do **not** treat a pending proof request as an indefinitely valid proof challenge
 - if the user responds after nonce expiry, the request should be treated as expired/retry-required rather than silently reused
 - product UX should be prepared to mint a fresh request when a pending request ages out
-8. Mobile submits PASS to `verifyLinkedAccountApiUrl` for linked nonce flows or to `/presence/pending-proof-requests/:requestId/respond` for pending-request flows.
-9. Mobile may still retry failed linked PASS submissions or pending request hydration on foreground reopen or background wake as best-effort catch-up. Foreground app-open hydration remains the canonical recovery path; wake delivery is optional.
-10. Service calls `completeLinkSession()`, `verifyLinkedAccount()`, `respondToPendingProofRequest()`, or `getLinkedAccountReadiness()` and returns a normalized linked/recovery/readiness payload.
 
 This is enough to wire real product UX without building scanner/native camera stack yet.
 
