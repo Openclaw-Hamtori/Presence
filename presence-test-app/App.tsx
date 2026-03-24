@@ -318,29 +318,67 @@ const serviceDomainApiBaseCache = new Map<string, string>();
 type AddLogFn = (message: string) => void;
 const noopAddLog: AddLogFn = () => {};
 
+function normalizeServiceDomainHost(hostPort: string): string | null {
+  const host = hostPort.includes(":") ? hostPort.slice(0, hostPort.indexOf(":")) : hostPort;
+  const normalizedHost = host.toLowerCase();
+
+  if (!normalizedHost || normalizedHost.startsWith(".") || normalizedHost.endsWith(".")) {
+    return null;
+  }
+  if (!/^[a-z0-9.-]+$/.test(normalizedHost) || !normalizedHost.includes(".")) {
+    return null;
+  }
+
+  return normalizedHost.replace(/^www\./, "");
+}
+
+function parseAllowedPrefix(raw: string): {
+  scheme: string;
+  host: string;
+  hostPort: string;
+  path: string;
+} | null {
+  const trimmed = raw.trim();
+  if (!trimmed || /\s/.test(trimmed)) {
+    return null;
+  }
+
+  const parsed = trimmed.match(/^(?:(https?):\/\/)?([^/?#]+)(\/[^?#]*)?(?:\?[^#]*)?(?:#.*)?$/i);
+  if (!parsed || !parsed[2]) {
+    return null;
+  }
+
+  const scheme = (parsed[1] ?? "https").toLowerCase();
+  if (scheme !== "https" && scheme !== "http") {
+    return null;
+  }
+
+  const hostPort = parsed[2].toLowerCase();
+  const host = normalizeServiceDomainHost(hostPort);
+  if (!host) {
+    return null;
+  }
+
+  const path = (parsed[3] ?? "").replace(/\/+$/g, "");
+  return { scheme, host, hostPort, path };
+}
+
 function normalizeHttpsServiceOrigin(serviceDomain: string): string {
   const trimmed = serviceDomain.trim().toLowerCase();
   if (!trimmed) {
     throw new Error("Missing service_domain for canonical short-link hydration.");
   }
 
-  const normalizedInput = trimmed.includes("://") ? trimmed : `https://${trimmed}`;
-  let hostname = "";
-  try {
-    hostname = new URL(normalizedInput).hostname;
-  } catch {
-    hostname = trimmed
-      .split(/[?#/]/)[0]
-      .replace(/^https?:\/\//i, "")
-      .replace(/:\\d+$/, "");
-  }
+  const hostPort = trimmed.includes("://")
+    ? trimmed.replace(/^https?:\/\//i, "")
+    : trimmed;
 
-  hostname = hostname.replace(/^www\./, "");
-  if (!hostname || !hostname.includes(".")) {
+  const host = normalizeServiceDomainHost(hostPort.split(/[/?#]/)[0]);
+  if (!host) {
     throw new Error(`Invalid service domain for hydration: ${serviceDomain}`);
   }
 
-  return hostname;
+  return host;
 }
 
 function pickAllowedPrefix(
@@ -348,9 +386,9 @@ function pickAllowedPrefix(
   serviceDomain: string,
   addLog: AddLogFn = noopAddLog
 ): string | undefined {
-  const normalizedServiceDomain = serviceDomain.toLowerCase().replace(/^www\./, "");
+  const normalizedServiceDomain = normalizeServiceDomainHost(serviceDomain) ?? "";
 
-  if (!Array.isArray(doc?.allowed_url_prefixes) || doc.allowed_url_prefixes.length === 0) {
+  if (!normalizedServiceDomain || !Array.isArray(doc?.allowed_url_prefixes) || doc.allowed_url_prefixes.length === 0) {
     return undefined;
   }
 
@@ -359,58 +397,26 @@ function pickAllowedPrefix(
       continue;
     }
 
-    let candidate: URL | undefined;
-    try {
-      candidate = new URL(raw);
-    } catch (error) {
-      addLog(
-        `[PresenceTestApp] URL parse failure for .well-known allowed_url_prefixes entry ${JSON.stringify(
-          raw
-        )} (${normalizedServiceDomain}): ${error instanceof Error ? error.message : String(error)}`
-      );
-
-      const trimmed = raw.trim();
-      const normalizedWithScheme =
-        /^[a-z][a-z\d+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
-      const parsed = normalizedWithScheme.match(/^(https?):\/\/([^/?#]+)([^?#]*)?/i);
-      if (!parsed) {
-        addLog(
-          `[PresenceTestApp] Manual prefix parse failed for ${normalizedServiceDomain}: ` +
-          `scheme/host/path not detected in ${JSON.stringify(raw)}`
-        );
-        continue;
-      }
-
-      const scheme = (parsed[1] ?? "https").toLowerCase();
-      const hostPort = parsed[2] ?? "";
-      const pathPart = (parsed[3] ?? "").replace(/\/+$/g, "");
-      const candidateHost = hostPort.split(":")[0].toLowerCase().replace(/^www\./, "");
-      if (candidateHost !== normalizedServiceDomain) {
-        continue;
-      }
-      try {
-        candidate = new URL(`${scheme}://${hostPort}${pathPart}`);
-      } catch (manualError) {
-        addLog(
-          `[PresenceTestApp] Manual prefix URL construction failed for ${JSON.stringify(raw)} (${normalizedServiceDomain}): ` +
-          `${manualError instanceof Error ? manualError.message : String(manualError)}`
-        );
-        continue;
-      }
-    }
-
-    if (!candidate || !/^https?:$/i.test(candidate.protocol)) {
+    const parsed = parseAllowedPrefix(raw);
+    if (!parsed) {
       continue;
     }
 
-    const candidateHost = candidate.hostname.toLowerCase().replace(/^www\./, "");
-    if (candidateHost !== normalizedServiceDomain) {
+    if (parsed.host !== normalizedServiceDomain) {
       continue;
     }
 
-    return `${candidate.origin}${candidate.pathname.replace(/\/+$/g, "")}`;
+    const candidatePrefix = `${parsed.scheme}://${parsed.hostPort}${parsed.path}`;
+    addLog(
+      `[PresenceTestApp] Selected .well-known prefix for ${normalizedServiceDomain}: ${candidatePrefix}`
+    );
+    return candidatePrefix;
   }
 
+  addLog(
+    `[PresenceTestApp] No matching .well-known prefix for ${normalizedServiceDomain}: ` +
+    `${JSON.stringify(doc?.allowed_url_prefixes ?? [])}`
+  );
   return undefined;
 }
 
