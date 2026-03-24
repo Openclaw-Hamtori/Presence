@@ -312,7 +312,8 @@ interface HydratedBindingCache {
 }
 
 const WELL_KNOWN_PRESENCE_PATH = "/.well-known/presence.json";
-const PRESENCE_LINK_SESSION_PATH = "/presence/link-sessions";
+const PRESENCE_LINK_SESSION_PATH = "/link-sessions";
+const PRESENCE_LINK_SESSION_PATH_ALT = "/presence/link-sessions";
 const serviceDomainApiBaseCache = new Map<string, string>();
 
 function normalizeHttpsServiceOrigin(serviceDomain: string): string {
@@ -373,9 +374,19 @@ async function resolvePresenceApiBaseFromServiceDomain(serviceDomain: string): P
   return picked;
 }
 
+function pickSessionLookupPath(baseUrl: string): string {
+  if (baseUrl.endsWith("/presence")) {
+    return PRESENCE_LINK_SESSION_PATH;
+  }
+  return PRESENCE_LINK_SESSION_PATH_ALT;
+}
+
 function resolveSessionLookupUrl(sessionId: string, serviceDomain: string): Promise<string> {
-  return resolvePresenceApiBaseFromServiceDomain(serviceDomain)
-    .then((baseUrl) => `${baseUrl}${PRESENCE_LINK_SESSION_PATH}/${encodeURIComponent(sessionId)}`);
+  return resolvePresenceApiBaseFromServiceDomain(serviceDomain).then((baseUrl) => {
+    const normalizedBase = baseUrl.replace(/\/+$/g, "");
+    const lookupPath = pickSessionLookupPath(normalizedBase);
+    return `${normalizedBase}${lookupPath}/${encodeURIComponent(sessionId)}`;
+  });
 }
 
 async function fetchJson<T>(url: string): Promise<T> {
