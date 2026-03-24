@@ -321,13 +321,29 @@ function normalizeHttpsServiceOrigin(serviceDomain: string): string {
   if (!trimmed) {
     throw new Error("Missing service_domain for canonical short-link hydration.");
   }
-  if (!trimmed.includes(".")) {
+
+  const normalizedInput = trimmed.includes("://") ? trimmed : `https://${trimmed}`;
+  let hostname = "";
+  try {
+    hostname = new URL(normalizedInput).hostname;
+  } catch {
+    hostname = trimmed
+      .split(/[?#/]/)[0]
+      .replace(/^https?:\/\//i, "")
+      .replace(/:\\d+$/, "");
+  }
+
+  hostname = hostname.replace(/^www\./, "");
+  if (!hostname || !hostname.includes(".")) {
     throw new Error(`Invalid service domain for hydration: ${serviceDomain}`);
   }
-  return trimmed;
+
+  return hostname;
 }
 
 function pickAllowedPrefix(doc: WellKnownPresenceDocument, serviceDomain: string): string | undefined {
+  const normalizedServiceDomain = serviceDomain.toLowerCase().replace(/^www\./, "");
+
   if (!Array.isArray(doc?.allowed_url_prefixes) || doc.allowed_url_prefixes.length === 0) {
     return undefined;
   }
@@ -339,13 +355,14 @@ function pickAllowedPrefix(doc: WellKnownPresenceDocument, serviceDomain: string
 
     try {
       const candidate = new URL(raw);
+      const candidateHost = candidate.hostname.toLowerCase().replace(/^www\./, "");
       if (!/https?:/i.test(candidate.protocol)) {
         continue;
       }
-      if (candidate.hostname !== serviceDomain) {
+      if (candidateHost !== normalizedServiceDomain) {
         continue;
       }
-      return candidate.origin + candidate.pathname.replace(/\/+$/g, "");
+      return `${candidate.origin}${candidate.pathname.replace(/\/+$/g, "")}`;
     } catch {
       // ignore malformed prefixes
     }
@@ -367,6 +384,10 @@ async function resolvePresenceApiBaseFromServiceDomain(serviceDomain: string): P
 
   const picked = pickAllowedPrefix(document, normalizedServiceDomain);
   if (!picked) {
+    console.log(
+      `[PresenceTestApp] .well-known candidate mismatch for ${normalizedServiceDomain}: ` +
+      `${JSON.stringify(document?.allowed_url_prefixes ?? [])}`
+    );
     throw new Error(`Unable to resolve API base from well-known for ${normalizedServiceDomain}`);
   }
 
