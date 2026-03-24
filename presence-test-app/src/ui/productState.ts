@@ -59,7 +59,11 @@ export function getProductState(params: {
     connectedServiceId,
   } = params;
   const requestSummary = requestedServiceId ? ` for ${requestedServiceId}` : "";
+
+  // Local measurements can be PASS-capable but stale (expired window) while pass remains true
+  // in internal state. UI should not convert stale local-only PASS into a FAIL signal.
   const hasLocalPass = !!pass && phase !== "not_ready" && phase !== "error" && !hasRecovery;
+  const hasExpiredLocalPass = !!pass && phase === "not_ready" && !requestedProofStatus && !hasRecovery;
   const noRequestSummary = formatProductSummary({
     linkedServiceCount,
     requestState: "none",
@@ -200,6 +204,20 @@ export function getProductState(params: {
       };
     }
 
+    if (hasExpiredLocalPass) {
+      return {
+        label: "IDLE",
+        tone: "warn" as const,
+        heading: "Request loaded",
+        detail: `A service request${requestSummary} is active, but the previous local PASS is now stale and should be refreshed before proof can be attempted.`,
+        action: "Tap the orb to run a fresh local check for this request.",
+        summary: formatProductSummary({
+          linkedServiceCount,
+          requestState: "active",
+        }),
+      };
+    }
+
     if (!hasLocalMeasurement && phase !== "error") {
       return {
         label: "IDLE",
@@ -249,6 +267,21 @@ export function getProductState(params: {
       heading: "Presence error",
       detail: "Presence could not complete the latest local check. No request was active, and nothing was server-verified.",
       action: "Retry the local-only check, or open Presence to hydrate any pending service request.",
+      summary: noRequestSummary,
+    };
+  }
+
+  if (hasLocalMeasurement && pass === true) {
+    return {
+      label: "IDLE",
+      tone: "warn" as const,
+      heading: "No active request",
+      detail: linkedServiceCount > 0
+        ? "The latest local check passed, but it has expired from the local freshness window. Re-run checks when a request is active."
+        : "A local PASS check exists, but it is now outside the local freshness window and no request is active.",
+      action: linkedServiceCount > 0
+        ? "Open Presence to hydrate a pending request, or open a service link if you need one."
+        : "Run a fresh local check before opening a service request.",
       summary: noRequestSummary,
     };
   }

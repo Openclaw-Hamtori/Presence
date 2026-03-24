@@ -142,6 +142,39 @@ test("getProductState() keeps a request in IDLE when only local measurement succ
   assert.match(state.detail, /nothing is server-verified yet/i);
 });
 
+test("getProductState() treats stale request-local PASS as actionable IDLE rather than FAIL", () => {
+  const state = getProductState({
+    phase: "not_ready",
+    pass: true,
+    hasLocalMeasurement: true,
+    hasRecovery: false,
+    linkedServiceCount: 1,
+    requestedServiceId: "presence-demo",
+    requestedProofStatus: null,
+  });
+
+  assert.equal(state.label, "IDLE");
+  assert.equal(state.heading, "Request loaded");
+  assert.match(state.detail, /stale/i);
+  assert.match(state.action, /fresh local check/i);
+});
+
+test("getProductState() treats expired requestless local PASS as IDLE", () => {
+  const state = getProductState({
+    phase: "not_ready",
+    pass: true,
+    hasLocalMeasurement: true,
+    hasRecovery: false,
+    linkedServiceCount: 0,
+    requestedServiceId: null,
+    requestedProofStatus: null,
+  });
+
+  assert.equal(state.label, "IDLE");
+  assert.equal(state.heading, "No active request");
+  assert.match(state.detail, /outside the local freshness window/i);
+});
+
 test("getProductState() treats expired request state as FAIL when surfaced with a request", () => {
   const state = getProductState({
     phase: "ready",

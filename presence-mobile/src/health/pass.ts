@@ -1,5 +1,9 @@
 import type { BiometricWindow, PassResult } from "../types/index";
 
+// PASS is computed over a rolling 72-hour window, but the winner condition is:
+// at least one local-calendar day in that window must independently satisfy all thresholds.
+// This is intentionally permissive for user cadence (the same PASS day can justify trust within 72h),
+// and stricter per-day than requiring all-day activity.
 const PASS_BPM_MIN = 40;
 const PASS_BPM_MAX = 200;
 const MIN_VALID_BPM_SAMPLES = 6;
