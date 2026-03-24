@@ -1151,6 +1151,7 @@ function buildAndroidBody(
     assert.equal(rewritten.completion?.linkedNonceApiUrl, "https://presence.example.com/presence/linked-accounts/acct-public/nonce");
     assert.equal(rewritten.completion?.verifyLinkedAccountApiUrl, "https://presence.example.com/presence/linked-accounts/acct-public/verify");
     assert.equal(qrUrl.searchParams.get("service_domain"), "presence.example.com");
+    assert.equal(qrUrl.searchParams.get("d"), "presence.example.com");
     assert.equal(qrUrl.searchParams.get("s"), session.id);
     assert.equal(qrUrl.searchParams.has("session_id"), false);
     assert.equal(qrUrl.searchParams.has("status_url"), false);
@@ -1179,6 +1180,8 @@ function buildAndroidBody(
     const qrUrl = new URL(rewritten.completion?.qrUrl ?? "");
 
     assert.equal(qrUrl.searchParams.get("s"), session.id);
+    assert.equal(qrUrl.searchParams.get("service_domain"), "presence.example.com");
+    assert.equal(qrUrl.searchParams.get("d"), "presence.example.com");
     assert.equal(qrUrl.searchParams.has("session_id"), false);
     assert.equal(qrUrl.searchParams.has("nonce_url"), false);
     assert.equal(qrUrl.searchParams.has("verify_url"), false);
@@ -1197,6 +1200,7 @@ function buildAndroidBody(
     const qrUrl = new URL(rewritten.completion?.qrUrl ?? "");
 
     assert.equal(qrUrl.searchParams.get("service_domain"), "presence-infer.example.com");
+    assert.equal(qrUrl.searchParams.get("d"), "presence-infer.example.com");
   });
 
   await test("rewriteLinkSessionForPublicBase() keeps service_domain unset for non-HTTPS publicBaseUrl unless explicitly provided", async () => {
@@ -1209,6 +1213,7 @@ function buildAndroidBody(
 
     const qrUrl = new URL(rewritten.completion?.qrUrl ?? "");
     assert.equal(qrUrl.searchParams.get("service_domain"), null);
+    assert.equal(qrUrl.searchParams.get("d"), null);
 
     const rewrittenExplicit = rewriteLinkSessionForPublicBase(session, {
       publicBaseUrl: "http://127.0.0.1:8787",
@@ -1216,6 +1221,7 @@ function buildAndroidBody(
     });
     const qrUrlExplicit = new URL(rewrittenExplicit.completion?.qrUrl ?? "");
     assert.equal(qrUrlExplicit.searchParams.get("service_domain"), "presence.demo");
+    assert.equal(qrUrlExplicit.searchParams.get("d"), "presence.demo");
   });
 
   await test("createLinkedProofRequest() returns active binding + nonce and formats proof-request response", async () => {

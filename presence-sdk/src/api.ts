@@ -214,8 +214,14 @@ function rewriteLinkUrlForPublicBase(
     }
   }
 
-  if (serviceDomain && !parsed.searchParams.get("service_domain")) {
-    parsed.searchParams.set("service_domain", serviceDomain);
+  const canonicalServiceDomain = serviceDomain || parsed.searchParams.get("d") || parsed.searchParams.get("service_domain") || inferServiceDomainFromPublicBase(publicBaseUrl);
+  if (canonicalServiceDomain) {
+    if (!parsed.searchParams.get("service_domain")) {
+      parsed.searchParams.set("service_domain", canonicalServiceDomain);
+    }
+    if (!parsed.searchParams.get("d")) {
+      parsed.searchParams.set("d", canonicalServiceDomain);
+    }
   }
 
   return parsed.toString();
@@ -232,7 +238,7 @@ function inferServiceDomainFromPublicBase(publicBaseUrl: string): string | undef
 }
 
 // Mobile trust metadata for sync URLs (nonce_url / verify_url / pending_url / status_url)
-// requires a trust domain. `service_domain` is added from `options.serviceDomain` when set,
+// requires a trust domain. `service_domain`/`d` are added from `options.serviceDomain` when set,
 // or inferred from an HTTPS `publicBaseUrl` host when possible.
 export function rewriteLinkSessionForPublicBase(
   session: LinkSession,

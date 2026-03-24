@@ -424,7 +424,7 @@ Minimal reference model in this phase:
 
 1. Backend creates `LinkSession`.
 2. Backend rewrites the session with `rewriteLinkSessionForPublicBase()` and exposes `session.completion.qrUrl` and/or `session.completion.deeplinkUrl`.
-   - The helper injects `service_domain` from `serviceDomain` when provided, or infers it from the HTTPS `publicBaseUrl` host when omitted.
+   - The helper injects `service_domain` and short alias `d` from `serviceDomain` when provided, or infers both from the HTTPS `publicBaseUrl` host when omitted.
 3. Web or desktop client renders QR.
 
 ### Identity model note
@@ -436,7 +436,7 @@ Minimal reference model in this phase:
 
 4. Mobile app opens the deeplink and extracts:
    - short pointer: `s` (session id)
-   - optional `service_domain` hint
+   - discovery hint: `d=<service_domain>` (canonical) with fallback support for legacy `service_domain`
 5. Mobile app hydrates full request metadata from `GET /presence/link-sessions/:sessionId`, reconstructs a completion envelope for trust/submit flow, and issues/refreshes the nonce timestamp:
    - includes `nonce_url`, `verify_url`, `pending_url`, `status_url`, and `fallbackCode`
    - validates hydrated sync URLs against `/.well-known/presence.json` (if available)

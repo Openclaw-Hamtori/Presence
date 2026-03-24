@@ -16,7 +16,7 @@ It is a reference/testing surface around the broader Presence architecture.
 The app now demonstrates the canonical Presence UX:
 
 1. Service creates a one-time link session
-2. Session is encoded as a short QR/deeplink pointer (`presence://link?s=<sessionId>`). On open, the app hydrates full session metadata from `GET /presence/link-sessions/:sessionId` before validation/approval flow.
+2. Session is encoded as a short QR/deeplink pointer (`presence://link?s=<sessionId>&d=<service_domain>`). On open, the app hydrates full session metadata from `GET /presence/link-sessions/:sessionId` before validation/approval flow.
 3. App opens the deeplink and previews the request
 4. User submits PASS on device
 5. Service verifies the proof, stores the binding, and the service becomes connected
@@ -44,7 +44,7 @@ The app now demonstrates the canonical Presence UX:
   - action-result failures (request submit/verify) remain brief `FAIL`
   - structural/policy failures remain persistent where they are real issues.
 - Simulator builds can compile, but live QR scanning itself still requires a real iPhone camera.
-- Short links now use pointer mode; after hydration, full sync endpoints (`nonce_url`, `verify_url`, `status_url`) are carried in the hydrated envelope and validated against `https://{service_domain}/.well-known/presence.json` before proof submission or later sync.
+- Short links now use pointer mode with discovery hint (`d=<service_domain>`), so canonical hydration can resolve the service to the correct API origin via well-known metadata before building the session lookup URL. After hydration, full sync endpoints (`nonce_url`, `verify_url`, `status_url`) are carried in the hydrated envelope and validated against `https://{service_domain}/.well-known/presence.json` before proof submission or later sync.
 - Shared `presence-mobile/src` mirrors, bridge re-exports, and intentional `presence-test-app/src` forks are documented in `../presence-mobile/SOURCE_OF_TRUTH.md` and checked by `npm run check:mobile-sync`.
 
 ## Checks

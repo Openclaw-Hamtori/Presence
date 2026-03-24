@@ -100,6 +100,9 @@ function splitBaseUrl(baseUrl: string): { prefix: string; path: string } {
 
 export function buildPresenceLinkUrl(envelope: LinkCompletionEnvelope, baseUrl = "presence://link"): string {
   const params: Array<[string, string]> = [["s", envelope.sessionId]];
+  if (envelope.serviceDomain) {
+    params.push(["d", envelope.serviceDomain]);
+  }
   const query = params.map(([k, v]) => `${encodeParam(k)}=${encodeParam(v)}`).join("&");
   const { prefix, path } = splitBaseUrl(baseUrl);
   const root = `${prefix}${path}`;
@@ -117,7 +120,7 @@ export function parsePresenceLinkUrl(rawUrl: string): LinkCompletionEnvelope | n
 
     return {
       sessionId,
-      serviceDomain: search.get("service_domain") ?? undefined,
+      serviceDomain: search.get("d") ?? search.get("service_domain") ?? undefined,
       flow: undefined,
       method: undefined,
       nonce: undefined,

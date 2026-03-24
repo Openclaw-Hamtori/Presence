@@ -279,10 +279,82 @@ type SeedConfirmedBindingResult =
   | { ok: true; seeded: boolean }
   | { ok: false; message: string };
 
+interface WellKnownPresenceDocument {
+  service_id?: string;
+  allowed_url_prefixes?: string[];
+}
+
 interface HydratedBindingCache {
   deviceIss: string;
   bindings: ServiceBinding[];
   isAuthoritative: boolean;
+}
+
+const WELL_KNOWN_PRESENCE_PATH = "/.well-known/presence.json";
+const PRESENCE_LINK_SESSION_PATH = "/presence/link-sessions";
+const serviceDomainApiBaseCache = new Map<string, string>();
+
+function normalizeHttpsServiceOrigin(serviceDomain: string): string {
+  const trimmed = serviceDomain.trim().toLowerCase();
+  if (!trimmed) {
+    throw new Error("Missing service_domain for canonical short-link hydration.");
+  }
+  if (!trimmed.includes(".")) {
+    throw new Error(`Invalid service domain for hydration: ${serviceDomain}`);
+  }
+  return trimmed;
+}
+
+function pickAllowedPrefix(doc: WellKnownPresenceDocument, serviceDomain: string): string | undefined {
+  if (!Array.isArray(doc?.allowed_url_prefixes) || doc.allowed_url_prefixes.length === 0) {
+    return undefined;
+  }
+
+  for (const raw of doc.allowed_url_prefixes) {
+    if (typeof raw !== "string" || !raw.trim()) {
+      continue;
+    }
+
+    try {
+      const candidate = new URL(raw);
+      if (!/https?:/i.test(candidate.protocol)) {
+        continue;
+      }
+      if (candidate.hostname !== serviceDomain) {
+        continue;
+      }
+      return candidate.origin + candidate.pathname.replace(/\/+$/g, "");
+    } catch {
+      // ignore malformed prefixes
+    }
+  }
+
+  return undefined;
+}
+
+async function resolvePresenceApiBaseFromServiceDomain(serviceDomain: string): Promise<string> {
+  const normalizedServiceDomain = normalizeHttpsServiceOrigin(serviceDomain);
+
+  const cached = serviceDomainApiBaseCache.get(normalizedServiceDomain);
+  if (cached) {
+    return cached;
+  }
+
+  const discoveryUrl = `https://${normalizedServiceDomain}${WELL_KNOWN_PRESENCE_PATH}`;
+  const document = await fetchJson<WellKnownPresenceDocument>(discoveryUrl);
+
+  const picked = pickAllowedPrefix(document, normalizedServiceDomain);
+  if (!picked) {
+    throw new Error(`Unable to resolve API base from well-known for ${normalizedServiceDomain}`);
+  }
+
+  serviceDomainApiBaseCache.set(normalizedServiceDomain, picked);
+  return picked;
+}
+
+function resolveSessionLookupUrl(sessionId: string, serviceDomain: string): Promise<string> {
+  return resolvePresenceApiBaseFromServiceDomain(serviceDomain)
+    .then((baseUrl) => `${baseUrl}${PRESENCE_LINK_SESSION_PATH}/${encodeURIComponent(sessionId)}`);
 }
 
 async function fetchJson<T>(url: string): Promise<T> {
@@ -823,9 +895,8 @@ export default function App() {
     if (!hydrated.nonce) {
       try {
         addLog("🔎 hydration lookup session=" + parsed.sessionId);
-        const response = await fetchJson<LinkSessionLookupResponse>(
-          `${PRESENCE_DEMO_API_BASE_URL}/link-sessions/${encodeURIComponent(parsed.sessionId)}`
-        );
+        const hydratedSessionLookup = await resolveSessionLookupUrl(parsed.sessionId, parsed.serviceDomain ?? "");
+        const response = await fetchJson<LinkSessionLookupResponse>(hydratedSessionLookup);
         const hydration = hydrateLinkCompletionEnvelopeFromSession(response.session, parsed);
         if (!hydration.ok) {
           setOpenedEnvelope(null);
