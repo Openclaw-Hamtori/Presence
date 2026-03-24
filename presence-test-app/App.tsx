@@ -315,6 +315,8 @@ const WELL_KNOWN_PRESENCE_PATH = "/.well-known/presence.json";
 const PRESENCE_LINK_SESSION_PATH = "/link-sessions";
 const PRESENCE_LINK_SESSION_PATH_ALT = "/presence/link-sessions";
 const serviceDomainApiBaseCache = new Map<string, string>();
+type AddLogFn = (message: string) => void;
+const noopAddLog: AddLogFn = () => {};
 
 function normalizeHttpsServiceOrigin(serviceDomain: string): string {
   const trimmed = serviceDomain.trim().toLowerCase();
@@ -341,7 +343,11 @@ function normalizeHttpsServiceOrigin(serviceDomain: string): string {
   return hostname;
 }
 
-function pickAllowedPrefix(doc: WellKnownPresenceDocument, serviceDomain: string): string | undefined {
+function pickAllowedPrefix(
+  doc: WellKnownPresenceDocument,
+  serviceDomain: string,
+  addLog: AddLogFn = noopAddLog
+): string | undefined {
   const normalizedServiceDomain = serviceDomain.toLowerCase().replace(/^www\./, "");
 
   if (!Array.isArray(doc?.allowed_url_prefixes) || doc.allowed_url_prefixes.length === 0) {
@@ -353,25 +359,65 @@ function pickAllowedPrefix(doc: WellKnownPresenceDocument, serviceDomain: string
       continue;
     }
 
+    let candidate: URL | undefined;
     try {
-      const candidate = new URL(raw);
-      const candidateHost = candidate.hostname.toLowerCase().replace(/^www\./, "");
-      if (!/https?:/i.test(candidate.protocol)) {
+      candidate = new URL(raw);
+    } catch (error) {
+      addLog(
+        `[PresenceTestApp] URL parse failure for .well-known allowed_url_prefixes entry ${JSON.stringify(
+          raw
+        )} (${normalizedServiceDomain}): ${error instanceof Error ? error.message : String(error)}`
+      );
+
+      const trimmed = raw.trim();
+      const normalizedWithScheme =
+        /^[a-z][a-z\d+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+      const parsed = normalizedWithScheme.match(/^(https?):\/\/([^/?#]+)([^?#]*)?/i);
+      if (!parsed) {
+        addLog(
+          `[PresenceTestApp] Manual prefix parse failed for ${normalizedServiceDomain}: ` +
+          `scheme/host/path not detected in ${JSON.stringify(raw)}`
+        );
         continue;
       }
+
+      const scheme = (parsed[1] ?? "https").toLowerCase();
+      const hostPort = parsed[2] ?? "";
+      const pathPart = (parsed[3] ?? "").replace(/\/+$/g, "");
+      const candidateHost = hostPort.split(":")[0].toLowerCase().replace(/^www\./, "");
       if (candidateHost !== normalizedServiceDomain) {
         continue;
       }
-      return `${candidate.origin}${candidate.pathname.replace(/\/+$/g, "")}`;
-    } catch {
-      // ignore malformed prefixes
+      try {
+        candidate = new URL(`${scheme}://${hostPort}${pathPart}`);
+      } catch (manualError) {
+        addLog(
+          `[PresenceTestApp] Manual prefix URL construction failed for ${JSON.stringify(raw)} (${normalizedServiceDomain}): ` +
+          `${manualError instanceof Error ? manualError.message : String(manualError)}`
+        );
+        continue;
+      }
     }
+
+    if (!candidate || !/^https?:$/i.test(candidate.protocol)) {
+      continue;
+    }
+
+    const candidateHost = candidate.hostname.toLowerCase().replace(/^www\./, "");
+    if (candidateHost !== normalizedServiceDomain) {
+      continue;
+    }
+
+    return `${candidate.origin}${candidate.pathname.replace(/\/+$/g, "")}`;
   }
 
   return undefined;
 }
 
-async function resolvePresenceApiBaseFromServiceDomain(serviceDomain: string): Promise<string> {
+async function resolvePresenceApiBaseFromServiceDomain(
+  serviceDomain: string,
+  addLog: AddLogFn = noopAddLog
+): Promise<string> {
   const normalizedServiceDomain = normalizeHttpsServiceOrigin(serviceDomain);
 
   const cached = serviceDomainApiBaseCache.get(normalizedServiceDomain);
@@ -381,10 +427,19 @@ async function resolvePresenceApiBaseFromServiceDomain(serviceDomain: string): P
 
   const discoveryUrl = `https://${normalizedServiceDomain}${WELL_KNOWN_PRESENCE_PATH}`;
   const document = await fetchJson<WellKnownPresenceDocument>(discoveryUrl);
+  addLog(
+    `[PresenceTestApp] fetched .well-known for ${normalizedServiceDomain}: keys=${JSON.stringify(
+      Object.keys(document ?? {})
+    )}`
+  );
+  addLog(
+    `[PresenceTestApp] .well-known allowed_url_prefixes for ${normalizedServiceDomain}: ` +
+    `${JSON.stringify(document?.allowed_url_prefixes ?? [])}`
+  );
 
-  const picked = pickAllowedPrefix(document, normalizedServiceDomain);
+  const picked = pickAllowedPrefix(document, normalizedServiceDomain, addLog);
   if (!picked) {
-    console.log(
+    addLog(
       `[PresenceTestApp] .well-known candidate mismatch for ${normalizedServiceDomain}: ` +
       `${JSON.stringify(document?.allowed_url_prefixes ?? [])}`
     );
@@ -402,8 +457,12 @@ function pickSessionLookupPath(baseUrl: string): string {
   return PRESENCE_LINK_SESSION_PATH_ALT;
 }
 
-function resolveSessionLookupUrl(sessionId: string, serviceDomain: string): Promise<string> {
-  return resolvePresenceApiBaseFromServiceDomain(serviceDomain).then((baseUrl) => {
+function resolveSessionLookupUrl(
+  sessionId: string,
+  serviceDomain: string,
+  addLog: AddLogFn = noopAddLog
+): Promise<string> {
+  return resolvePresenceApiBaseFromServiceDomain(serviceDomain, addLog).then((baseUrl) => {
     const normalizedBase = baseUrl.replace(/\/+$/g, "");
     const lookupPath = pickSessionLookupPath(normalizedBase);
     return `${normalizedBase}${lookupPath}/${encodeURIComponent(sessionId)}`;
@@ -955,7 +1014,7 @@ export default function App() {
     if (!hydrated.nonce) {
       try {
         addLog("🔎 hydration lookup session=" + parsed.sessionId);
-        const hydratedSessionLookup = await resolveSessionLookupUrl(parsed.sessionId, parsed.serviceDomain ?? "");
+        const hydratedSessionLookup = await resolveSessionLookupUrl(parsed.sessionId, parsed.serviceDomain ?? "", addLog);
         const response = await fetchJson<LinkSessionLookupResponse>(hydratedSessionLookup);
         const hydration = hydrateLinkCompletionEnvelopeFromSession(response.session, parsed);
         if (!hydration.ok) {
