@@ -112,8 +112,7 @@ const COPY_STATUS_RESET_MS = 1800;
 const RECENT_VERIFIED_PASS_HOLD_MS = 10_000;
 const INITIAL_LINK_CONNECTED_HOLD_MS = 10_000;
 const RECENT_PROOF_FAILURE_HOLD_MS = 10_000;
-// Keep pending-proof hydration on the example /presence-demo/presence surface for test/demos.
-const PRESENCE_DEMO_API_BASE_URL = "https://example.com/presence-demo/presence";
+const PRESENCE_DEMO_API_BASE_URL = "https://noctu.link/presence-demo/presence";
 
 type LinkedProofRequestState =
   | { requestKey: string; status: RequestedProofUiStatus }
@@ -385,7 +384,14 @@ async function fetchJson<T>(url: string): Promise<T> {
     headers: { Accept: "application/json" },
   });
   const raw = await response.text();
-  const parsed = raw ? JSON.parse(raw) : null;
+  let parsed: { message?: string } | null;
+  try {
+    parsed = raw ? JSON.parse(raw) : null;
+  } catch (error) {
+    const preview = raw ? raw.trimStart().slice(0, 40) : "";
+    const prefix = preview ? ` (${preview[0]}...)` : "";
+    throw new Error(`Failed to parse JSON from ${url}${prefix}: ${error instanceof Error ? error.message : "parse error"}`);
+  }
   if (!response.ok) {
     throw new Error(parsed?.message ?? `request failed (${response.status})`);
   }
@@ -987,8 +993,9 @@ export default function App() {
     setServiceBindingsHydrationError(null);
     try {
       const localBindings = localBindingsForHydrationRef.current;
+      const deviceBindingsUrl = `${PRESENCE_DEMO_API_BASE_URL}/devices/${encodeURIComponent(deviceIss)}/bindings`;
       try {
-        const deviceBindings = await fetchJson<DeviceBindingsResponse>(`${PRESENCE_DEMO_API_BASE_URL}/devices/${encodeURIComponent(deviceIss)}/bindings`);
+        const deviceBindings = await fetchJson<DeviceBindingsResponse>(deviceBindingsUrl);
         const latestRegistration = getLatestPushToken(pushSetupStateRef.current);
         const matchingServerToken = latestRegistration
           ? deviceBindings.device?.pushTokens?.find((token) => matchesActiveServerPushToken(latestRegistration, token))
@@ -1042,10 +1049,11 @@ export default function App() {
         addLog(`↻ Recovered ${recoveredBindings.length} bindings from device endpoint (${source})`);
         return recoveredBindings;
       } catch (deviceEndpointError) {
-        addLog(`ℹ️ Device bindings endpoint unavailable (${source}) — ${deviceEndpointError instanceof Error ? deviceEndpointError.message : String(deviceEndpointError)}`);
+        addLog(`ℹ️ Device bindings endpoint unavailable (${source}) — ${deviceEndpointError instanceof Error ? deviceEndpointError.message : String(deviceEndpointError)} (GET ${deviceBindingsUrl})`);
       }
 
-      const audit = await fetchJson<AuditEventsResponse>(`${PRESENCE_DEMO_API_BASE_URL}/audit-events`);
+      const auditEventsUrl = `${PRESENCE_DEMO_API_BASE_URL}/audit-events`;
+      const audit = await fetchJson<AuditEventsResponse>(auditEventsUrl);
       const recentAccounts = new Map<string, number>();
       for (const event of audit.events) {
         if (event.deviceIss !== deviceIss) continue;
@@ -1063,10 +1071,12 @@ export default function App() {
           await Promise.all(
             orderedAccountIds.map(async (accountId) => {
               try {
-                const status = await fetchJson<LinkedAccountStatusResponse>(`${PRESENCE_DEMO_API_BASE_URL}/linked-accounts/${encodeURIComponent(accountId)}/status`);
+                const statusUrl = `${PRESENCE_DEMO_API_BASE_URL}/linked-accounts/${encodeURIComponent(accountId)}/status`;
+                const status = await fetchJson<LinkedAccountStatusResponse>(statusUrl);
                 const binding = toServiceBindingFromStatus(status);
                 return binding?.linkedDeviceIss === deviceIss ? binding : null;
-              } catch {
+              } catch (statusError) {
+                addLog(`ℹ️ skipping account status (${source}) ${accountId} — ${statusError instanceof Error ? statusError.message : String(statusError)}`);
                 return null;
               }
             })
@@ -1085,8 +1095,16 @@ export default function App() {
       addLog(`↻ Recovered ${recoveredBindings.length} bindings via audit fallback (${source})`);
       return recoveredBindings;
     } catch (error) {
-      setServiceBindingsHydrationError(error instanceof Error ? error.message : String(error));
-      return localBindingsForHydrationRef.current.filter((binding) => binding.linkedDeviceIss === deviceIss);
+      const message = error instanceof Error ? error.message : String(error);
+      setServiceBindingsHydrationError(message);
+      setHydratedServiceBindings({
+        deviceIss,
+        bindings: [],
+        isAuthoritative: true,
+      });
+      await persistAuthoritativeBindings(deviceIss, []);
+      addLog(`ℹ️ service auth sync failed for ${source}; showing no cached binding cards until next successful sync — ${message}`);
+      return [];
     } finally {
       setHydratingServiceBindings(false);
     }
