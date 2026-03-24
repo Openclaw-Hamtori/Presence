@@ -1137,6 +1137,37 @@ function buildAndroidBody(
     assert.equal(response.completion.endpoints.status?.path, `https://presence.example.com/presence/link-sessions/${encodeURIComponent(session.id)}`);
   });
 
+  await test("rewriteLinkSessionForPublicBase() infers service_domain from HTTPS publicBaseUrl when omitted", async () => {
+    const store = new InMemoryLinkageStore();
+    const client = new PresenceClient({ silent: true, linkageStore: store, serviceId: "svc" });
+    const { session } = await client.createLinkSession({ serviceId: "svc", accountId: "acct-infer" });
+    const rewritten = rewriteLinkSessionForPublicBase(session, {
+      publicBaseUrl: "https://presence-infer.example.com",
+    });
+    const qrUrl = new URL(rewritten.completion?.qrUrl ?? "");
+
+    assert.equal(qrUrl.searchParams.get("service_domain"), "presence-infer.example.com");
+  });
+
+  await test("rewriteLinkSessionForPublicBase() keeps service_domain unset for non-HTTPS publicBaseUrl unless explicitly provided", async () => {
+    const store = new InMemoryLinkageStore();
+    const client = new PresenceClient({ silent: true, linkageStore: store, serviceId: "svc" });
+    const { session } = await client.createLinkSession({ serviceId: "svc", accountId: "acct-noinfer" });
+    const rewritten = rewriteLinkSessionForPublicBase(session, {
+      publicBaseUrl: "http://127.0.0.1:8787",
+    });
+
+    const qrUrl = new URL(rewritten.completion?.qrUrl ?? "");
+    assert.equal(qrUrl.searchParams.get("service_domain"), null);
+
+    const rewrittenExplicit = rewriteLinkSessionForPublicBase(session, {
+      publicBaseUrl: "http://127.0.0.1:8787",
+      serviceDomain: "presence.demo",
+    });
+    const qrUrlExplicit = new URL(rewrittenExplicit.completion?.qrUrl ?? "");
+    assert.equal(qrUrlExplicit.searchParams.get("service_domain"), "presence.demo");
+  });
+
   await test("createLinkedProofRequest() returns active binding + nonce and formats proof-request response", async () => {
     const store = new InMemoryLinkageStore();
     const client = new PresenceClient({ silent: true, linkageStore: store, serviceId: "svc" });

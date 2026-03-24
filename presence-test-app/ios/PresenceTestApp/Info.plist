@@ -48,6 +48,8 @@
 	<string>Presence uses the camera to scan connection QR codes on-device.</string>
 	<key>NSHealthShareUsageDescription</key>
 	<string>Presence reads heart rate data to confirm you are present. Data never leaves your device.</string>
+	<key>NSHealthUpdateUsageDescription</key>
+	<string>Presence writes workout and health-related session updates only when needed to support Presence measurement flows.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>fetch</string>

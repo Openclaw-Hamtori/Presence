@@ -1,13 +1,54 @@
 import type { LinkCompletionEnvelope } from "../deeplink";
+import type { ProveOptions } from "../service";
 import { mergeBindingSyncMetadata, normalizeBindingSyncMetadata } from "../state/bindingSync.ts";
 import type { ServiceBinding } from "../types/index";
 
-function inferEnvelopeFlow(envelope: LinkCompletionEnvelope): NonNullable<LinkCompletionEnvelope["flow"]> | "initial_link" {
-  return envelope.flow ?? (envelope.bindingId ? "reauth" : "initial_link");
+function isKnownFlow(flow: string | undefined): LinkCompletionEnvelope["flow"] | "invalid" | undefined {
+  if (flow === undefined) {
+    return undefined;
+  }
+
+  const normalizedFlow = flow.trim().toLowerCase();
+
+  if (!normalizedFlow) {
+    return "invalid";
+  }
+
+  switch (normalizedFlow) {
+    case "initial_link":
+    case "reauth":
+    case "relink":
+    case "recovery":
+      return normalizedFlow as LinkCompletionEnvelope["flow"];
+    default:
+      return "invalid";
+  }
+}
+
+/**
+ * Infer effective flow for request binding resolution.
+ *
+ * Explicit flow is authoritative; missing/blank flow follows legacy behavior.
+ */
+export function inferEnvelopeFlow(envelope: LinkCompletionEnvelope): NonNullable<LinkCompletionEnvelope["flow"]> | "initial_link" {
+  const explicit = isKnownFlow(envelope.flow);
+  if (envelope.flow !== undefined && explicit !== undefined && explicit !== "invalid") {
+    return explicit;
+  }
+  return envelope.bindingId ? "reauth" : "initial_link";
 }
 
 function isLinkedBinding(binding: ServiceBinding): boolean {
   return binding.status === "linked";
+}
+
+export function hasExplicitNonReauthFlow(envelope: LinkCompletionEnvelope): boolean {
+  if (envelope.flow === undefined) {
+    return false;
+  }
+
+  const normalizedFlow = isKnownFlow(envelope.flow);
+  return normalizedFlow !== "reauth";
 }
 
 export function syncFromEnvelope(
@@ -29,8 +70,9 @@ export function resolveRequestedLinkedBinding(
 ): ServiceBinding | null {
   if (!envelope) return null;
 
-  const flow = inferEnvelopeFlow(envelope);
-  if (flow === "relink" || flow === "recovery") {
+  // Explicit flow should be authoritative, so do not auto-resolve legacy
+  // linked-account hints when the URL explicitly asks for a non-reauth flow.
+  if (hasExplicitNonReauthFlow(envelope)) {
     return null;
   }
 
@@ -55,5 +97,61 @@ export function resolveRequestedLinkedBinding(
   return {
     ...matchingBinding,
     sync: mergeBindingSyncMetadata(matchingBinding.sync, syncFromEnvelope(envelope)),
+  };
+}
+
+export function shouldUseLinkedVerifyRoute(args: {
+  envelope: LinkCompletionEnvelope | null;
+  openedRequestedBinding: ServiceBinding | null;
+}): boolean {
+  if (!args.envelope || !args.openedRequestedBinding) {
+    return false;
+  }
+
+  return !hasExplicitNonReauthFlow(args.envelope);
+}
+
+export function buildProveOptionsFromEnvelope(envelope: LinkCompletionEnvelope): ProveOptions | null {
+  if (!envelope.nonce) {
+    return null;
+  }
+
+  const envelopeSync = syncFromEnvelope(envelope);
+  const explicitFlow = isKnownFlow(envelope.flow);
+  const hasExplicitFlow = envelope.flow !== undefined;
+  const flow = hasExplicitFlow
+    ? explicitFlow === "invalid" || explicitFlow === undefined
+      ? "initial_link"
+      : explicitFlow
+    : (envelope.bindingId ? "reauth" : "initial_link");
+
+  return {
+    nonce: envelope.nonce,
+    flow,
+    linkSession: {
+      id: envelope.sessionId,
+      serviceId: envelope.serviceId ?? "presence-demo",
+      accountId: envelope.accountId,
+      recoveryCode: envelope.code,
+      completion: {
+        method: envelope.method ?? "deeplink",
+        returnUrl: envelope.returnUrl,
+        fallbackCode: envelope.code,
+        sync: envelopeSync,
+      },
+    },
+    ...(flow === "initial_link"
+      ? {}
+      : {
+        bindingHint: envelope.bindingId
+          ? {
+            bindingId: envelope.bindingId,
+            serviceId: envelope.serviceId ?? "presence-demo",
+            accountId: envelope.accountId,
+            sync: envelopeSync,
+          }
+          : undefined,
+      }
+    ),
   };
 }

@@ -66,7 +66,8 @@ Important:
 
 - `ROUTE_BASE_PATH=` (empty)
 - `PUBLIC_BASE_URL=http://127.0.0.1:8787`
-- `PRESENCE_SERVICE_DOMAIN` unset until HTTPS and `.well-known` are available
+- `PRESENCE_SERVICE_DOMAIN` set to your public host when you emit mobile-facing link sessions.
+  Keep it unset only when you intentionally disable mobile trust paths for this deployment.
 - `PRESENCE_ALLOW_REPLACEMENT_ON_MISMATCH=true` (server creates a relink recovery session when a verified proof arrives from an unexpected device)
 - `PRESENCE_REFERENCE_AUTH_MODE=demo` (default/dev behavior, demo auth posture)
 - `PRESENCE_SERVICE_API_KEY=<random-long-secret>` (optional; no-op unless mode is `strict`)

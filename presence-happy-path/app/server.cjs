@@ -179,6 +179,95 @@ function stripRouteBase(pathname, basePath) {
   return pathname;
 }
 
+function isHttpsPublicUrl(value) {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function explainMissingServiceDomainForMobileTrust(params) {
+  const { publicBaseUrl, serviceDomain, endpoint } = params;
+  if (serviceDomain) {
+    return null;
+  }
+
+  if (!publicBaseUrl) {
+    return {
+      code: "ERR_MOBILE_TRUST_CONFIG",
+      message: `Mobile trust checks for ${endpoint} cannot run without a public service domain. Set PRESENCE_SERVICE_DOMAIN (recommended) or configure PUBLIC_BASE_URL as HTTPS before serving this session.`,
+    };
+  }
+
+  if (!isHttpsPublicUrl(publicBaseUrl)) {
+    return {
+      code: "ERR_MOBILE_TRUST_CONFIG",
+      message: `Mobile trust checks for ${endpoint} need a trusted service domain. ` +
+        `PUBLIC_BASE_URL is non-HTTPS (${publicBaseUrl}), so PRESENCE_SERVICE_DOMAIN is required. Set PRESENCE_SERVICE_DOMAIN=<public-domain> or switch PUBLIC_BASE_URL to HTTPS.`,
+    };
+  }
+
+  return null;
+}
+
+function guardSessionHasMobileTrustMetadata(session, params) {
+  const { publicBaseUrl, serviceDomain, endpoint } = params;
+  const completion = session?.completion || {};
+  const trustSources = [
+    completion.qrUrl,
+    completion.deeplinkUrl,
+  ];
+
+  const trustConfigIssue = explainMissingServiceDomainForMobileTrust({
+    publicBaseUrl,
+    serviceDomain,
+    endpoint,
+  });
+
+  const hasSyncTarget = trustSources.some((target) => {
+    if (!target) {
+      return false;
+    }
+
+    try {
+      const parsed = new URL(target);
+      return !!(
+        parsed.searchParams.get("status_url") ||
+        parsed.searchParams.get("nonce_url") ||
+        parsed.searchParams.get("verify_url") ||
+        parsed.searchParams.get("pending_url")
+      );
+    } catch {
+      return false;
+    }
+  });
+
+  if (!hasSyncTarget) {
+    return null;
+  }
+
+  const hasServiceDomain = trustSources.some((target) => {
+    if (!target) {
+      return false;
+    }
+
+    try {
+      const parsed = new URL(target);
+      return Boolean(parsed.searchParams.get("service_domain") || serviceDomain);
+    } catch {
+      return Boolean(serviceDomain);
+    }
+  });
+
+  if (hasServiceDomain) {
+    return null;
+  }
+
+  return trustConfigIssue;
+}
+
 function normalizePushToken(value) {
   if (typeof value !== "string") {
     return null;
@@ -397,6 +486,15 @@ async function main() {
   const publicPresenceApiBaseUrl = `${publicBaseUrl}/presence`;
   const serviceDomain = process.env.PRESENCE_SERVICE_DOMAIN || "";
   const serviceDomainWellKnownUrl = serviceDomain ? `https://${serviceDomain}/.well-known/presence.json` : null;
+
+  const mobileTrustConfigWarning = explainMissingServiceDomainForMobileTrust({
+    publicBaseUrl,
+    serviceDomain,
+    endpoint: "link/session creation",
+  });
+  if (mobileTrustConfigWarning) {
+    console.warn(`[presence-happy-path] ${mobileTrustConfigWarning.message}`);
+  }
   const storageRoot = process.env.PRESENCE_STORAGE_ROOT || join(process.cwd(), "var", "presence");
   mkdirSync(storageRoot, { recursive: true });
   const storePath = fileLinkageStorePath(storageRoot);
@@ -525,6 +623,22 @@ async function main() {
           publicBaseUrl,
           serviceDomain,
         });
+
+        const trustIssue = guardSessionHasMobileTrustMetadata(publicSession, {
+          publicBaseUrl,
+          serviceDomain,
+          endpoint: "link/session creation",
+        });
+        if (trustIssue) {
+          send(500, {
+            ok: false,
+            code: trustIssue.code,
+            message: trustIssue.message,
+            action: "Set PRESENCE_SERVICE_DOMAIN to a public HTTPS hostname, or use HTTPS PUBLIC_BASE_URL for local dev.",
+          });
+          return;
+        }
+
         const response = createCompletionSessionResponse({ session: publicSession, contract: endpointContract });
         if (response.completion && response.completion.endpoints.complete.path) {
           response.completion.endpoints.complete.path = absolutize(publicBaseUrl, response.completion.endpoints.complete.path);
@@ -569,12 +683,27 @@ async function main() {
           send(404, { ok: false, code: "ERR_SESSION_NOT_FOUND" });
           return;
         }
+        const publicSession = rewriteLinkSessionForPublicBase(session, {
+          publicBaseUrl,
+          serviceDomain,
+        });
+        const trustIssue = guardSessionHasMobileTrustMetadata(publicSession, {
+          publicBaseUrl,
+          serviceDomain,
+          endpoint: "link/session read",
+        });
+        if (trustIssue) {
+          send(500, {
+            ok: false,
+            code: trustIssue.code,
+            message: trustIssue.message,
+            action: "Set PRESENCE_SERVICE_DOMAIN to a public HTTPS hostname, or use HTTPS PUBLIC_BASE_URL for local dev.",
+          });
+          return;
+        }
         send(200, {
           ok: true,
-          session: rewriteLinkSessionForPublicBase(session, {
-            publicBaseUrl,
-            serviceDomain,
-          }),
+          session: publicSession,
         });
         return;
       }

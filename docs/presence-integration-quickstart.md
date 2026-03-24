@@ -121,15 +121,28 @@ Used when generating links returned to mobile/UI via `rewriteLinkSessionForPubli
 This value drives trust metadata for deeplink validation:
 
 - `/.well-known/presence.json` is served as `https://{PRESENCE_SERVICE_DOMAIN}/.well-known/presence.json` only when `PRESENCE_SERVICE_DOMAIN` is set.
-- The SDK adds `service_domain` to link/deeplink metadata when provided.
+- `rewriteLinkSessionForPublicBase()` adds `service_domain` to link/deeplink metadata when provided, and infers it from an HTTPS `PUBLIC_BASE_URL` if omitted.
+- For a secure mobile trust path, set `PRESENCE_SERVICE_DOMAIN` explicitly to your public HTTPS host. If you keep it blank and use non-HTTPS `PUBLIC_BASE_URL`, link sessions are rejected at runtime with a clear `ERR_MOBILE_TRUST_CONFIG` error.
 - `allowed_url_prefixes` from well-known must cover the absolute URLs you emit (e.g., `https://presence.example.com/presence`).
 - The app checks these URLs against well-known before it uses `nonce_url` / `verify_url` / `pending_url`.
+- Verify a freshly minted completion by checking the returned `qrUrl` contains `service_domain=<your-public-host>` and that `nonce_url`/`verify_url` are absolute URLs under that host.
 
 For the server-local path map:
 
 - Server-internal routes remain `/presence/*`.
 - Public links and trust checks should remain aligned to `PUBLIC_BASE_URL` + `/presence`.
 - Don’t mix `ROUTE_BASE_PATH` into `allowed_url_prefixes`; keep trust prefixes on the public API base that mobile receives.
+
+## Identity model (serviceId / serviceDomain / public URL)
+
+Presence identifiers are easy to mix up; keep these roles separate:
+
+- **`serviceId`**: backend identity used for linkage records and proofs. Think of it as a contract key (`presence-demo`, `health-coach`).
+- **`serviceDomain`**: public trust host for mobile validation (the host in `https://{serviceDomain}/.well-known/presence.json`).
+- **`PUBLIC_BASE_URL`**: public origin used for endpoint URLs inside completion payloads (`PUBLIC_BASE_URL` + `/presence/...`).
+- **display name**: human-facing service label (not standardized yet in protocol); if unavailable, UI should avoid showing raw UUID-like IDs and prefer friendlier host-derived text.
+
+`serviceId` can stay stable while `serviceDomain` and display label move independently as deployments or branding changes.
 
 ## Service auth (reference posture)
 

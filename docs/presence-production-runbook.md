@@ -115,6 +115,9 @@ PRESENCE_SMOKE_LOCAL=1 npm run check:runtime-smoke
   - verify `PRESENCE_SERVICE_DOMAIN` and any frontend host rewrite/proxy rules.
 - callback routes returning 5xx:
   - validate client-generated `platform`/attestation metadata and trust-domain prefix mapping.
+- `ERR_SERVICE_TRUST_INVALID (missing service_domain)` on fresh links from new devices:
+  - check `service_domain` is present in the returned `qrUrl`/`deeplinkUrl` for initial links.
+  - if absent, confirm `PUBLIC_BASE_URL` is HTTPS and `PRESENCE_SERVICE_DOMAIN` is set correctly.
 - body parse failures:
   - check `ERR_REQUEST_BODY_TOO_LARGE` or `ERR_INVALID_JSON`, and ensure request payloads are sane.
 

@@ -76,6 +76,8 @@ import {
 import {
   resolveRequestedLinkedBinding,
   syncFromEnvelope,
+  shouldUseLinkedVerifyRoute,
+  buildProveOptionsFromEnvelope,
 } from "./src/sync/requestedBinding";
 import {
   buildRequestedProofKey,
@@ -487,34 +489,6 @@ function isHealthAccessRecoveryNeeded(code?: string, message?: string | null): b
   );
 }
 
-function envelopeToProveOptions(envelope: LinkCompletionEnvelope): ProveOptions | null {
-  if (!envelope.nonce) return null;
-  const envelopeSync = syncFromEnvelope(envelope);
-  return {
-    nonce: envelope.nonce,
-    flow: envelope.flow ?? (envelope.bindingId ? "reauth" : "initial_link"),
-    linkSession: {
-      id: envelope.sessionId,
-      serviceId: envelope.serviceId ?? "presence-demo",
-      accountId: envelope.accountId,
-      recoveryCode: envelope.code,
-      completion: {
-        method: envelope.method ?? "deeplink",
-        returnUrl: envelope.returnUrl,
-        fallbackCode: envelope.code,
-        sync: envelopeSync,
-      },
-    },
-    bindingHint: envelope.bindingId
-        ? {
-          bindingId: envelope.bindingId,
-          serviceId: envelope.serviceId ?? "presence-demo",
-          accountId: envelope.accountId,
-          sync: envelopeSync,
-        }
-      : undefined,
-  };
-}
 
 export default function App() {
   const presence = usePresenceState();
@@ -1271,7 +1245,7 @@ export default function App() {
     return () => subscription.remove();
   }, [maybeSyncStoredPushToken, runForegroundHydration]);
 
-  const proveOptions = useMemo(() => (openedEnvelope ? envelopeToProveOptions(openedEnvelope) : null), [openedEnvelope]);
+  const proveOptions = useMemo(() => (openedEnvelope ? buildProveOptionsFromEnvelope(openedEnvelope) : null), [openedEnvelope]);
   const effectiveServiceBindings = useMemo(() => {
     if (
       !presence.state
@@ -1657,11 +1631,23 @@ export default function App() {
     addLog(
       `   envelope sync: ${describeBindingSync(envelopeSync)} nonce=${describePresenceValue(currentEnvelope.nonce)}`
     );
+    const route = shouldUseLinkedVerifyRoute({
+      envelope: currentEnvelope,
+      openedRequestedBinding,
+    }) ? "linked_verify" : "initial_link_prove";
+    addLog(
+      `🧭 submit route=${route} flow=${currentEnvelope.flow ?? (currentEnvelope.bindingId ? "reauth" : "initial_link")} binding_hint=${currentEnvelope.bindingId ? "present" : "absent"} trust=${[
+        `service_domain=${currentEnvelope.serviceDomain ? "present" : "missing"}`,
+        `status_url=${currentEnvelope.statusUrl ? "present" : "missing"}`,
+        `nonce_url=${currentEnvelope.nonceUrl ? "present" : "missing"}`,
+        `verify_url=${currentEnvelope.verifyUrl ? "present" : "missing"}`,
+      ].join(",")}`
+    );
     addLog(
       `   requested binding sync: ${describeBindingSync(openedRequestedBinding?.sync)} nonce_source=${currentEnvelope.nonce ? "envelope" : openedRequestedBinding?.sync?.nonceUrl ? "binding_sync" : "missing"}`
     );
 
-    if (openedRequestedBinding) {
+    if (route === "linked_verify" && openedRequestedBinding) {
       const diagnostics: string[] = [];
       const requestKey = currentRequestedProofKey ?? buildRequestedProofKey({
         sessionId: currentEnvelope.sessionId,

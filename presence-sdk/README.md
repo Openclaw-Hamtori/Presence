@@ -423,7 +423,16 @@ Minimal reference model in this phase:
 
 1. Backend creates `LinkSession`.
 2. Backend rewrites the session with `rewriteLinkSessionForPublicBase()` and exposes `session.completion.qrUrl` and/or `session.completion.deeplinkUrl`.
+   - The helper injects `service_domain` from `serviceDomain` when provided, or infers it from the HTTPS `publicBaseUrl` host when omitted.
 3. Web or desktop client renders QR.
+
+### Identity model note
+
+- `serviceId`: backend identity used in proof bindings and readiness checks.
+- `serviceDomain`: host used for trust bootstrap in `https://{serviceDomain}/.well-known/presence.json`.
+- `PUBLIC_BASE_URL`: origin used to absolutize callback URLs in completion payloads.
+- display name: there is no mandatory protocol field today; clients should treat missing display name as optional and avoid surfacing raw IDs as primary human text.
+
 4. Mobile app opens the deeplink and extracts:
    - `session_id`
    - `service_id`

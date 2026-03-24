@@ -1,7 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { resolveRequestedLinkedBinding, syncFromEnvelope } from "./requestedBinding.ts";
+import {
+  buildProveOptionsFromEnvelope,
+  resolveRequestedLinkedBinding,
+  shouldUseLinkedVerifyRoute,
+  syncFromEnvelope,
+} from "./requestedBinding.ts";
 
 test("resolveRequestedLinkedBinding() reuses the existing linked binding and merges sync metadata from the request", () => {
   const binding = {
@@ -98,10 +103,109 @@ test("resolveRequestedLinkedBinding() does not hijack relink/recovery sessions",
   assert.equal(recovery, null);
 });
 
+test("resolveRequestedLinkedBinding() preserves linked-state precedence for explicit initial_link", () => {
+  const binding = {
+    bindingId: "pbind_current",
+    serviceId: "presence-demo",
+    accountId: "acct-1",
+    linkedDeviceIss: "presence:device:abc",
+    linkedAt: 1,
+    lastVerifiedAt: 2,
+    status: "linked",
+  };
+
+  const explicitInitialLink = resolveRequestedLinkedBinding({
+    sessionId: "plink_explicit_initial",
+    serviceId: "presence-demo",
+    accountId: "acct-1",
+    bindingId: "pbind_current",
+    flow: "initial_link",
+  }, [binding]);
+
+  assert.equal(explicitInitialLink, null);
+});
+
+test("shouldUseLinkedVerifyRoute() prefers initial-link flow even with binding_hint", () => {
+  const binding = {
+    bindingId: "pbind_existing",
+    serviceId: "presence-demo",
+    accountId: "acct-1",
+    linkedDeviceIss: "presence:device:abc",
+    linkedAt: 1,
+    lastVerifiedAt: 2,
+    status: "linked",
+  };
+
+  const explicitInitialLinkDecision = shouldUseLinkedVerifyRoute({
+    envelope: {
+      sessionId: "plink_initial_with_hint",
+      serviceId: "presence-demo",
+      accountId: "acct-1",
+      bindingId: "pbind_existing",
+      flow: "initial_link",
+      nonce: "n",
+      nonceUrl: "https://demo.presence.local/presence/nonce",
+      verifyUrl: "https://demo.presence.local/presence/verify",
+      statusUrl: "https://demo.presence.local/presence/status",
+    },
+    openedRequestedBinding: binding,
+  });
+
+  assert.equal(explicitInitialLinkDecision, false);
+});
+
+test("shouldUseLinkedVerifyRoute() treats malformed explicit flow as explicit non-reauth", () => {
+  const binding = {
+    bindingId: "pbind_existing",
+    serviceId: "presence-demo",
+    accountId: "acct-1",
+    linkedDeviceIss: "presence:device:abc",
+    linkedAt: 1,
+    lastVerifiedAt: 2,
+    status: "linked",
+  };
+
+  assert.equal(
+    shouldUseLinkedVerifyRoute({
+      envelope: {
+        sessionId: "plink_malformed_flow",
+        flow: "",
+        serviceId: "presence-demo",
+        accountId: "acct-1",
+        bindingId: "pbind_existing",
+        nonce: "n",
+      },
+      openedRequestedBinding: binding,
+    }),
+    false
+  );
+});
+
+test("buildProveOptionsFromEnvelope() preserves trust sync in initial-link completion path", () => {
+  const options = buildProveOptionsFromEnvelope({
+    sessionId: "plink_initial_trust",
+    serviceId: "presence-demo",
+    accountId: "acct-trust",
+    nonce: "n0nce",
+    serviceDomain: "demo.presence.local",
+    statusUrl: "https://demo.presence.local/presence/link-sessions/plink_initial_trust",
+    nonceUrl: "https://demo.presence.local/presence/nonce",
+    verifyUrl: "https://demo.presence.local/presence/verify",
+  });
+
+  assert.equal(options?.flow, "initial_link");
+  assert.equal(options?.bindingHint, undefined);
+  assert.equal(options?.linkSession.completion.sync?.serviceDomain, "demo.presence.local");
+  assert.equal(options?.linkSession.completion.sync?.statusUrl, "https://demo.presence.local/presence/link-sessions/plink_initial_trust");
+  assert.equal(options?.linkSession.completion.sync?.nonceUrl, "https://demo.presence.local/presence/nonce");
+  assert.equal(options?.linkSession.completion.sync?.verifyUrl, "https://demo.presence.local/presence/verify");
+});
+
 test("syncFromEnvelope() drops empty sync values", () => {
   const sync = syncFromEnvelope({
     sessionId: "plink_789",
     serviceId: "presence-demo",
+    nonce: "n",
     nonceUrl: "  ",
     verifyUrl: "https://demo.presence.local/presence/linked-accounts/acct-1/verify",
     serviceDomain: " demo.presence.local ",

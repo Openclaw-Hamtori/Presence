@@ -221,6 +221,19 @@ function rewriteLinkUrlForPublicBase(
   return parsed.toString();
 }
 
+function inferServiceDomainFromPublicBase(publicBaseUrl: string): string | undefined {
+  try {
+    const parsed = new URL(publicBaseUrl);
+    if (parsed.protocol !== "https:") return undefined;
+    return parsed.hostname || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+// Mobile trust metadata for sync URLs (nonce_url / verify_url / pending_url / status_url)
+// requires a trust domain. `service_domain` is added from `options.serviceDomain` when set,
+// or inferred from an HTTPS `publicBaseUrl` host when possible.
 export function rewriteLinkSessionForPublicBase(
   session: LinkSession,
   options: LinkSessionPublicBaseOptions
@@ -230,12 +243,13 @@ export function rewriteLinkSessionForPublicBase(
   }
 
   const publicBaseUrl = normalizePublicBaseUrl(options.publicBaseUrl);
+  const serviceDomain = options.serviceDomain || inferServiceDomainFromPublicBase(publicBaseUrl);
   return {
     ...session,
     completion: {
       ...session.completion,
-      qrUrl: rewriteLinkUrlForPublicBase(session.completion.qrUrl, publicBaseUrl, options.serviceDomain),
-      deeplinkUrl: rewriteLinkUrlForPublicBase(session.completion.deeplinkUrl, publicBaseUrl, options.serviceDomain),
+      qrUrl: rewriteLinkUrlForPublicBase(session.completion.qrUrl, publicBaseUrl, serviceDomain),
+      deeplinkUrl: rewriteLinkUrlForPublicBase(session.completion.deeplinkUrl, publicBaseUrl, serviceDomain),
       sessionStatusUrl: absolutizePublicUrl(publicBaseUrl, session.completion.sessionStatusUrl),
       completionApiUrl: absolutizePublicUrl(publicBaseUrl, session.completion.completionApiUrl),
       linkedNonceApiUrl: absolutizePublicUrl(publicBaseUrl, session.completion.linkedNonceApiUrl),

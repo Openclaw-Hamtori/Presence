@@ -70,6 +70,32 @@ function randomNonce(): string {
   return randomBase64Url(43);
 }
 
+function toHumanServiceLabel(input: { serviceId?: string | null; serviceDomain?: string | null }): string {
+  if (input.serviceDomain) {
+    return input.serviceDomain.replace(/^https?:\/\//, "").replace(/^www\./, "").split(".")[0];
+  }
+
+  if (input.serviceId) {
+    const trimmed = input.serviceId.trim();
+    if (!trimmed) {
+      return "Presence service";
+    }
+
+    if (trimmed.length <= 24 && !trimmed.includes("_")) {
+      return trimmed;
+    }
+
+    return trimmed
+      .split(/[-_]/g)
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .join(" ")
+      .replace(/\b\w/g, (m) => m.toUpperCase());
+  }
+
+  return "Presence service";
+}
+
 async function defaultCreateMockSession(): Promise<MockLinkServiceSession> {
   const sessionId = randomId("plink");
   const serviceId = "presence-demo";
@@ -217,7 +243,10 @@ export function ConnectionFlowScreen({
           {session && (
             <View style={styles.metaList}>
               <Meta label="Session" value={session.sessionId} mono />
-              <Meta label="Service" value={session.serviceId} />
+              <Meta label="Service" value={toHumanServiceLabel({
+                serviceId: session.serviceId,
+                serviceDomain: session.serviceDomain,
+              })} />
               <Meta label="Service domain" value={session.serviceDomain} mono />
               <Meta label="Flow" value={session.flow} />
               <Meta label="Binding" value={session.bindingId ?? "created after first link"} mono />
@@ -250,6 +279,10 @@ export function ConnectionFlowScreen({
           {parsedEnvelope ? (
             <View style={styles.metaList}>
               <Meta label="Session" value={parsedEnvelope.sessionId} mono />
+              <Meta label="Service" value={toHumanServiceLabel({
+                serviceId: parsedEnvelope.serviceId,
+                serviceDomain: parsedEnvelope.serviceDomain,
+              })} />
               <Meta label="Service domain" value={parsedEnvelope.serviceDomain ?? "not supplied"} mono />
               <Meta label="Flow" value={parsedEnvelope.flow ?? "initial_link"} />
               <Meta label="Method" value={parsedEnvelope.method ?? "deeplink"} />

@@ -25,6 +25,70 @@ function decodeParam(value: string): string {
   return decodeURIComponent(value.replace(/\+/g, "%20"));
 }
 
+function parsePairs(rawPairs: string, map: Map<string, string>) {
+  if (!rawPairs) return;
+  for (const pair of rawPairs.split("&")) {
+    if (!pair) continue;
+
+    const [rawKey, ...rest] = pair.split("=");
+    const rawValue = rest.join("=");
+    const key = decodeParam(rawKey);
+    const value = decodeParam(rawValue ?? "");
+
+    if (!key) continue;
+    map.set(key, value);
+  }
+}
+
+function collectQuerySources(rawUrl: string): string[] {
+  const queryStart = rawUrl.indexOf("?");
+  const hashStart = rawUrl.indexOf("#");
+
+  const sources: string[] = [];
+
+  if (queryStart !== -1) {
+    const query = hashStart === -1
+      ? rawUrl.slice(queryStart + 1)
+      : rawUrl.slice(queryStart + 1, hashStart);
+    sources.push(query);
+  }
+
+  if (hashStart !== -1) {
+    const fragment = rawUrl.slice(hashStart + 1);
+    if (!fragment) {
+      return sources;
+    }
+
+    const nestedQueryStart = fragment.indexOf("?");
+    const fragmentQuery = nestedQueryStart === -1 ? fragment : fragment.slice(nestedQueryStart + 1);
+    sources.push(fragmentQuery);
+  }
+
+  return sources;
+}
+
+function parseUrlToMap(rawUrl: string): Map<string, string> {
+  const search = new Map<string, string>();
+  const sources = collectQuerySources(rawUrl);
+
+  for (const source of sources) {
+    parsePairs(source, search);
+  }
+
+  if (!search.has("session_id") && rawUrl.includes("%3F")) {
+    try {
+      const decoded = decodeURIComponent(rawUrl);
+      for (const source of collectQuerySources(decoded)) {
+        parsePairs(source, search);
+      }
+    } catch {
+      // ignore malformed escapes and keep the best-effort raw parse
+    }
+  }
+
+  return search;
+}
+
 function splitBaseUrl(baseUrl: string): { prefix: string; path: string } {
   const match = baseUrl.match(/^(presence:\/\/)(.*)$/);
   if (match) {
@@ -61,19 +125,7 @@ export function parsePresenceLinkUrl(rawUrl: string): LinkCompletionEnvelope | n
     const trimmed = rawUrl.trim();
     if (!trimmed) return null;
 
-    const queryIndex = trimmed.indexOf("?");
-    if (queryIndex === -1) return null;
-
-    const query = trimmed.slice(queryIndex + 1);
-    const search = new Map<string, string>();
-
-    for (const pair of query.split("&")) {
-      if (!pair) continue;
-      const [rawKey, ...rest] = pair.split("=");
-      const rawValue = rest.join("=");
-      search.set(decodeParam(rawKey), decodeParam(rawValue ?? ""));
-    }
-
+    const search = parseUrlToMap(trimmed);
     const sessionId = search.get("session_id");
     if (!sessionId) return null;
 
