@@ -25,6 +25,7 @@ import {
   rewriteLinkSessionForPublicBase,
 } from "../api.js";
 import { InMemoryLinkageStore, FileSystemLinkageStore, LinkageStoreCorruptionError, fileLinkageStorePath } from "../linkage.js";
+import { RedisLinkageStore } from "../redis.js";
 import { SqliteLinkageStore, SqlitePersistedNonceStore } from "../sqlite-store.js";
 import { parsePresenceRequest, ParseError } from "../transport.js";
 import { createNonce, generateNonce } from "../nonce.js";
@@ -2109,6 +2110,27 @@ function buildAndroidBody(
       }
     );
     assert.equal(readFileSync(storePath, "utf8"), corrupted);
+  });
+
+  await test("RedisLinkageStore throws LinkageStoreCorruptionError on invalid JSON", async () => {
+    const client = {
+      async get() {
+        return "{not-valid-json";
+      },
+      async set() {
+        return undefined;
+      },
+    };
+
+    const store = new RedisLinkageStore(client, "presence:test:corrupt");
+    await assert.rejects(
+      () => store.getLinkSession("plink_missing"),
+      (error: unknown) => {
+        assert.ok(error instanceof LinkageStoreCorruptionError);
+        assert.match((error as Error).message, /invalid JSON/i);
+        return true;
+      }
+    );
   });
 
   await test("FileSystemLinkageStore serializes cross-instance mutations against the same file", async () => {

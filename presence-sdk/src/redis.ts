@@ -9,6 +9,7 @@ import type {
   PendingProofRequestStatus,
   ListAuditEventsFilter,
 } from "./types.js";
+import { LinkageStoreCorruptionError } from "./linkage.js";
 
 interface RedisLinkageStoreData {
   sessions: Record<string, LinkSession>;
@@ -172,8 +173,11 @@ export class RedisLinkageStore implements LinkageStore {
         devices: parsed.devices ?? {},
         auditEvents: parsed.auditEvents ?? [],
       };
-    } catch {
-      return { sessions: {}, bindings: {}, pendingProofRequests: {}, devices: {}, auditEvents: [] };
+    } catch (error) {
+      throw new LinkageStoreCorruptionError(
+        this.key,
+        `Redis linkage store at key ${this.key} contains invalid JSON and was not auto-reset: ${error instanceof Error ? error.message : String(error)}`
+      );
     }
   }
 }

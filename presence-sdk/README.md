@@ -348,6 +348,7 @@ interface LinkageStore {
 Included adapters:
 - `InMemoryLinkageStore` — tests/dev only
 - `FileSystemLinkageStore` — reference persistent adapter backed by JSON on disk
+- `SqliteLinkageStore` — SQLite-first durable adapter for single-team / self-hosted deployments; the current recommended persistence path when you want stronger local durability without a larger DB stack
 - `RedisLinkageStore` — reference adapter for shared backend state using a minimal Redis client contract
 
 `FileSystemLinkageStore` is not meant as a final production DB, but it demonstrates the persistence contract and recovery/audit shapes without staying in-memory.
@@ -447,6 +448,15 @@ Minimal reference model in this phase:
 7. Later, when the service needs PASS for a linked account, backend either:
    - calls `createLinkedProofRequest()` and returns a normalized `/presence/linked-accounts/:accountId/nonce` response containing a fresh nonce plus verify/status metadata
    - or calls `createPendingProofRequest()` and exposes the pending proof request endpoints for app-open hydration
+
+### Important TTL caveat for pending proof requests
+
+Pending proof requests are server-side durable request records, but the proof challenge they rely on is still bounded by the nonce TTL (default ~5 minutes in the reference stack unless you configure otherwise).
+
+That means:
+- do **not** treat a pending proof request as an indefinitely valid proof challenge
+- if the user responds after nonce expiry, the request should be treated as expired/retry-required rather than silently reused
+- product UX should be prepared to mint a fresh request when a pending request ages out
 8. Mobile submits PASS to `verifyLinkedAccountApiUrl` for linked nonce flows or to `/presence/pending-proof-requests/:requestId/respond` for pending-request flows.
 9. Mobile may still retry failed linked PASS submissions or pending request hydration on foreground reopen or background wake as best-effort catch-up. Foreground app-open hydration remains the canonical recovery path; wake delivery is optional.
 10. Service calls `completeLinkSession()`, `verifyLinkedAccount()`, `respondToPendingProofRequest()`, or `getLinkedAccountReadiness()` and returns a normalized linked/recovery/readiness payload.

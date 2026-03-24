@@ -18,6 +18,15 @@ In practice this maps to:
 6. Presence generates fresh proof bound to request nonce.
 7. Server verifies it and updates authoritative readiness (`POST /presence/pending-proof-requests/:requestId/respond`).
 
+### Important TTL caveat
+
+Pending proof requests are durable server-side request records, but the proof challenge nonce is still short-lived.
+In the reference stack, that usually means roughly **5 minutes** unless you deliberately change nonce policy.
+
+Practical implication:
+- a pending request should be treated as **"respond soon or reissue"**, not as an indefinitely valid proof ticket
+- if the user opens Presence after the nonce aged out, your service should mint a fresh request rather than assume the old one can still complete
+
 This is also the path we use as the recommended integration standard.
 
 Push/APNs is not part of the canonical path. It is optional and experimental
@@ -132,6 +141,24 @@ For the server-local path map:
 - Server-internal routes remain `/presence/*`.
 - Public links and trust checks should remain aligned to `PUBLIC_BASE_URL` + `/presence`.
 - Don’t mix `ROUTE_BASE_PATH` into `allowed_url_prefixes`; keep trust prefixes on the public API base that mobile receives.
+
+## Flow semantics (initial_link / reauth / relink / recovery)
+
+The current production intent is:
+
+- `initial_link`: first bind of this service/account to a device
+- `reauth`: same linked device proving again for a linked account
+- `relink`: replacing or re-establishing a binding after device/account mismatch or explicit replacement flow
+- `recovery`: user/operator recovery path after unlink, revoke, or mismatch handling
+
+Important runtime rule:
+- explicit non-reauth flow is authoritative
+- if a link/session payload explicitly says `initial_link`, Presence should not silently reuse existing linked-binding state and drift into linked verify behavior
+- in the hardened production path, explicit `initial_link` also suppresses `bindingHint` in prove/completion routing so first-link semantics stay clean
+
+Legacy note:
+- older payloads that omit `flow` entirely may still require compatibility handling
+- when debugging modern mobile behavior, prefer explicit `flow` values and treat them as the canonical contract
 
 ## Identity model (serviceId / serviceDomain / public URL)
 

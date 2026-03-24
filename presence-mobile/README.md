@@ -20,6 +20,7 @@ Phase 4 extends the persistent linkage model on device with:
 - local recovery markers for binding mismatch or re-auth requirement
 - deeplink parsing / generation helpers for link completion
 - a reusable `ConnectionFlowScreen` that walks through service request -> QR/deeplink -> device proof submission -> server completion
+  - this is a **reference/demo screen**, useful for debugging and integration exploration, but it is **not** the canonical production runtime proof path
 - direct `submitLinkedBindingProof()` support for linked-service PASS submission
 - richer `link_context` routing metadata for initial link, re-auth, relink, and recovery
 - explicit local-calendar-day PASS evaluation semantics for BPM + steps
