@@ -23,6 +23,15 @@ The repo is currently tuned for a **public npm release + self-hosted reference s
 
 Current platform scope: **iOS-first** for client runtime.
 
+## Current release-prep note
+
+As of `e455b40`, the repo includes the latest hardening pass for the costly next TestFlight cycle:
+- stronger mobile deeplink trust-field preservation for fresh/new-device initial link
+- explicit `flow=initial_link` protection so existing binding state does not silently reroute into linked verify
+- compact app-side branch diagnostics to make TestFlight failures explainable from logs
+
+The immediate next validation target is a **new TestFlight build** using this code, with fresh/new-phone initial install state treated as the canonical baseline.
+
 Package docs:
 - `presence-verifier/README.md`
 - `presence-sdk/README.md`

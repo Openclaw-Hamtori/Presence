@@ -1,6 +1,6 @@
 # Presence Next-Stage Architecture & Roadmap (Post-Stabilization)
 
-_Last updated: 2026-03-22_
+_Last updated: 2026-03-24_
 
 ## Scope and framing
 
@@ -17,6 +17,15 @@ This is a design/implementation plan document for what to build next, not a spec
 ---
 
 ## Current state summary
+
+### Immediate release-prep note (2026-03-24)
+
+The next-stage roadmap below still stands, but there is one short-cycle release-prep item in front of it:
+
+- The team reproduced a **real multi-device initial-link bug** during TestFlight/live validation.
+- That bug has now been hardened locally in the app/server/SDK stack and pushed in commit `e455b40`.
+- Before resuming broader next-stage work, the current priority is to **upload a new TestFlight build and revalidate the fresh/new-device initial-link baseline**.
+- Treat this as a release-quality correctness gate, not a roadmap change.
 
 What is already in the reference stack as of this writing:
 

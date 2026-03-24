@@ -1,6 +1,6 @@
 # Presence status / closeout (after latest stabilization cycle)
 
-_Last updated: 2026-03-23_
+_Last updated: 2026-03-24_
 
 ## 1) Current canonical flow (what is intended default)
 - `link once -> stay linked -> service requests PASS -> user opens Presence -> pending request hydrates/nonce -> user submits fresh proof -> server verifies and stores authoritative readiness`
@@ -46,12 +46,24 @@ _Last updated: 2026-03-23_
 - **File-backed linkage store** in `presence-sdk` remains functional and hardened, but not the preferred long-term production store (`docs/presence-known-limitations.md`, `docs/archive/projects/presence-sqlite-design-2026-03-21.md`).
 - **Local measurement PASS** is not equivalent to server-access PASS unless verified flow completes.
 
-## 4) Remaining follow-ups / backlog
-- **Phase 2 is fully closed.** The final real-device happy-path replay of pending-proof `respond` succeeded on live server, and a fresh latest-deploy clean retest also succeeded after authoritative unlink → relink → new request.
+## 4) Current release-prep status / remaining follow-ups
+- **Phase 2 remains closed.** The canonical server-authoritative PASS flow is still considered stabilized and previously revalidated on live server + real device.
   - Evidence is tracked in:
     - `docs/archive/projects/presence-pending-proof-respond-live-validation-2026-03-23.md`
     - `docs/archive/projects/presence-phase2-closeout-2026-03-23.md`
     - `docs/presence-live-retest-reset-playbook.md`
+- **A new multi-device initial-link bug was then reproduced on TestFlight/live validation and is now addressed in local/app code plus server/SDK trust guards.**
+  - Fresh/new-device symptom: same link session could lose `service_domain` / `status_url` and fail with `ERR_SERVICE_TRUST_INVALID`.
+  - Existing-device symptom: `flow=initial_link` could still drift toward linked verify behavior when prior binding state existed.
+  - Current hardening status (commit `e455b40`):
+    - deeplink parsing now handles query + fragment + percent-encoded payloads more defensively
+    - explicit non-reauth flow (`initial_link`, `relink`, `recovery`, malformed explicit flow) no longer auto-routes into linked verify
+    - explicit `initial_link` now suppresses `bindingHint` in the production prove/completion path
+    - app-level branch diagnostics now log whether submit chose `linked_verify` or `initial_link_prove`
+    - regression tests cover fresh initial-link trust-field preservation and existing-binding + explicit `initial_link` routing
+- **Current gate before next closeout:** upload a new TestFlight build containing the 2026-03-24 hardening pass, then revalidate on real devices.
+  - Highest-priority validation baseline is now **fresh/new-phone initial install state**.
+  - Production-path validation should be used as the source of truth; `ConnectionFlowScreen` is useful for demos/debugging but is not the canonical runtime proof path.
 - Finish **reliable APNs live delivery path** only if push is revisited as an optional wake-path. It is not part of the canonical correctness path.
 - Consider upgrading the live server runtime to a supported Node version (`>=20`) because deployment currently emitted `EBADENGINE` warnings for `@peculiar/x509` and `better-sqlite3` under Node `v18.19.1`, even though the service restarted successfully.
 - Repo-publication hygiene remains a separate follow-up track:
