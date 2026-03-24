@@ -571,6 +571,31 @@ function buildAndroidBody(
     assert.equal(session.completion?.verifyLinkedAccountApiUrl, "/presence/linked-accounts/acct-1/verify");
   });
 
+  await test("hydrateLinkSession() shifts nonce freshness window to hydration", async () => {
+    const client = new PresenceClient({ silent: true, serviceId: "svc" });
+
+    const { session } = await client.createLinkSession({ serviceId: "svc", accountId: "acct-hydrate" });
+    const issuedAtCreation = session.requestedAt;
+    assert.equal(issuedAtCreation, 0);
+    const managed = (client as unknown as { managedNonces: { nonceStore: { isValid: (nonce: string, now: number) => Promise<boolean> } } }).managedNonces;
+    assert.equal(await managed.nonceStore.isValid(session.issuedNonce, Math.floor(Date.now() / 1000)), false);
+
+    const hydrated = await client.hydrateLinkSession({ sessionId: session.id });
+    if (!hydrated) {
+      throw new Error("expected hydrated session");
+    }
+    assert.ok(hydrated.requestedAt > 0);
+    assert.ok(hydrated.expiresAt > hydrated.requestedAt);
+    assert.equal(await managed.nonceStore.isValid(hydrated.issuedNonce, Math.floor(Date.now() / 1000)), true);
+    assert.equal(await managed.nonceStore.isValid(session.issuedNonce, Math.floor(Date.now() / 1000)), false);
+
+    const secondHydration = await client.hydrateLinkSession({ sessionId: session.id });
+    if (!secondHydration) {
+      throw new Error("expected second hydration");
+    }
+    assert.equal(secondHydration.issuedNonce, hydrated.issuedNonce);
+  });
+
   await test("sqlite-backed LinkageStore persists createLinkSession() and reads session via same store", async () => {
     const dbDir = mkdtempSync(join(tmpdir(), "presence-sqlite-link-session-"));
     const store = new SqliteLinkageStore({
@@ -611,8 +636,12 @@ function buildAndroidBody(
     const client = new PresenceClient({ silent: true, linkageStore: store, serviceId: "svc" });
 
     try {
-      const { session } = await client.createLinkSession({ serviceId: "svc", accountId: "acct-sqlite-complete" });
-      const attestation = buildAttestation(keys.publicKeyDer, keys.privateKeyDer, session.issuedNonce);
+      const { session: created } = await client.createLinkSession({ serviceId: "svc", accountId: "acct-sqlite-complete" });
+      const hydrated = await client.hydrateLinkSession({ sessionId: created.id });
+      if (!hydrated) {
+        throw new Error("expected session to hydrate");
+      }
+      const attestation = buildAttestation(keys.publicKeyDer, keys.privateKeyDer, hydrated.issuedNonce);
       const body = buildAndroidBody(attestation, keys.publicKeyDer, undefined, true);
       const iss = deriveIss(keys.publicKeyDer);
 
@@ -626,15 +655,15 @@ function buildAndroidBody(
         human: true as const,
         pass: true as const,
         signals: ["heart_rate", "steps"] as const,
-        nonce: session.issuedNonce,
+        nonce: hydrated.issuedNonce,
       });
       (client as unknown as { verify: typeof verifyStub }).verify = verifyStub;
 
-      const result = await client.completeLinkSession({ sessionId: session.id, body });
+      const result = await client.completeLinkSession({ sessionId: created.id, body });
       assert.equal(result.verification.verified, true);
       assert.equal(result.session.status, "consumed");
 
-      const persistedSession = await store.getLinkSession(session.id);
+      const persistedSession = await store.getLinkSession(created.id);
       if (!persistedSession) {
         throw new Error("expected completed session");
       }
@@ -1728,10 +1757,14 @@ function buildAndroidBody(
   await test("completeLinkSession() rehydrates link-session nonce from persisted session", async () => {
     const store = new InMemoryLinkageStore();
     const bootstrap = new PresenceClient({ silent: true, linkageStore: store, serviceId: "svc" });
-    const { session } = await bootstrap.createLinkSession({ serviceId: "svc", accountId: "acct-link-restart" });
+    const { session: created } = await bootstrap.createLinkSession({ serviceId: "svc", accountId: "acct-link-restart" });
+    const hydrated = await bootstrap.hydrateLinkSession({ sessionId: created.id });
+    if (!hydrated) {
+      throw new Error("expected session to hydrate");
+    }
 
     const body = buildAndroidBody(
-      buildAttestation(keys.publicKeyDer, keys.privateKeyDer, session.issuedNonce),
+      buildAttestation(keys.publicKeyDer, keys.privateKeyDer, hydrated.issuedNonce),
       keys.publicKeyDer,
       undefined,
       true
@@ -1740,7 +1773,7 @@ function buildAndroidBody(
 
     const restarted = new PresenceClient({ silent: true, linkageStore: store, serviceId: "svc" });
     const restartedNonceStore = (restarted as unknown as { managedNonces: { nonceStore: { isValid: (nonce: string, now: number) => Promise<boolean> } } }).managedNonces;
-    const beforeValid = await restartedNonceStore.nonceStore.isValid(session.issuedNonce, Math.floor(Date.now() / 1000));
+    const beforeValid = await restartedNonceStore.nonceStore.isValid(hydrated.issuedNonce, Math.floor(Date.now() / 1000));
     assert.equal(beforeValid, false);
 
     const verifyStub = async () => ({
@@ -1753,13 +1786,13 @@ function buildAndroidBody(
       human: true as const,
       pass: true as const,
       signals: ["heart_rate", "steps"] as const,
-      nonce: session.issuedNonce,
+      nonce: hydrated.issuedNonce,
     });
     (restarted as unknown as { verify: typeof verifyStub }).verify = verifyStub;
 
-    const result = await restarted.completeLinkSession({ sessionId: session.id, body });
+    const result = await restarted.completeLinkSession({ sessionId: created.id, body });
     assert.equal(result.verification.verified, true);
-    const afterValid = await restartedNonceStore.nonceStore.isValid(session.issuedNonce, Math.floor(Date.now() / 1000));
+    const afterValid = await restartedNonceStore.nonceStore.isValid(hydrated.issuedNonce, Math.floor(Date.now() / 1000));
     assert.equal(afterValid, true);
   });
 
@@ -1770,9 +1803,13 @@ function buildAndroidBody(
 
     try {
       const bootstrap = new PresenceClient({ silent: true, linkageStore: store, serviceId: "svc" });
-      const { session } = await bootstrap.createLinkSession({ serviceId: "svc", accountId: "acct-sqlite-restart" });
+      const { session: created } = await bootstrap.createLinkSession({ serviceId: "svc", accountId: "acct-sqlite-restart" });
+      const hydrated = await bootstrap.hydrateLinkSession({ sessionId: created.id });
+      if (!hydrated) {
+        throw new Error("expected session to hydrate");
+      }
       const body = buildAndroidBody(
-        buildAttestation(keys.publicKeyDer, keys.privateKeyDer, session.issuedNonce),
+        buildAttestation(keys.publicKeyDer, keys.privateKeyDer, hydrated.issuedNonce),
         keys.publicKeyDer,
         undefined,
         true
@@ -1781,7 +1818,7 @@ function buildAndroidBody(
 
       const restarted = new PresenceClient({ silent: true, linkageStore: store, serviceId: "svc" });
       const restartedNonceStore = (restarted as unknown as { managedNonces: { nonceStore: { isValid: (nonce: string, now: number) => Promise<boolean> } } }).managedNonces;
-      const beforeValid = await restartedNonceStore.nonceStore.isValid(session.issuedNonce, Math.floor(Date.now() / 1000));
+      const beforeValid = await restartedNonceStore.nonceStore.isValid(hydrated.issuedNonce, Math.floor(Date.now() / 1000));
       assert.equal(beforeValid, false);
 
       const verifyStub = async () => ({
@@ -1794,13 +1831,13 @@ function buildAndroidBody(
         human: true as const,
         pass: true as const,
         signals: ["heart_rate", "steps"] as const,
-        nonce: session.issuedNonce,
+        nonce: hydrated.issuedNonce,
       });
       (restarted as unknown as { verify: typeof verifyStub }).verify = verifyStub;
 
-      const result = await restarted.completeLinkSession({ sessionId: session.id, body });
+      const result = await restarted.completeLinkSession({ sessionId: created.id, body });
       assert.equal(result.verification.verified, true);
-      const afterValid = await restartedNonceStore.nonceStore.isValid(session.issuedNonce, Math.floor(Date.now() / 1000));
+      const afterValid = await restartedNonceStore.nonceStore.isValid(hydrated.issuedNonce, Math.floor(Date.now() / 1000));
       assert.equal(afterValid, true);
     } finally {
       rmSync(dbDir, { recursive: true, force: true });
@@ -1810,8 +1847,12 @@ function buildAndroidBody(
   await test("completeLinkSession() persists Android platform metadata from parsed request", async () => {
     const store = new InMemoryLinkageStore();
     const client = new PresenceClient({ silent: true, linkageStore: store, serviceId: "svc" });
-    const { session } = await client.createLinkSession({ serviceId: "svc", accountId: "acct-android" });
-    const attestation = buildAttestation(keys.publicKeyDer, keys.privateKeyDer, session.issuedNonce);
+    const { session: created } = await client.createLinkSession({ serviceId: "svc", accountId: "acct-android" });
+    const hydrated = await client.hydrateLinkSession({ sessionId: created.id });
+    if (!hydrated) {
+      throw new Error("expected session to hydrate");
+    }
+    const attestation = buildAttestation(keys.publicKeyDer, keys.privateKeyDer, hydrated.issuedNonce);
     const body = buildAndroidBody(attestation, keys.publicKeyDer, undefined, true);
     const iss = deriveIss(keys.publicKeyDer);
     const verifyStub = async () => ({
@@ -1824,11 +1865,11 @@ function buildAndroidBody(
       human: true as const,
       pass: true as const,
       signals: ["heart_rate", "steps"] as const,
-      nonce: session.issuedNonce,
+      nonce: hydrated.issuedNonce,
     });
     (client as unknown as { verify: typeof verifyStub }).verify = verifyStub;
 
-    const result = await client.completeLinkSession({ sessionId: session.id, body });
+    const result = await client.completeLinkSession({ sessionId: created.id, body });
     assert.equal(result.verification.verified, true);
     const device = await store.getLinkedDevice(iss);
     assert.equal(device?.platform, "android");

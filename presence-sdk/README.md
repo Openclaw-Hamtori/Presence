@@ -225,7 +225,7 @@ The recommended authority is the backend state maintained through `presence-sdk`
 
 ### Lifecycle
 
-1. Service creates a **link session** and issues a nonce.
+1. Service creates a **link session** and generates a short pointer (`session.id`) and static nonce seed for durable storage.
 2. Product UI renders a **QR code** or **deeplink** derived from `session.completion`.
 3. Mobile app proves Presence once for that session.
 4. SDK verifies the proof and persists:
@@ -436,9 +436,8 @@ Minimal reference model in this phase:
 
 4. Mobile app opens the deeplink and extracts:
    - short pointer: `s` (session id)
-   - optional `service_id` / `service_domain` hints
-
-5. Mobile app hydrates full request metadata from `GET /presence/link-sessions/:sessionId` and reconstructs a completion envelope for trust/submit flow:
+   - optional `service_domain` hint
+5. Mobile app hydrates full request metadata from `GET /presence/link-sessions/:sessionId`, reconstructs a completion envelope for trust/submit flow, and issues/refreshes the nonce timestamp:
    - includes `nonce_url`, `verify_url`, `pending_url`, `status_url`, and `fallbackCode`
    - validates hydrated sync URLs against `/.well-known/presence.json` (if available)
    - may infer trust host from hydrated sync URLs when explicit `service_domain` is absent
@@ -483,7 +482,7 @@ Do not assume that a background-capable mobile app will keep PASS ready on a fix
 
 ## Trust metadata checklist
 
-If you emit `service_domain`, `nonce_url`, `verify_url`, or `pending_url` in deeplinks or session completion metadata:
+If you emit `nonce_url`, `verify_url`, `status_url`, or `pending_url` in session completion/session-hydrated metadata:
 
 - `https://{service_domain}/.well-known/presence.json` must be publicly reachable over HTTPS
 - `service_id` in the well-known JSON must match the emitted `service_id`

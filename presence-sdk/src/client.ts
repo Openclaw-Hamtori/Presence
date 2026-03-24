@@ -50,6 +50,7 @@ import type {
   RegisterDevicePushTokenOptions,
   RegisterDevicePushTokenResult,
   ServiceBinding,
+  LinkSession,
 } from "./types.js";
 import {
   InMemoryLinkageStore,
@@ -231,6 +232,44 @@ export class PresenceClient {
     this.nonceIssuer.issue(session.issuedNonce, issuedAt);
   }
 
+  private async ensureLinkSessionNonceIssuedWithStore(
+    store: LinkageStore,
+    session: LinkSession,
+    now = Math.floor(Date.now() / 1000)
+  ): Promise<LinkSession> {
+    if (session.status !== "pending" || !session.issuedNonce) {
+      return session;
+    }
+
+    const ttlSeconds = this.config.nonceTtlSeconds;
+    if (session.requestedAt > 0 && session.expiresAt > now) {
+      this.nonceIssuer.issue(session.issuedNonce, session.requestedAt);
+      return session;
+    }
+
+    const nonce = createNonce({ ttlSeconds });
+    const nextSession: LinkSession = {
+      ...session,
+      issuedNonce: nonce.value,
+      requestedAt: nonce.issuedAt,
+      expiresAt: nonce.expiresAt,
+    };
+
+    this.nonceIssuer.issue(nextSession.issuedNonce, nextSession.requestedAt);
+    await store.saveLinkSession(nextSession);
+    return nextSession;
+  }
+
+  async hydrateLinkSession(params: { sessionId: string }): Promise<LinkSession | null> {
+    return this.runStoreMutation(async (store) => {
+      const session = await store.getLinkSession(params.sessionId);
+      if (!session) {
+        return null;
+      }
+      return this.ensureLinkSessionNonceIssuedWithStore(store, session);
+    });
+  }
+
   private _checkNonce(attestation: unknown, nonce: string): PresenceVerifyResult | null {
     if (
       typeof attestation === "object" &&
@@ -286,15 +325,16 @@ export class PresenceClient {
     store: LinkageStore,
     options: CreateLinkSessionOptions
   ): Promise<CreateLinkSessionResult> {
-    const nonce = this.generateNonce({ ttlSeconds: options.ttlSeconds ?? this.config.nonceTtlSeconds });
+    const ttlSeconds = options.ttlSeconds ?? this.config.nonceTtlSeconds;
+    const nonce = createNonce({ ttlSeconds });
     const sessionId = randomId("plink");
     const session = {
       id: sessionId,
       serviceId: options.serviceId,
       accountId: options.accountId,
       issuedNonce: nonce.value,
-      requestedAt: nonce.issuedAt,
-      expiresAt: nonce.expiresAt,
+      requestedAt: 0,
+      expiresAt: 0,
       status: "pending" as const,
       relinkOfBindingId: options.relinkOfBindingId,
       recoveryReason: options.recoveryReason,
@@ -307,7 +347,7 @@ export class PresenceClient {
       session.serviceId,
       session.accountId,
       nonce.value,
-      nonce.expiresAt
+      session.expiresAt
     );
     await store.saveLinkSession(session);
     await this.appendAuditWithStore(store, {
@@ -647,8 +687,15 @@ export class PresenceClient {
   }
 
   async completeLinkSession(params: { sessionId: string; body: unknown }): Promise<CompleteLinkSessionResult> {
-    const session = await this.linkageStore.getLinkSession(params.sessionId);
-    if (!session) {
+    const hydratedSession = await this.runStoreMutation(async (store) => {
+      const session = await store.getLinkSession(params.sessionId);
+      if (!session) {
+        return null;
+      }
+      return this.ensureLinkSessionNonceIssuedWithStore(store, session);
+    });
+
+    if (!hydratedSession) {
       return {
         verification: { verified: false, error: "ERR_INVALID_FORMAT", detail: "unknown link session" },
         session: {
@@ -673,15 +720,15 @@ export class PresenceClient {
           error: "ERR_INVALID_FORMAT",
           detail: err instanceof Error ? err.message : "transport parse error",
         },
-        session,
+        session: hydratedSession,
       };
     }
 
-    await this.ensureLinkSessionNonceDurability(session);
+    await this.ensureLinkSessionNonceDurability(hydratedSession);
 
-    const verification = await this.verify(params.body, session.issuedNonce);
+    const verification = await this.verify(params.body, hydratedSession.issuedNonce);
     if (!verification.verified) {
-      return { verification, session };
+      return { verification, session: hydratedSession };
     }
 
     return this.runStoreMutation(async (store) => {

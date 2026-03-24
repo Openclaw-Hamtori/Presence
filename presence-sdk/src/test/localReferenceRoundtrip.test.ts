@@ -382,10 +382,12 @@ async function main() {
     assert.equal(created.ok, true);
     assert.equal(created.session.id, created.completion.sessionId);
 
-    const storedSession = await store.getLinkSession(created.session.id);
-    assert.ok(storedSession?.issuedNonce);
+    const hydrated = await presence.hydrateLinkSession({ sessionId: created.session.id });
+    if (!hydrated) {
+      throw new Error("expected hydrated session");
+    }
 
-    const proofBody = buildAndroidBody(device.publicKeyDer, device.privateKeyDer, storedSession!.issuedNonce);
+    const proofBody = buildAndroidBody(device.publicKeyDer, device.privateKeyDer, hydrated.issuedNonce);
 
     const completeRes = await fetch(`${baseUrl}/presence/link-sessions/${created.session.id}/complete`, {
       method: "POST",

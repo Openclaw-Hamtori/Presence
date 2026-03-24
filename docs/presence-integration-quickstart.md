@@ -269,8 +269,8 @@ Use `rewriteLinkSessionForPublicBase()` before returning session completion meta
 The app then:
 
 1. Opens the session from the deeplink or QR payload.
-2. Evaluates PASS locally.
-3. Produces proof bound to the session nonce.
+2. Calls `GET /presence/link-sessions/:sessionId` to hydrate full completion metadata and finalize nonce issuance timing.
+3. Evaluates PASS locally and binds proof generation to the hydrated `nonce` in the session metadata.
 4. Posts the proof to `POST /presence/link-sessions/:sessionId/complete`.
 
 Your backend completes the link with:
@@ -407,7 +407,7 @@ Minimum contract:
 
 Backend rules:
 
-- `service_id` must exactly match the `service_id` you emit in deeplinks, QR payloads, and session metadata.
+- `service_id` must exactly match the `service_id` associated with the session metadata you hand to the hydrated session payload.
 - `allowed_url_prefixes` must cover every public absolute `nonce_url`, `verify_url`, `pending_url`, and pending-request respond/status URL handed to mobile.
 - `nonce_url`, `verify_url`, and `status_url` must already be public absolute URLs before you expose them to mobile; backend-relative paths are rejected at the mobile boundary.
 - if you expose pending proof request URLs, prefer a broad prefix like `https://presence.example.com/presence` so both linked-account and pending-request routes stay trusted under one well-known entry.

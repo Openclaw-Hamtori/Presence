@@ -678,7 +678,9 @@ async function main() {
 
       const sessionMatch = requestPath.match(/^\/presence\/link-sessions\/([^/]+)$/);
       if (method === "GET" && sessionMatch) {
-        const session = await presence.linkageStore.getLinkSession(decodePathParam(sessionMatch[1], "sessionId"));
+        const session = await presence.hydrateLinkSession({
+          sessionId: decodePathParam(sessionMatch[1], "sessionId"),
+        });
         if (!session) {
           send(404, { ok: false, code: "ERR_SESSION_NOT_FOUND" });
           return;

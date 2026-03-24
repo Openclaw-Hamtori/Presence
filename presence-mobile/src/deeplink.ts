@@ -75,7 +75,7 @@ function parseUrlToMap(rawUrl: string): Map<string, string> {
     parsePairs(source, search);
   }
 
-  if (!search.has("session_id") && rawUrl.includes("%3F")) {
+  if (!search.has("s") && rawUrl.includes("%3F")) {
     try {
       const decoded = decodeURIComponent(rawUrl);
       for (const source of collectQuerySources(decoded)) {
@@ -112,25 +112,24 @@ export function parsePresenceLinkUrl(rawUrl: string): LinkCompletionEnvelope | n
     if (!trimmed) return null;
 
     const search = parseUrlToMap(trimmed);
-    const sessionId = search.get("s") || search.get("session_id");
+    const sessionId = search.get("s");
     if (!sessionId) return null;
 
-    const serviceDomain = search.get("service_domain") ?? undefined;
     return {
       sessionId,
-      serviceId: search.get("service_id") ?? undefined,
-      serviceDomain,
-      accountId: search.get("account_id") ?? undefined,
-      bindingId: search.get("binding_id") ?? undefined,
-      flow: (search.get("flow") as LinkFlow | undefined) ?? undefined,
-      method: (search.get("method") as LinkCompletionMethod | undefined) ?? undefined,
-      nonce: search.get("nonce") ?? undefined,
-      returnUrl: search.get("return_url") ?? undefined,
-      code: search.get("code") ?? undefined,
-      nonceUrl: search.get("nonce_url") ?? undefined,
-      verifyUrl: search.get("verify_url") ?? undefined,
-      statusUrl: search.get("status_url") ?? undefined,
-      pendingRequestsUrl: search.get("pending_url") ?? undefined,
+      serviceDomain: search.get("service_domain") ?? undefined,
+      flow: undefined,
+      method: undefined,
+      nonce: undefined,
+      returnUrl: undefined,
+      code: undefined,
+      nonceUrl: undefined,
+      verifyUrl: undefined,
+      statusUrl: undefined,
+      pendingRequestsUrl: undefined,
+      serviceId: undefined,
+      accountId: undefined,
+      bindingId: undefined,
     };
   } catch {
     return null;
