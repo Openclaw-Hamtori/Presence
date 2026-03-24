@@ -2203,9 +2203,6 @@ export default function App() {
           <TouchableOpacity style={styles.bottomBarButton} onPress={() => setShowService(true)} activeOpacity={0.85}>
             <Text style={styles.bottomBarButtonText}>LINKED SERVICES</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.bottomBarButton} onPress={() => setShowLogs(true)} activeOpacity={0.85}>
-            <Text style={styles.bottomBarButtonText}>DEBUG LOGS</Text>
-          </TouchableOpacity>
         </View>
 
         <Modal visible={showService} transparent animationType="fade" onRequestClose={() => setShowService(false)}>
@@ -2246,7 +2243,7 @@ export default function App() {
                   >
                     {recentServiceBindings.map((binding) => (
                       <View key={binding.bindingId} style={styles.bindingCard}>
-                        <KeyValue label="service" value={binding.serviceId} />
+                        <KeyValue label="service" value={getBindingServiceDisplay(binding)} />
                         <KeyValue label="account" value={binding.accountId ?? "-"} />
                         <KeyValue
                           label="connected"
@@ -2341,39 +2338,49 @@ export default function App() {
                 <ScrollView contentContainerStyle={styles.connectionScrollContent} keyboardShouldPersistTaps="handled">
                   <View style={styles.modalCard}>
                   <View style={styles.modalHeader}>
-                    <Text style={styles.sectionTitle}>Link Or Prove</Text>
+                    <Text style={styles.sectionTitle}>Connect</Text>
                     <TouchableOpacity onPress={() => setShowConnection(false)} activeOpacity={0.85}>
                       <Text style={styles.modalClose}>Close</Text>
                     </TouchableOpacity>
                   </View>
 
+                  {scannerSupported ? (
+                    <TouchableOpacity
+                      style={[styles.scanQrButton, scannerBusy && styles.buttonDisabled]}
+                      onPress={handleScanQr}
+                      disabled={scannerBusy}
+                      activeOpacity={0.85}
+                    >
+                      <Text style={styles.scanQrButtonText}>{scannerBusy ? "Preparing…" : "Scan QR"}</Text>
+                    </TouchableOpacity>
+                  ) : (
+                    <View style={styles.connectionOptions}>
+                      <View style={styles.optionPillMuted}>
+                        <Text style={styles.optionPillText}>Requires a real iPhone</Text>
+                      </View>
+                    </View>
+                  )}
+
                   <View style={styles.connectionOptions}>
                     <View style={styles.optionCard}>
-                      <Text style={styles.optionIcon}>⌗</Text>
-                      <Text style={styles.optionTitle}>Scan QR</Text>
-                      <Text style={styles.optionBody}>
-                        {scannerSupported ? "Scan a service QR to link Presence or answer a proof request." : "Direct scanning is not available on this device. Use the link option below."}
-                      </Text>
-                      {scannerSupported ? (
-                        <TouchableOpacity
-                          style={[styles.secondaryButton, scannerBusy && styles.buttonDisabled]}
-                          onPress={handleScanQr}
-                          disabled={scannerBusy}
-                          activeOpacity={0.85}
-                        >
-                          <Text style={styles.secondaryButtonText}>{scannerBusy ? "Preparing…" : "Scan QR"}</Text>
-                        </TouchableOpacity>
-                      ) : (
-                        <View style={styles.optionPillMuted}>
-                          <Text style={styles.optionPillText}>Requires a real iPhone</Text>
-                        </View>
-                      )}
-                    </View>
-
-                    <View style={styles.optionCard}>
-                      <Text style={styles.optionIcon}>↗</Text>
-                      <Text style={styles.optionTitle}>Open service link</Text>
-                      <Text style={styles.optionBody}>Load a Presence link into this app, then submit proof to connect or answer the request.</Text>
+                      <Text style={styles.optionTitle}>Link Service</Text>
+                      {!openedEnvelope ? (
+                        <TextInput
+                          style={styles.inputInline}
+                          value={rawLink}
+                          onChangeText={(value) => {
+                            setRawLink(value);
+                            setConnectionError(null);
+                            setOpenedEnvelope(null);
+                            setLinkedProofRequestState(null);
+                          }}
+                          placeholder="Paste a presence://link here"
+                          placeholderTextColor={C.subtext}
+                          multiline
+                          autoCapitalize="none"
+                          autoCorrect={false}
+                        />
+                      ) : null}
                     </View>
                   </View>
 
@@ -2420,22 +2427,6 @@ export default function App() {
                     </View>
                   ) : (
                     <>
-                      <TextInput
-                        style={styles.input}
-                        value={rawLink}
-                        onChangeText={(value) => {
-                          setRawLink(value);
-                          setConnectionError(null);
-                          setOpenedEnvelope(null);
-                          setLinkedProofRequestState(null);
-                        }}
-                        placeholder="Paste a presence://link request here"
-                        placeholderTextColor={C.subtext}
-                        multiline
-                        autoCapitalize="none"
-                        autoCorrect={false}
-                      />
-
                       <TouchableOpacity style={styles.primaryActionButton} onPress={handleOpenLink} activeOpacity={0.85}>
                         <Text style={styles.primaryActionButtonText}>Open request</Text>
                       </TouchableOpacity>
@@ -2463,6 +2454,10 @@ export default function App() {
       </View>
     </SafeAreaView>
   );
+}
+
+function getBindingServiceDisplay(binding: ServiceBinding): string {
+  return binding.sync?.serviceDomain?.trim() || binding.serviceId;
 }
 
 function KeyValue({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
@@ -2880,7 +2875,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: C.border,
     padding: 16,
-    gap: 10,
+    gap: 8,
+    minHeight: 108,
+    justifyContent: "space-between",
   },
   optionIcon: {
     color: C.accent,
@@ -2922,6 +2919,23 @@ const styles = StyleSheet.create({
   secondaryButtonText: {
     color: C.accent,
     fontSize: 14,
+    fontWeight: "700",
+  },
+  scanQrButton: {
+    marginHorizontal: 18,
+    marginTop: 4,
+    borderRadius: 16,
+    minHeight: 56,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: C.surfaceSoft,
+    borderWidth: 1,
+    borderColor: C.border,
+    paddingHorizontal: 16,
+  },
+  scanQrButtonText: {
+    color: C.text,
+    fontSize: 15,
     fontWeight: "700",
   },
   ghostButton: {
@@ -2986,7 +3000,7 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   input: {
-    minHeight: 104,
+    minHeight: 78,
     marginHorizontal: 18,
     marginTop: 16,
     borderRadius: 18,
@@ -2994,7 +3008,19 @@ const styles = StyleSheet.create({
     borderColor: C.border,
     backgroundColor: C.surfaceSoft,
     color: C.text,
-    padding: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    textAlignVertical: "top",
+  },
+  inputInline: {
+    minHeight: 78,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: C.border,
+    backgroundColor: C.surfaceSoft,
+    color: C.text,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     textAlignVertical: "top",
   },
   connectionErrorBox: {
