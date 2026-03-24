@@ -23,8 +23,8 @@ This is a design/implementation plan document for what to build next, not a spec
 The next-stage roadmap below still stands, but there is one short-cycle release-prep item in front of it:
 
 - The team reproduced a **real multi-device initial-link bug** during TestFlight/live validation.
-- That bug has now been hardened locally in the app/server/SDK stack and pushed in commit `e455b40`.
-- Before resuming broader next-stage work, the current priority is to **upload a new TestFlight build and revalidate the fresh/new-device initial-link baseline**.
+- That bug has now been hardened in the app/server/SDK stack, and the canonical short-link flow was then revalidated live on real device + live server.
+- Before resuming broader next-stage work, the current priority is to **upload a new TestFlight build containing the full 2026-03-24 hardening pass and revalidate the fresh/new-device initial-link baseline**.
 - Treat this as a release-quality correctness gate, not a roadmap change.
 
 What is already in the reference stack as of this writing:
@@ -39,9 +39,10 @@ What is already in the reference stack as of this writing:
 Current limitations preventing true self-host production credibility:
 
 - Reference persistence is still mostly file-backed (`FileSystemLinkageStore`); durable shared state under concurrency is incomplete.
+- `SqliteLinkageStore` is now the recommended SQLite-first persistence path for single-team/self-hosted deployments, but broader production guidance and ecosystem defaults still need to move more consistently toward it.
 - A `RedisLinkageStore` exists in `presence-sdk` and serializes all entities over a Redis-like client, but it uses a full-blob read/write pattern — no row-level atomicity or transactional nonce safety.
 - Nonce/request lifecycle is not fully decoupled for long-lived reliability across restart/pod churn.
-- `InMemoryTofuStore` was the default in-memory TOFU implementation; for sqlite-first deployments `PresenceClient` can now auto-pick `SqliteTofuStore` when linked via SQLite-backed linkage persistence, preserving Android TOFU across restarts.
+- `InMemoryTofuStore` (from `presence-verifier`) was the default in-memory TOFU implementation; for sqlite-first deployments `PresenceClient` can now auto-pick `SqliteTofuStore` when linked via SQLite-backed linkage persistence, preserving Android TOFU across restarts.
 - Authz/authn boundaries between public app APIs, operator actions, and service requests still need hardening.
 - Operational controls, alerting hooks, and tenant-safe isolation are still lightweight.
 

@@ -90,8 +90,7 @@ If you are trying to understand the full product split, also read:
 ```ts
 import {
   PresenceClient,
-  FileSystemLinkageStore,
-  fileLinkageStorePath,
+  SqliteLinkageStore,
   createCompletionSessionResponse,
   createLinkedProofRequestResponse,
   rewriteLinkSessionForPublicBase,
@@ -112,9 +111,7 @@ const endpointContract = {
 
 const presence = new PresenceClient({
   serviceId: "discord-bot",
-  linkageStore: new FileSystemLinkageStore(
-    fileLinkageStorePath("./var/presence")
-  ),
+  linkageStore: new SqliteLinkageStore("./var/presence.sqlite"),
   iosAppId: "TEAMID.com.example.polapp",
   androidPackageName: "com.example.polapp",
   bindingPolicy: {
@@ -496,7 +493,7 @@ If you emit `nonce_url`, `verify_url`, `status_url`, or `pending_url` in session
 ## Production checklist
 
 - [ ] Replace in-memory nonce handling with a persistent managed store
-- [ ] Replace `InMemoryTofuStore` with a persistent DB-backed implementation
+- [ ] Replace `InMemoryTofuStore` (from `presence-verifier`) with a persistent DB-backed implementation
 - [ ] Replace `FileSystemLinkageStore` with your real DB adapter
 - [ ] Always send explicit top-level `platform`
 - [ ] Set `iosAppId` and/or `androidPackageName`

@@ -52,17 +52,21 @@ _Last updated: 2026-03-24_
     - `docs/archive/projects/presence-pending-proof-respond-live-validation-2026-03-23.md`
     - `docs/archive/projects/presence-phase2-closeout-2026-03-23.md`
     - `docs/presence-live-retest-reset-playbook.md`
-- **A new multi-device initial-link bug was then reproduced on TestFlight/live validation and is now addressed in local/app code plus server/SDK trust guards.**
+- **A new multi-device initial-link bug was then reproduced on TestFlight/live validation and is now addressed in the current app/server/SDK stack.**
   - Fresh/new-device symptom: same link session could lose `service_domain` / `status_url` and fail with `ERR_SERVICE_TRUST_INVALID`.
   - Existing-device symptom: `flow=initial_link` could still drift toward linked verify behavior when prior binding state existed.
-  - Current hardening status (commit `e455b40`):
-    - deeplink parsing now handles query + fragment + percent-encoded payloads more defensively
-    - explicit non-reauth flow (`initial_link`, `relink`, `recovery`, malformed explicit flow) no longer auto-routes into linked verify
-    - explicit `initial_link` now suppresses `bindingHint` in the production prove/completion path
-    - app-level branch diagnostics now log whether submit chose `linked_verify` or `initial_link_prove`
-    - regression tests cover fresh initial-link trust-field preservation and existing-binding + explicit `initial_link` routing
-- **Current gate before next closeout:** upload a new TestFlight build containing the 2026-03-24 hardening pass, then revalidate on real devices.
-  - Highest-priority validation baseline is now **fresh/new-phone initial install state**.
+  - The 2026-03-24 hardening/closeout pass now includes:
+    - deeplink parsing that handles query + fragment + percent-encoded payloads more defensively (`e455b40`)
+    - explicit non-reauth flow (`initial_link`, `relink`, `recovery`, malformed explicit flow) no longer auto-routes into linked verify (`e455b40`)
+    - explicit `initial_link` suppression of `bindingHint` in the production prove/completion path (`e455b40`)
+    - canonical short-link session lookup fix (`9bcdc00`)
+    - well-known API-base selection fix (`c25af34`)
+    - well-known fallback diagnostics (`09536bb`)
+    - Hermes-safe `.well-known` prefix resolution for on-device hydration (`1a02441`)
+    - final connect-modal / linked-service UI polish (`9df2684`)
+  - Real-device/live-server validation now covers canonical short-link hydration, initial link, fresh request, PASS verification, unlink, and stale-card removal.
+- **Current gate before next closeout:** upload a new TestFlight build containing the full 2026-03-24 hardening pass, then revalidate on real devices.
+  - Highest-priority validation baseline remains **fresh/new-phone initial install state**.
   - Production-path validation should be used as the source of truth; `ConnectionFlowScreen` is useful for demos/debugging but is not the canonical runtime proof path.
 - Finish **reliable APNs live delivery path** only if push is revisited as an optional wake-path. It is not part of the canonical correctness path.
 - Consider upgrading the live server runtime to a supported Node version (`>=20`) because deployment currently emitted `EBADENGINE` warnings for `@peculiar/x509` and `better-sqlite3` under Node `v18.19.1`, even though the service restarted successfully.
@@ -72,6 +76,7 @@ _Last updated: 2026-03-24_
   - clarify reference/demo boundaries
   - tighten ignore patterns for generated/local artifacts
 - `SqliteLinkageStore` now uses a versioned schema migration path with `_schema_migrations` and explicit schema setup, matching the verifier's migration style while keeping SQLite-first single-team ergonomics.
+- `SqliteTofuStore` lives in `presence-verifier`; sqlite-backed `PresenceClient` wiring can auto-pick it alongside SQLite linkage persistence, but it is not a `presence-sdk` store class.
 
 ## 5) Notes for future reviewers/operators
 - Single source of truth for deployable server runtime should stay in-repo (`presence-happy-path/app/server.cjs`) and be installed via tarball+restart, not manual drift edits on VPS.
