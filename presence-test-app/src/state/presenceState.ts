@@ -540,8 +540,14 @@ function normalizeState(state: PresenceState): PresenceState {
   };
 }
 
+const ACTIVE_BINDING_STATUSES: Set<ServiceBinding["status"]> = new Set([
+  "linked",
+  "recovery_pending",
+  "reauth_required",
+]);
+
 export function isActiveBinding(binding: ServiceBinding): boolean {
-  return binding.status !== "unlinked" && binding.status !== "revoked";
+  return ACTIVE_BINDING_STATUSES.has(binding.status);
 }
 
 export function suppressShadowedLegacyUnsyncableBindings(bindings: ServiceBinding[]): ServiceBinding[] {

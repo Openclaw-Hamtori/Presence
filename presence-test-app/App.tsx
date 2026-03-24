@@ -247,6 +247,28 @@ interface CompletionBindingRecord {
   lastVerifiedAt?: number;
 }
 
+const normalizeServiceBindingStatus = (status?: string): ServiceBinding["status"] => {
+  switch (status?.trim().toLowerCase()) {
+    case "linked":
+      return "linked";
+    case "unlinked":
+    case "binding_unlinked":
+      return "unlinked";
+    case "revoked":
+      return "revoked";
+    case "reauth_required":
+    case "reauth-required":
+    case "reauth":
+      return "reauth_required";
+    case "recovery_pending":
+    case "recovery-pending":
+    case "pending_recovery":
+      return "recovery_pending";
+    default:
+      return "unlinked";
+  }
+}
+
 interface LinkSessionLookupResponse {
   ok: true;
   session: {
@@ -555,7 +577,7 @@ function toServiceBindingFromRecord(
     linkedDeviceIss: binding.deviceIss,
     linkedAt: binding.lastLinkedAt ?? binding.createdAt ?? binding.updatedAt ?? Math.floor(Date.now() / 1000),
     lastVerifiedAt: binding.lastVerifiedAt,
-    status: binding.status as ServiceBinding["status"],
+    status: normalizeServiceBindingStatus(binding.status),
     sync: normalizeBindingSyncMetadata(sync),
   }, PRESENCE_DEMO_API_BASE_URL);
 }
@@ -1006,7 +1028,7 @@ export default function App() {
             linkedDeviceIss: binding.deviceIss,
             linkedAt: binding.lastLinkedAt ?? binding.createdAt ?? binding.updatedAt ?? Math.floor(Date.now() / 1000),
             lastVerifiedAt: binding.lastVerifiedAt,
-            status: binding.status,
+            status: normalizeServiceBindingStatus(binding.status),
           }, PRESENCE_DEMO_API_BASE_URL)),
           localBindings,
           deviceIss

@@ -1,8 +1,14 @@
 import { mergeBindingSyncMetadata } from "../state/bindingSync.ts";
 import type { PendingProofRequest, ServiceBinding } from "../types/index.ts";
 
+const ACTIVE_BINDING_STATUSES: Set<ServiceBinding["status"]> = new Set([
+  "linked",
+  "recovery_pending",
+  "reauth_required",
+]);
+
 function isActiveBinding(binding: ServiceBinding): boolean {
-  return binding.status !== "unlinked" && binding.status !== "revoked";
+  return ACTIVE_BINDING_STATUSES.has(binding.status);
 }
 
 function normalizePresenceApiBaseUrl(value: string): string {
