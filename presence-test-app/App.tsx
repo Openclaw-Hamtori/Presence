@@ -1569,16 +1569,18 @@ export default function App() {
     () => (
       currentPendingProofRequest
         ? (
-          effectiveServiceBindings.find((binding) => binding.bindingId === currentPendingProofRequest.bindingId)
-          ?? null
+          effectiveServiceBindings.find((binding) => (
+            binding.bindingId === currentPendingProofRequest.bindingId
+            && (!currentDeviceIss || binding.linkedDeviceIss === currentDeviceIss)
+          )) ?? null
         )
         : null
     ),
-    [currentPendingProofRequest, effectiveServiceBindings]
+    [currentDeviceIss, currentPendingProofRequest, effectiveServiceBindings]
   );
   const openedRequestedBinding = useMemo(
-    () => resolveRequestedLinkedBinding(openedEnvelope, effectiveServiceBindings),
-    [effectiveServiceBindings, openedEnvelope]
+    () => resolveRequestedLinkedBinding(openedEnvelope, effectiveServiceBindings, currentDeviceIss),
+    [effectiveServiceBindings, currentDeviceIss, openedEnvelope]
   );
   const orbRequestedBinding = openedRequestedBinding ?? currentPendingRequestedBinding;
   const currentRequestedProofKey = useMemo(
@@ -1636,6 +1638,7 @@ export default function App() {
   const openedSessionAlreadyLinked = !!openedRequestedBinding;
   const recentServiceBindings = [...effectiveServiceBindings]
     .filter((binding) => isActiveBinding(binding))
+    .filter((binding) => !currentDeviceIss || binding.linkedDeviceIss === currentDeviceIss)
     .sort((a, b) => {
       const timeA = a.lastVerifiedAt ?? a.linkedAt ?? 0;
       const timeB = b.lastVerifiedAt ?? b.linkedAt ?? 0;
@@ -2202,6 +2205,9 @@ export default function App() {
         <View style={styles.bottomBar}>
           <TouchableOpacity style={styles.bottomBarButton} onPress={() => setShowService(true)} activeOpacity={0.85}>
             <Text style={styles.bottomBarButtonText}>LINKED SERVICES</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.bottomBarButton} onPress={() => setShowLogs(true)} activeOpacity={0.85}>
+            <Text style={styles.bottomBarButtonText}>DEBUG LOGS</Text>
           </TouchableOpacity>
         </View>
 

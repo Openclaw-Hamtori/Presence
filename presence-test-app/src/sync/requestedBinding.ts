@@ -182,9 +182,20 @@ export function syncFromEnvelope(
   });
 }
 
+function isMatchingDeviceBinding(
+  binding: ServiceBinding,
+  currentDeviceIss?: string | null
+): boolean {
+  if (!currentDeviceIss) {
+    return true;
+  }
+  return binding.linkedDeviceIss === currentDeviceIss;
+}
+
 export function resolveRequestedLinkedBinding(
   envelope: LinkCompletionEnvelope | null,
-  bindings: ServiceBinding[]
+  bindings: ServiceBinding[],
+  currentDeviceIss?: string | null
 ): ServiceBinding | null {
   if (!envelope) return null;
 
@@ -194,27 +205,31 @@ export function resolveRequestedLinkedBinding(
     return null;
   }
 
-  const matchingBinding = (
-    envelope.bindingId
-      ? bindings.find((binding) => binding.bindingId === envelope.bindingId && isLinkedBinding(binding))
-      : undefined
-  ) ?? (
-    envelope.serviceId && envelope.accountId
+  const matchingBinding = envelope.bindingId
+    ? bindings.find((binding) => (
+      binding.bindingId === envelope.bindingId
+      && isLinkedBinding(binding)
+      && isMatchingDeviceBinding(binding, currentDeviceIss)
+    ))
+    : undefined;
+
+  const resolvedBinding = matchingBinding
+    || (!envelope.bindingId && envelope.serviceId && envelope.accountId
       ? bindings.find((binding) => (
         binding.serviceId === envelope.serviceId
         && binding.accountId === envelope.accountId
         && isLinkedBinding(binding)
+        && isMatchingDeviceBinding(binding, currentDeviceIss)
       ))
-      : undefined
-  );
+      : undefined);
 
-  if (!matchingBinding) {
+  if (!resolvedBinding) {
     return null;
   }
 
   return {
-    ...matchingBinding,
-    sync: mergeBindingSyncMetadata(matchingBinding.sync, syncFromEnvelope(envelope)),
+    ...resolvedBinding,
+    sync: mergeBindingSyncMetadata(resolvedBinding.sync, syncFromEnvelope(envelope)),
   };
 }
 

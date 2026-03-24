@@ -169,6 +169,54 @@ test("resolveRequestedLinkedBinding() does not hijack relink/recovery sessions",
   assert.equal(recovery, null);
 });
 
+test("resolveRequestedLinkedBinding() ignores matching service/account on the wrong device when device is known", () => {
+  const bindings = [
+    {
+      bindingId: "pbind_device_a",
+      serviceId: "presence-demo",
+      accountId: "acct-1",
+      linkedDeviceIss: "presence:device:wrong",
+      linkedAt: 1,
+      lastVerifiedAt: 2,
+      status: "linked",
+    },
+    {
+      bindingId: "pbind_device_b",
+      serviceId: "presence-demo",
+      accountId: "acct-1",
+      linkedDeviceIss: "presence:device:right",
+      linkedAt: 1,
+      lastVerifiedAt: 2,
+      status: "linked",
+    },
+  ];
+
+  const resolvedWithoutDevice = resolveRequestedLinkedBinding({
+    sessionId: "plink_device",
+    serviceId: "presence-demo",
+    accountId: "acct-1",
+    bindingId: "pbind_device_a",
+  }, bindings, null);
+
+  const resolvedWithWrongDevice = resolveRequestedLinkedBinding({
+    sessionId: "plink_device",
+    serviceId: "presence-demo",
+    accountId: "acct-1",
+    bindingId: "pbind_device_a",
+  }, bindings, "presence:device:right");
+
+  const resolvedWithRightDevice = resolveRequestedLinkedBinding({
+    sessionId: "plink_device",
+    serviceId: "presence-demo",
+    accountId: "acct-1",
+    bindingId: "pbind_device_a",
+  }, bindings, "presence:device:wrong");
+
+  assert.equal(resolvedWithoutDevice?.bindingId, "pbind_device_a");
+  assert.equal(resolvedWithWrongDevice, null);
+  assert.equal(resolvedWithRightDevice?.bindingId, "pbind_device_a");
+});
+
 test("resolveRequestedLinkedBinding() preserves linked-state precedence for explicit initial_link", () => {
   const binding = {
     bindingId: "pbind_current",
