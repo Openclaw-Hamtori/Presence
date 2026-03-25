@@ -171,7 +171,7 @@ export async function submitLinkedBindingProof(params: {
     params.diagnostics,
     params.binding.bindingId,
     "submission_start",
-    `measurement=${params.measurement ? "present" : "missing"} state=${params.state ? "present" : "missing"} nonce=${params.nonce ? "present" : "missing"}`
+    `service=${params.binding.serviceId} account=${params.binding.accountId ?? "-"} binding_iss=${params.binding.linkedDeviceIss} measurement=${params.measurement ? "present" : "missing"} state=${params.state ? "present" : "missing"} nonce=${params.nonce ? "present" : "missing"}`
   );
   const measurement = await getMeasurement(params.measurement, { forceFreshSnapshot: true });
   if (!measurement) {
@@ -217,11 +217,12 @@ async function executeBindingSync(
   providedNonce?: string
 ): Promise<LinkedBindingProofSubmissionResult> {
   const bindingWithSync = binding.sync ? binding : { ...binding, sync: stateHint?.serviceBindings.find((item) => item.bindingId === binding.bindingId)?.sync };
+  const authoritativeBinding = stateHint?.serviceBindings.find((item) => item.bindingId === bindingWithSync.bindingId);
   pushBindingDiagnostic(
     diagnostics,
     bindingWithSync.bindingId,
     "binding_selected",
-    `service=${bindingWithSync.serviceId} account=${bindingWithSync.accountId ?? "-"}`
+    `service=${bindingWithSync.serviceId} account=${bindingWithSync.accountId ?? "-"} binding_iss=${bindingWithSync.linkedDeviceIss} authoritative_iss=${authoritativeBinding?.linkedDeviceIss ?? "missing"} sync_from=${binding.sync ? "passed-in" : "state"}`
   );
   pushBindingDiagnostic(
     diagnostics,
@@ -298,6 +299,12 @@ async function executeBindingSync(
   pushBindingDiagnostic(diagnostics, bindingWithSync.bindingId, "nonce_received", `source=${nonceSource}`);
 
   pushBindingDiagnostic(diagnostics, bindingWithSync.bindingId, "prove_start", `nonce=${resolvedNonce ? "present" : "missing"}`);
+  pushBindingDiagnostic(
+    diagnostics,
+    bindingWithSync.bindingId,
+    "proof_submission_context",
+    `binding_id=${bindingWithSync.bindingId} service_id=${bindingWithSync.serviceId} account_id=${bindingWithSync.accountId ?? "-"} binding_linkedDeviceIss=${bindingWithSync.linkedDeviceIss} measurement_iss=${measurement.iss} verify_url=${bindingWithSync.sync?.verifyUrl ?? "-"}`
+  );
   const proof = await proveMeasured(measurement, {
     nonce: resolvedNonce,
     persistLocalState: false,
@@ -308,6 +315,15 @@ async function executeBindingSync(
       sync: bindingWithSync.sync,
     },
   });
+  const proofIss = proof.ok ? proof.value.payload.attestation.iss : "-";
+  if (proof.ok) {
+    pushBindingDiagnostic(
+      diagnostics,
+      bindingWithSync.bindingId,
+      "proof_context_compare",
+      `proof_iss=${proofIss} expected_binding_iss=${bindingWithSync.linkedDeviceIss} measurement_iss=${measurement.iss} iss_match=${proofIss === bindingWithSync.linkedDeviceIss ? "yes" : "no"}`
+    );
+  }
   if (!proof.ok) {
     pushBindingDiagnostic(diagnostics, bindingWithSync.bindingId, "prove_error", toErrorMessage(proof.error));
     pushBindingDiagnostic(diagnostics, bindingWithSync.bindingId, "final_outcome", "status=error stage=prove");
@@ -339,7 +355,20 @@ async function executeBindingSync(
       bindingWithSync.bindingId,
       verifyResponse.recovery?.reason ?? verifyResponse.message ?? "binding_mismatch"
     );
+    const recoveryExpectedIss = resolveStringish(verifyResponse.recovery?.expectedDeviceIss)
+      || resolveStringish(verifyResponse.recovery?.deviceIss)
+      || resolveStringish(verifyResponse.recovery?.expected_device_iss)
+      || resolveStringish(verifyResponse.recovery?.bindingDeviceIss)
+      || resolveStringish(verifyResponse.expectedDeviceIss)
+      || resolveStringish(verifyResponse.deviceIss)
+      || resolveStringish((verifyResponse.recovery?.expected as { deviceIss?: string })?.deviceIss);
     pushBindingDiagnostic(diagnostics, bindingWithSync.bindingId, "verify_end", "ok=false code=ERR_BINDING_RECOVERY_REQUIRED");
+    pushBindingDiagnostic(
+      diagnostics,
+      bindingWithSync.bindingId,
+      "verify_recovery_context",
+      `binding_iss=${bindingWithSync.linkedDeviceIss} proof_iss=${proofIss} expected_iss=${recoveryExpectedIss ?? "missing"} expected_match=${recoveryExpectedIss ? recoveryExpectedIss === bindingWithSync.linkedDeviceIss ? "yes" : "no" : "unknown"}`
+    );
     pushBindingDiagnostic(diagnostics, bindingWithSync.bindingId, "verify_recovery_required");
     pushBindingDiagnostic(diagnostics, bindingWithSync.bindingId, "final_outcome", "status=recovery_required");
     return {
@@ -550,6 +579,10 @@ function readNonceString(value: unknown): string | null {
   if (typeof value !== "string") return null;
   if (value.length === 0 || value.trim() !== value) return null;
   return value;
+}
+
+function resolveStringish(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
 }
 
 function safeJsonParse(raw: string): any {
