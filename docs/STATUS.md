@@ -1,6 +1,6 @@
 # Presence status / closeout (after latest stabilization cycle)
 
-_Last updated: 2026-03-24_
+_Last updated: 2026-03-25_
 
 ## 1) Current canonical flow (what is intended default)
 - `link once -> stay linked -> service requests PASS -> user opens Presence -> pending request hydrates/nonce -> user submits fresh proof -> server verifies and stores authoritative readiness`
@@ -52,10 +52,10 @@ _Last updated: 2026-03-24_
     - `docs/archive/projects/presence-pending-proof-respond-live-validation-2026-03-23.md`
     - `docs/archive/projects/presence-phase2-closeout-2026-03-23.md`
     - `docs/presence-live-retest-reset-playbook.md`
-- **A new multi-device initial-link bug was then reproduced on TestFlight/live validation and is now addressed in the current app/server/SDK stack.**
+- **A multi-device/new-device bug cluster was reproduced during TestFlight/live validation and is now addressed in the current release-prep stack.**
   - Fresh/new-device symptom: same link session could lose `service_domain` / `status_url` and fail with `ERR_SERVICE_TRUST_INVALID`.
-  - Existing-device symptom: `flow=initial_link` could still drift toward linked verify behavior when prior binding state existed.
-  - The 2026-03-24 hardening/closeout pass now includes:
+  - Reinstall/relink symptom: the app could resolve pending/requested bindings against the wrong device and surface stale/foreign linked-service cards, leading to `ERR_BINDING_RECOVERY_REQUIRED` on a clean new-device scenario.
+  - The current closeout pass now includes:
     - deeplink parsing that handles query + fragment + percent-encoded payloads more defensively (`e455b40`)
     - explicit non-reauth flow (`initial_link`, `relink`, `recovery`, malformed explicit flow) no longer auto-routes into linked verify (`e455b40`)
     - explicit `initial_link` suppression of `bindingHint` in the production prove/completion path (`e455b40`)
@@ -64,9 +64,19 @@ _Last updated: 2026-03-24_
     - well-known fallback diagnostics (`09536bb`)
     - Hermes-safe `.well-known` prefix resolution for on-device hydration (`1a02441`)
     - final connect-modal / linked-service UI polish (`9df2684`)
-  - Real-device/live-server validation now covers canonical short-link hydration, initial link, fresh request, PASS verification, unlink, and stale-card removal.
-- **Current gate before next closeout:** upload a new TestFlight build containing the full 2026-03-24 hardening pass, then revalidate on real devices.
-  - Highest-priority validation baseline remains **fresh/new-phone initial install state**.
+    - current-device binding resolution / linked-service filtering fix in the app (`4655488`)
+  - Real-device/live-server validation now covers canonical short-link hydration, initial link, fresh request, PASS verification, unlink, stale-card removal, and fresh isolated new-device success after the current-device binding fix.
+- **The previous TestFlight revalidation gate is now closed.**
+  - TestFlight build line was advanced to **1.0 (3)**.
+  - A fresh/new-device validation was re-run successfully after the app-side current-device binding fix (`4655488`).
+  - Clean live validation evidence:
+    - account `user_1774092848_device4`
+    - link session `plink_561ffb7527aa6fcc`
+    - request `ppreq_5659e0fca8841f85`
+    - request status `verified`
+    - readiness `ready: true`
+    - reason `linked_snapshot_ready`
+    - snapshot `pass: true`
   - Production-path validation should be used as the source of truth; `ConnectionFlowScreen` is useful for demos/debugging but is not the canonical runtime proof path.
 - Finish **reliable APNs live delivery path** only if push is revisited as an optional wake-path. It is not part of the canonical correctness path.
 - Consider upgrading the live server runtime to a supported Node version (`>=20`) because deployment currently emitted `EBADENGINE` warnings for `@peculiar/x509` and `better-sqlite3` under Node `v18.19.1`, even though the service restarted successfully.

@@ -1,6 +1,6 @@
 # Presence Next-Stage Architecture & Roadmap (Post-Stabilization)
 
-_Last updated: 2026-03-24_
+_Last updated: 2026-03-25_
 
 ## Scope and framing
 
@@ -18,14 +18,19 @@ This is a design/implementation plan document for what to build next, not a spec
 
 ## Current state summary
 
-### Immediate release-prep note (2026-03-24)
+### Immediate release-prep note (2026-03-25)
 
-The next-stage roadmap below still stands, but there is one short-cycle release-prep item in front of it:
+The next-stage roadmap below still stands, but the short-cycle release-prep gate in front of it is now closed:
 
-- The team reproduced a **real multi-device initial-link bug** during TestFlight/live validation.
-- That bug has now been hardened in the app/server/SDK stack, and the canonical short-link flow was then revalidated live on real device + live server.
-- Before resuming broader next-stage work, the current priority is to **upload a new TestFlight build containing the full 2026-03-24 hardening pass and revalidate the fresh/new-device initial-link baseline**.
-- Treat this as a release-quality correctness gate, not a roadmap change.
+- The team reproduced a **real multi-device/new-device bug cluster** during TestFlight/live validation.
+- That bug cluster has now been addressed in the current release-prep stack, including the app-side current-device binding resolution fix (`4655488`).
+- A new TestFlight build line was prepared as **1.0 (3)** (`17b6ab1`).
+- Fresh/new-device validation was then re-run successfully on live server with:
+  - account `user_1774092848_device4`
+  - link session `plink_561ffb7527aa6fcc`
+  - request `ppreq_5659e0fca8841f85`
+  - result `verified`, readiness `ready: true`, `pass: true`
+- Treat this as a release-quality correctness gate that has now been satisfied, not a roadmap change.
 
 What is already in the reference stack as of this writing:
 

@@ -26,11 +26,12 @@ Canonical architecture/docs still live in:
 
 ## Current operator note
 
-As of the latest 2026-03-24 release-prep pass:
+As of the latest 2026-03-25 release-prep pass:
 - mobile trust metadata is guarded at runtime for link-session creation/read
 - canonical short-link hydration has been validated live on real device + live server
 - `PRESENCE_SERVICE_DOMAIN`, `PUBLIC_BASE_URL`, and `ROUTE_BASE_PATH` must be kept conceptually separate
-- the next live validation target is a new TestFlight build plus fresh/new-device revalidation on that build
+- the app-side current-device binding resolution fix (`4655488`) is included in the latest release-prep stack
+- fresh/new-device validation has now been re-run successfully on the latest TestFlight build line (`1.0 (3)`)
 
 ## Minimal orientation
 

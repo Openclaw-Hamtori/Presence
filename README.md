@@ -25,14 +25,21 @@ Current platform scope: **iOS-first** for client runtime.
 
 ## Current release-prep note
 
-The repo now includes the 2026-03-24 short-link closeout / release-prep hardening pass:
-- stronger mobile deeplink trust-field preservation for fresh/new-device initial link
+The repo now includes the 2026-03-25 release-prep closeout state:
+- 2026-03-24 short-link closeout / hardening pass
 - canonical short-link hydration (`presence://link?s=...&d=...`) validated live on real device + live server
 - well-known API-base discovery fixes, including Hermes-safe prefix resolution on-device
 - compact app-side branch diagnostics to make TestFlight failures explainable from logs
 - final connect-modal / linked-service UI polish in `presence-test-app`
+- current-device binding resolution fix in the app (`4655488`) so pending-proof handling and linked-service display no longer drift across devices during reinstall/relink scenarios
+- TestFlight build line bumped to **1.0 (3)** (`17b6ab1`)
+- fresh isolated new-device validation re-run successfully on live server:
+  - account `user_1774092848_device4`
+  - link session `plink_561ffb7527aa6fcc`
+  - request `ppreq_5659e0fca8841f85`
+  - result `verified`, readiness `ready: true`, reason `linked_snapshot_ready`, `pass: true`
 
-The immediate next validation target is a **new TestFlight build** using this latest code, with fresh/new-phone initial install state treated as the canonical baseline.
+The fresh/new-device baseline has now been revalidated successfully on the latest release-prep stack.
 
 Package docs:
 - `presence-verifier/README.md`
