@@ -2441,9 +2441,11 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
+    width: "100%",
     alignItems: "center",
     justifyContent: "flex-start",
     gap: 6,
+    zIndex: 1,
   },
   refreshButton: {
     width: 42,
@@ -2460,8 +2462,8 @@ const styles = StyleSheet.create({
   },
   refreshIconText: {
     color: C.text,
-    fontSize: 23,
-    lineHeight: 23,
+    fontSize: 24,
+    lineHeight: 42,
     fontWeight: "700",
     textAlign: "center",
     textAlignVertical: "center",
@@ -2534,7 +2536,7 @@ const styles = StyleSheet.create({
     zIndex: 1,
   },
   statePill: {
-    alignSelf: "flex-start",
+    alignSelf: "center",
     borderWidth: 1,
     borderRadius: 999,
     paddingVertical: 8,
