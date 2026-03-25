@@ -2128,7 +2128,9 @@ export default function App() {
               </TouchableOpacity>
             </View>
             {showActiveRequestHint ? (
-              <Text style={styles.topRequestHint}>Active request</Text>
+              <View style={styles.activeRequestPill}>
+                <Text style={styles.activeRequestPillText}>Active request</Text>
+              </View>
             ) : null}
           </View>
         </View>
@@ -2436,13 +2438,16 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   topRightCompact: {
-    alignItems: "flex-end",
+    alignItems: "center",
     justifyContent: "center",
     gap: 6,
+    width: 180,
+    paddingRight: 2,
   },
   statusRefreshRow: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
     gap: 8,
   },
   refreshButton: {
@@ -2464,10 +2469,20 @@ const styles = StyleSheet.create({
     lineHeight: 23,
     fontWeight: "700",
   },
-  topRequestHint: {
+  activeRequestPill: {
+    alignSelf: "center",
+    borderRadius: 999,
+    backgroundColor: C.surfaceSoft,
+    borderWidth: 1,
+    borderColor: C.border,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  activeRequestPillText: {
     color: C.subtext,
     fontSize: 11,
     fontWeight: "600",
+    letterSpacing: 0.2,
   },
   wordmarkWrap: {
     gap: 2,
