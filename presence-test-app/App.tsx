@@ -2099,12 +2099,14 @@ export default function App() {
     try {
       addLog("↻ manual refresh requested");
       await runForegroundHydration("manual_refresh");
+      await presence.refresh();
+      addLog("✅ manual refresh completed");
     } catch (error) {
       addLog("ℹ️ manual refresh failed - " + (error instanceof Error ? error.message : String(error)));
     } finally {
       setIsManualRefreshing(false);
     }
-  }, [addLog, isManualRefreshing, runForegroundHydration]);
+  }, [addLog, isManualRefreshing, runForegroundHydration, presence.refresh]);
 
   return (
     <SafeAreaView style={styles.root}>
@@ -2448,6 +2450,7 @@ const styles = StyleSheet.create({
     justifyContent: "flex-start",
     gap: 6,
     zIndex: 1,
+    pointerEvents: "none",
   },
   refreshButton: {
     width: 42,
@@ -2471,9 +2474,11 @@ const styles = StyleSheet.create({
   refreshIconText: {
     color: C.text,
     fontSize: 20,
-    lineHeight: 20,
+    lineHeight: 22,
     fontWeight: "700",
     includeFontPadding: false,
+    textAlign: "center",
+    textAlignVertical: "center",
   },
   activeRequestPill: {
     alignSelf: "center",
