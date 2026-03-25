@@ -2129,7 +2129,9 @@ export default function App() {
             disabled={isManualRefreshing}
             activeOpacity={0.85}
           >
-            <Text style={styles.refreshIconText}>↻</Text>
+            <View style={styles.refreshIconWrap}>
+              <Text style={styles.refreshIconText}>↻</Text>
+            </View>
           </TouchableOpacity>
         </View>
 
@@ -2438,7 +2440,7 @@ const styles = StyleSheet.create({
   },
   topCenterStack: {
     position: "absolute",
-    top: 0,
+    top: 6,
     left: 0,
     right: 0,
     width: "100%",
@@ -2460,13 +2462,17 @@ const styles = StyleSheet.create({
   refreshButtonDisabled: {
     opacity: 0.6,
   },
+  refreshIconWrap: {
+    width: "100%",
+    height: "100%",
+    alignItems: "center",
+    justifyContent: "center",
+  },
   refreshIconText: {
     color: C.text,
     fontSize: 20,
     lineHeight: 20,
     fontWeight: "700",
-    textAlign: "center",
-    textAlignVertical: "center",
     includeFontPadding: false,
   },
   activeRequestPill: {
