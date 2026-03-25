@@ -700,6 +700,7 @@ export default function App() {
   const [scannerSupported, setScannerSupported] = useState(false);
   const [scannerBusy, setScannerBusy] = useState(false);
   const [submittingLinkedProof, setSubmittingLinkedProof] = useState(false);
+  const [isManualRefreshing, setIsManualRefreshing] = useState(false);
   const [linkedProofRequestState, setLinkedProofRequestState] = useState<LinkedProofRequestState>(null);
   const [recentProofFailure, setRecentProofFailure] = useState<RecentProofFailureState>(null);
   const [recentVerifiedProof, setRecentVerifiedProof] = useState<RecentVerifiedProofState>(null);
@@ -2089,6 +2090,22 @@ export default function App() {
     requestedServiceId,
   ]);
 
+  const handleManualRefresh = useCallback(async () => {
+    if (isManualRefreshing) {
+      return;
+    }
+
+    setIsManualRefreshing(true);
+    try {
+      addLog("↻ manual refresh requested");
+      await runForegroundHydration("manual_refresh");
+    } catch (error) {
+      addLog("ℹ️ manual refresh failed — " + (error instanceof Error ? error.message : String(error)));
+    } finally {
+      setIsManualRefreshing(false);
+    }
+  }, [addLog, isManualRefreshing, runForegroundHydration]);
+
   return (
     <SafeAreaView style={styles.root}>
       <View style={styles.screen}>
@@ -2100,6 +2117,14 @@ export default function App() {
             <View style={[styles.statePill, styles.statePillLight, { borderColor: productTone }]}>
               <Text style={[styles.stateLabel, { color: productTone }]}>{productState.label}</Text>
             </View>
+            <TouchableOpacity
+              style={[styles.refreshButton, isManualRefreshing && styles.refreshButtonDisabled]}
+              onPress={() => void handleManualRefresh()}
+              disabled={isManualRefreshing}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.refreshButtonText}>Refresh</Text>
+            </TouchableOpacity>
             {showActiveRequestHint ? (
               <Text style={styles.topRequestHint}>Active request</Text>
             ) : null}
@@ -2412,6 +2437,24 @@ const styles = StyleSheet.create({
     alignItems: "flex-end",
     justifyContent: "center",
     gap: 6,
+  },
+  refreshButton: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: C.border,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    backgroundColor: C.surfaceSoft,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  refreshButtonDisabled: {
+    opacity: 0.6,
+  },
+  refreshButtonText: {
+    color: C.text,
+    fontSize: 12,
+    fontWeight: "600",
   },
   topRequestHint: {
     color: C.subtext,
