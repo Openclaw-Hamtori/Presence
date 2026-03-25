@@ -2114,17 +2114,19 @@ export default function App() {
             <Text style={styles.qrIcon}>⌁</Text>
           </TouchableOpacity>
           <View style={styles.topRightCompact}>
-            <View style={[styles.statePill, styles.statePillLight, { borderColor: productTone }]}>
-              <Text style={[styles.stateLabel, { color: productTone }]}>{productState.label}</Text>
+            <View style={styles.statusRefreshRow}>
+              <View style={[styles.statePill, styles.statePillLight, { borderColor: productTone }]}>
+                <Text style={[styles.stateLabel, { color: productTone }]}>{productState.label}</Text>
+              </View>
+              <TouchableOpacity
+                style={[styles.refreshButton, isManualRefreshing && styles.refreshButtonDisabled]}
+                onPress={() => void handleManualRefresh()}
+                disabled={isManualRefreshing}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.refreshIconText}>↻</Text>
+              </TouchableOpacity>
             </View>
-            <TouchableOpacity
-              style={[styles.refreshButton, isManualRefreshing && styles.refreshButtonDisabled]}
-              onPress={() => void handleManualRefresh()}
-              disabled={isManualRefreshing}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.refreshButtonText}>Refresh</Text>
-            </TouchableOpacity>
             {showActiveRequestHint ? (
               <Text style={styles.topRequestHint}>Active request</Text>
             ) : null}
@@ -2438,12 +2440,17 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 6,
   },
+  statusRefreshRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
   refreshButton: {
-    borderRadius: 999,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     borderWidth: 1,
     borderColor: C.border,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
     backgroundColor: C.surfaceSoft,
     alignItems: "center",
     justifyContent: "center",
@@ -2451,10 +2458,11 @@ const styles = StyleSheet.create({
   refreshButtonDisabled: {
     opacity: 0.6,
   },
-  refreshButtonText: {
+  refreshIconText: {
     color: C.text,
-    fontSize: 12,
-    fontWeight: "600",
+    fontSize: 18,
+    lineHeight: 18,
+    fontWeight: "700",
   },
   topRequestHint: {
     color: C.subtext,
