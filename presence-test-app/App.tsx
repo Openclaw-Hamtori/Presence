@@ -705,7 +705,7 @@ export default function App() {
   const [recentProofFailure, setRecentProofFailure] = useState<RecentProofFailureState>(null);
   const [recentVerifiedProof, setRecentVerifiedProof] = useState<RecentVerifiedProofState>(null);
   const [recentConnectedLink, setRecentConnectedLink] = useState<RecentConnectedLinkState>(null);
-  const [logEntries, setLogEntries] = useState<string[]>([`[${nowTime()}] App started — platform: ${Platform.OS}`]);
+  const [logEntries, setLogEntries] = useState<string[]>([`[${nowTime()}] App started - platform: ${Platform.OS}`]);
   const [hydratedServiceBindings, setHydratedServiceBindings] = useState<HydratedBindingCache | null>(null);
   const [hydratingServiceBindings, setHydratingServiceBindings] = useState(false);
   const [serviceBindingsHydrationError, setServiceBindingsHydrationError] = useState<string | null>(null);
@@ -853,8 +853,8 @@ export default function App() {
 
     addLog(
       measurement.pass
-        ? "✅ Local-only check passed — not server-verified"
-        : `⚠️ Local-only check failed — ${measurement.reason}`
+        ? "✅ Local-only check passed - not server-verified"
+        : `⚠️ Local-only check failed - ${measurement.reason}`
     );
     addLog(
       `   state: created=${measurement.state?.stateCreatedAt ?? '-'} validUntil=${measurement.state?.stateValidUntil ?? '-'} measured=${measurement.state?.lastMeasuredAt ?? '-'} phase=${measurement.state?.status ?? '-'}`
@@ -931,7 +931,7 @@ export default function App() {
 
     const confirmedBinding = toServiceBindingFromRecord(response?.binding, envelopeSync);
     if (!confirmedBinding) {
-      addLog("ℹ️ completion seed skipped — response did not include a complete binding record");
+      addLog("ℹ️ completion seed skipped - response did not include a complete binding record");
       return { ok: true, seeded: false };
     }
 
@@ -971,7 +971,7 @@ export default function App() {
       };
     });
     await persistSeededBinding(seededBinding);
-    addLog(`✅ completion seed persisted — binding=${seededBinding.bindingId} ${describeBindingSync(seededBinding.sync)}`);
+    addLog(`✅ completion seed persisted - binding=${seededBinding.bindingId} ${describeBindingSync(seededBinding.sync)}`);
     return { ok: true, seeded: true };
   }, [addLog, persistSeededBinding]);
 
@@ -997,7 +997,7 @@ export default function App() {
         if (!hydration.ok) {
           setOpenedEnvelope(null);
           setConnectionError(hydration.message);
-          addLog(`❌ ${hydration.code} — ${hydration.message}`);
+          addLog(`❌ ${hydration.code} - ${hydration.message}`);
           return false;
         }
         hydrated = hydration.value;
@@ -1006,7 +1006,7 @@ export default function App() {
         const message = error instanceof Error ? error.message : String(error);
         setOpenedEnvelope(null);
         setConnectionError("Unable to load full link session details: " + message);
-        addLog("❌ hydration failed for " + parsed.sessionId + " — " + message);
+        addLog("❌ hydration failed for " + parsed.sessionId + " - " + message);
         return false;
       } finally {
         setHydratingLinkSession(false);
@@ -1028,8 +1028,8 @@ export default function App() {
     if (!trustValidation.ok) {
       setOpenedEnvelope(null);
       setConnectionError(trustValidation.error.message);
-      addLog(`❌ ${trustValidation.error.code} — ${trustValidation.error.message}`);
-      console.log(`[PresenceTestApp] ❌ ${trustValidation.error.code} — ${trustValidation.error.message}`);
+      addLog(`❌ ${trustValidation.error.code} - ${trustValidation.error.message}`);
+      console.log(`[PresenceTestApp] ❌ ${trustValidation.error.code} - ${trustValidation.error.message}`);
       return false;
     }
 
@@ -1117,7 +1117,7 @@ export default function App() {
         addLog(`↻ Recovered ${recoveredBindings.length} bindings from device endpoint (${source})`);
         return recoveredBindings;
       } catch (deviceEndpointError) {
-        addLog(`ℹ️ Device bindings endpoint unavailable (${source}) — ${deviceEndpointError instanceof Error ? deviceEndpointError.message : String(deviceEndpointError)} (GET ${deviceBindingsUrl})`);
+        addLog(`ℹ️ Device bindings endpoint unavailable (${source}) - ${deviceEndpointError instanceof Error ? deviceEndpointError.message : String(deviceEndpointError)} (GET ${deviceBindingsUrl})`);
       }
 
       const auditEventsUrl = `${PRESENCE_DEMO_API_BASE_URL}/audit-events`;
@@ -1144,7 +1144,7 @@ export default function App() {
                 const binding = toServiceBindingFromStatus(status);
                 return binding?.linkedDeviceIss === deviceIss ? binding : null;
               } catch (statusError) {
-                addLog(`ℹ️ skipping account status (${source}) ${accountId} — ${statusError instanceof Error ? statusError.message : String(statusError)}`);
+                addLog(`ℹ️ skipping account status (${source}) ${accountId} - ${statusError instanceof Error ? statusError.message : String(statusError)}`);
                 return null;
               }
             })
@@ -1171,7 +1171,7 @@ export default function App() {
         isAuthoritative: true,
       });
       await persistAuthoritativeBindings(deviceIss, []);
-      addLog(`ℹ️ service auth sync failed for ${source}; showing no cached binding cards until next successful sync — ${message}`);
+      addLog(`ℹ️ service auth sync failed for ${source}; showing no cached binding cards until next successful sync - ${message}`);
       return [];
     } finally {
       setHydratingServiceBindings(false);
@@ -1195,12 +1195,12 @@ export default function App() {
       const activeCount = result.requests.filter((request) => request.status === "pending").length;
       addLog(`↻ Synced ${activeCount} pending proof requests (${source})`);
       for (const error of result.errors) {
-        addLog(`ℹ️ pending request sync skipped for ${error.bindingId} — ${error.message}`);
+        addLog(`ℹ️ pending request sync skipped for ${error.bindingId} - ${error.message}`);
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setPendingRequestsSyncError(message);
-      addLog(`ℹ️ pending request sync failed (${source}) — ${message}`);
+      addLog(`ℹ️ pending request sync failed (${source}) - ${message}`);
     } finally {
       setSyncingPendingRequests(false);
     }
@@ -1292,25 +1292,25 @@ export default function App() {
     const deviceIss = currentDeviceIssRef.current;
     const registration = getLatestPushToken(pushSetupStateRef.current);
     if (!deviceIss) {
-      addLog(`ℹ️ skip push token sync (${source}) — no device id`);
+      addLog(`ℹ️ skip push token sync (${source}) - no device id`);
       return;
     }
     if (!hasLinkedBindingForCurrentDevice) {
-      addLog(`ℹ️ skip push token sync (${source}) — no linked service yet`);
+      addLog(`ℹ️ skip push token sync (${source}) - no linked service yet`);
       return;
     }
     if (!registration) {
-      addLog(`ℹ️ skip push token sync (${source}) — no APNs registration yet`);
+      addLog(`ℹ️ skip push token sync (${source}) - no APNs registration yet`);
       return;
     }
     if (isPushUploadConfirmed(pushSetupStateRef.current, { deviceIss, registration })) {
-      addLog(`ℹ️ skip push token sync (${source}) — already confirmed`);
+      addLog(`ℹ️ skip push token sync (${source}) - already confirmed`);
       return;
     }
     try {
       await syncPushTokenWithServer(registration, source);
     } catch (error) {
-      addLog(`ℹ️ push token registration failed (${source}) — ${error instanceof Error ? error.message : String(error)}`);
+      addLog(`ℹ️ push token registration failed (${source}) - ${error instanceof Error ? error.message : String(error)}`);
     }
   }, [addLog, hasLinkedBindingForCurrentDevice, syncPushTokenWithServer]);
 
@@ -1396,7 +1396,7 @@ export default function App() {
         );
       })
       .catch((error) => {
-        addLog(`ℹ️ push registration unavailable — ${error instanceof Error ? error.message : String(error)}`);
+        addLog(`ℹ️ push registration unavailable - ${error instanceof Error ? error.message : String(error)}`);
       });
   }, [addLog, currentDeviceIss, hasLinkedBindingForCurrentDevice, updatePushSetupState]);
 
@@ -1434,7 +1434,7 @@ export default function App() {
                 );
                 pendingLinkPushUploadDeviceIssRef.current = null;
               } catch (error) {
-                addLog(`ℹ️ push token registration failed (token_after_link_completion) — ${error instanceof Error ? error.message : String(error)}`);
+                addLog(`ℹ️ push token registration failed (token_after_link_completion) - ${error instanceof Error ? error.message : String(error)}`);
               }
             } else if (!hasLinkedBindingForCurrentDevice) {
             } else if (!hasLinkedBindingForCurrentDevice) {
@@ -1442,11 +1442,11 @@ export default function App() {
             }
           })
           .catch((error) => {
-            addLog(`ℹ️ push token persistence failed — ${error instanceof Error ? error.message : String(error)}`);
+            addLog(`ℹ️ push token persistence failed - ${error instanceof Error ? error.message : String(error)}`);
           });
       },
       onRegistrationError: (error) => {
-        addLog(`ℹ️ APNs registration failed — ${error.message}`);
+        addLog(`ℹ️ APNs registration failed - ${error.message}`);
       },
       onNotificationReceived: (event) => {
         const signal = extractPendingProofWakeSignal(event.payload);
@@ -1716,7 +1716,7 @@ export default function App() {
     if (!loaded) {
       return;
     }
-    addLog(`✅ Link session ${parsed.sessionId} loaded — tap Submit proof to link or answer the request`);
+    addLog(`✅ Link session ${parsed.sessionId} loaded - tap Submit proof to link or answer the request`);
   };
 
   const handleScanQr = async () => {
@@ -1730,7 +1730,7 @@ export default function App() {
       const parsed = parsePresenceLinkUrl(payload);
       if (!parsed) {
         setConnectionError("The QR code was read, but it is not a valid Presence link.");
-        addLog(`❌ Scanned QR payload was not a Presence link — raw=${payload.slice(0, 180)}`);
+        addLog(`❌ Scanned QR payload was not a Presence link - raw=${payload.slice(0, 180)}`);
         return;
       }
       await activateEnvelope(parsed, "qr", payload);
@@ -1738,7 +1738,7 @@ export default function App() {
       const message = error instanceof Error ? error.message : String(error);
       if (!message.includes("cancelled")) {
         setConnectionError(message);
-        addLog(`❌ QR scan failed — ${message}`);
+        addLog(`❌ QR scan failed - ${message}`);
       }
     } finally {
       setScannerBusy(false);
@@ -1774,7 +1774,7 @@ export default function App() {
         const refreshedState = await presence.refresh();
 
         addLog(
-          `✅ pending proof attempt finished — request=${result.requestId} binding=${result.bindingId} status=${result.status}`
+          `✅ pending proof attempt finished - request=${result.requestId} binding=${result.bindingId} status=${result.status}`
         );
         addLog(
           `   state: created=${refreshedState?.stateCreatedAt ?? '-'} validUntil=${refreshedState?.stateValidUntil ?? '-'} measured=${refreshedState?.lastMeasuredAt ?? '-'} phase=${refreshedState?.status ?? '-'}`
@@ -1813,7 +1813,7 @@ export default function App() {
           setLinkedProofRequestState(null);
         }
         setLocalError(`Could not submit the pending proof request: ${message}`);
-        addLog(`❌ pending proof error — ${message}`);
+        addLog(`❌ pending proof error - ${message}`);
         return;
       } finally {
         setSubmittingLinkedProof(false);
@@ -1876,7 +1876,7 @@ export default function App() {
 
       try {
         await persistSeededBinding(openedRequestedBinding);
-        addLog(`↻ persisted linked request sync — ${describeBindingSync(openedRequestedBinding.sync)}`);
+        addLog(`↻ persisted linked request sync - ${describeBindingSync(openedRequestedBinding.sync)}`);
 
         const result = await submitLinkedBindingProof({
           binding: openedRequestedBinding,
@@ -1886,7 +1886,7 @@ export default function App() {
         const refreshedState = await presence.refresh();
 
         addLog(
-          `✅ linked proof attempt finished — binding=${result.bindingId} status=${result.status} nonce=${result.nonce ? "present" : "missing"}`
+          `✅ linked proof attempt finished - binding=${result.bindingId} status=${result.status} nonce=${result.nonce ? "present" : "missing"}`
         );
         addLog(
           `   state: created=${refreshedState?.stateCreatedAt ?? '-'} validUntil=${refreshedState?.stateValidUntil ?? '-'} measured=${refreshedState?.lastMeasuredAt ?? '-'} phase=${refreshedState?.status ?? '-'}`
@@ -1933,7 +1933,7 @@ export default function App() {
           setLinkedProofRequestState(null);
         }
         setLocalError(`Could not submit proof to the linked service: ${message}`);
-        addLog(`❌ linked proof error — ${message}`);
+        addLog(`❌ linked proof error - ${message}`);
         for (const diagnosticLine of formatGroupedLogEntries("diagnostics", diagnostics)) {
           addLog(`   ${diagnosticLine}`);
         }
@@ -1952,7 +1952,7 @@ export default function App() {
     const payload = await presence.prove(proveOptions);
     if (!payload) {
       setLocalError(presence.error?.message ?? "Could not create the proof.");
-      addLog(`❌ ${presence.error?.code ?? "unknown"} — ${presence.error?.message ?? ""}`);
+      addLog(`❌ ${presence.error?.code ?? "unknown"} - ${presence.error?.message ?? ""}`);
       return;
     }
 
@@ -1965,7 +1965,7 @@ export default function App() {
     if (!completionUrl) {
       const message = "This link is missing a valid absolute status_url/completion URL. Ask the service to rewrite public completion URLs before rendering the link.";
       setLocalError(message);
-      addLog("❌ completion blocked — status_url missing or not absolute");
+      addLog("❌ completion blocked - status_url missing or not absolute");
       return;
     }
 
@@ -1992,7 +1992,7 @@ export default function App() {
           ? String((parsed as { message?: unknown }).message ?? "")
           : raw || `HTTP ${response.status}`;
         setLocalError(`Server completion failed: ${message}`);
-        addLog(`❌ completion ${response.status} — ${truncateJson(parsed || raw, 600)}`);
+        addLog(`❌ completion ${response.status} - ${truncateJson(parsed || raw, 600)}`);
         return;
       }
 
@@ -2000,7 +2000,7 @@ export default function App() {
       const seedResult = await seedConfirmedBinding(completionResult, currentEnvelope);
       if (!seedResult.ok) {
         setLocalError(seedResult.message);
-        addLog(`❌ completion seed rejected — ${seedResult.message}`);
+        addLog(`❌ completion seed rejected - ${seedResult.message}`);
         addLog(`   response: ${truncateJson(parsed, 500)}`);
         return;
       }
@@ -2009,7 +2009,7 @@ export default function App() {
       const linkedDeviceIss = completionResult.binding?.deviceIss ?? currentDeviceIss ?? null;
       const completionToken = getLatestPushToken(pushSetupStateRef.current);
       addLog(
-        `ℹ️ completion push-sync check — linked_device=${linkedDeviceIss ?? "n/a"} token=${completionToken ? `present (${completionToken.environment})` : "missing"}`
+        `ℹ️ completion push-sync check - linked_device=${linkedDeviceIss ?? "n/a"} token=${completionToken ? `present (${completionToken.environment})` : "missing"}`
       );
       if (linkedDeviceIss && completionToken) {
         pendingLinkPushUploadDeviceIssRef.current = null;
@@ -2026,7 +2026,7 @@ export default function App() {
             requireLinkedBinding: false,
           }
         ).catch((error) => {
-          addLog(`ℹ️ push token registration failed (link_completion) — ${error instanceof Error ? error.message : String(error)}`);
+          addLog(`ℹ️ push token registration failed (link_completion) - ${error instanceof Error ? error.message : String(error)}`);
         });
       } else if (linkedDeviceIss) {
         pendingLinkPushUploadDeviceIssRef.current = linkedDeviceIss;
@@ -2037,12 +2037,12 @@ export default function App() {
 
       rememberRecentConnectedLink(connectedServiceId);
       clearConnectSession();
-      addLog(`✅ completion ${response.status} — binding saved on server${seedResult.seeded ? " and seeded locally" : ""}`);
+      addLog(`✅ completion ${response.status} - binding saved on server${seedResult.seeded ? " and seeded locally" : ""}`);
       addLog(`   response: ${truncateJson(parsed, 500)}`);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setLocalError(`Could not reach the completion endpoint: ${message}`);
-      addLog(`❌ completion network error — ${message}`);
+      addLog(`❌ completion network error - ${message}`);
       return;
     }
   };
@@ -2054,7 +2054,7 @@ export default function App() {
     const result = await runLocalMeasurement();
     if (!result) {
       setLocalError(presence.error?.message ?? "Could not complete the measurement.");
-      addLog(`❌ ${presence.error?.code ?? "unknown"} — ${presence.error?.message ?? ""}`);
+      addLog(`❌ ${presence.error?.code ?? "unknown"} - ${presence.error?.message ?? ""}`);
       return;
     }
 
@@ -2075,7 +2075,7 @@ export default function App() {
     if (requestedProofStatus === "expired") {
       const serviceLabel = requestedServiceId ?? "The latest";
       setLocalError(`${serviceLabel} request expired. Open a fresh request before submitting proof.`);
-      addLog(`ℹ️ expired request blocked local proof action — service=${requestedServiceId ?? "-"}`);
+      addLog(`ℹ️ expired request blocked local proof action - service=${requestedServiceId ?? "-"}`);
       return;
     }
 
@@ -2100,7 +2100,7 @@ export default function App() {
       addLog("↻ manual refresh requested");
       await runForegroundHydration("manual_refresh");
     } catch (error) {
-      addLog("ℹ️ manual refresh failed — " + (error instanceof Error ? error.message : String(error)));
+      addLog("ℹ️ manual refresh failed - " + (error instanceof Error ? error.message : String(error)));
     } finally {
       setIsManualRefreshing(false);
     }
@@ -2113,19 +2113,9 @@ export default function App() {
           <TouchableOpacity style={styles.qrButton} onPress={() => setShowConnection(true)} activeOpacity={0.85}>
             <Text style={styles.qrIcon}>⌁</Text>
           </TouchableOpacity>
-          <View style={styles.topRightCompact}>
-            <View style={styles.statusRefreshRow}>
-              <View style={[styles.statePill, styles.statePillLight, { borderColor: productTone }]}>
-                <Text style={[styles.stateLabel, { color: productTone }]}>{productState.label}</Text>
-              </View>
-              <TouchableOpacity
-                style={[styles.refreshButton, isManualRefreshing && styles.refreshButtonDisabled]}
-                onPress={() => void handleManualRefresh()}
-                disabled={isManualRefreshing}
-                activeOpacity={0.85}
-              >
-                <Text style={styles.refreshIconText}>↻</Text>
-              </TouchableOpacity>
+          <View style={styles.topCenterStack}>
+            <View style={[styles.statePill, styles.statePillLight, { borderColor: productTone }]}>
+              <Text style={[styles.stateLabel, { color: productTone }]}>{productState.label}</Text>
             </View>
             {showActiveRequestHint ? (
               <View style={styles.activeRequestPill}>
@@ -2133,6 +2123,14 @@ export default function App() {
               </View>
             ) : null}
           </View>
+          <TouchableOpacity
+            style={[styles.refreshButton, isManualRefreshing && styles.refreshButtonDisabled]}
+            onPress={() => void handleManualRefresh()}
+            disabled={isManualRefreshing}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.refreshIconText}>↻</Text>
+          </TouchableOpacity>
         </View>
 
         <View style={styles.heroCard}>
@@ -2437,16 +2435,11 @@ const styles = StyleSheet.create({
     fontSize: 23,
     fontWeight: "700",
   },
-  topRightCompact: {
-    alignItems: "flex-end",
+  topCenterStack: {
+    flex: 1,
+    alignItems: "center",
     justifyContent: "flex-start",
     gap: 6,
-  },
-  statusRefreshRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "flex-end",
-    gap: 8,
   },
   refreshButton: {
     width: 42,
@@ -2470,7 +2463,7 @@ const styles = StyleSheet.create({
     includeFontPadding: false,
   },
   activeRequestPill: {
-    alignSelf: "flex-end",
+    alignSelf: "center",
     borderRadius: 999,
     backgroundColor: C.surfaceSoft,
     borderWidth: 1,
