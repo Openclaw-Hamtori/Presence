@@ -875,6 +875,26 @@ export default function App() {
     ));
   }, []);
 
+  const runProofDecisionMeasurement = useCallback(async () => {
+    addLog("→ run local-only check for proof decision (force refresh)");
+    const measurement = await presence.measure({ forceRefresh: true });
+    if (!measurement) {
+      setLocalError(presence.error?.message ?? "Could not complete the measurement.");
+      addLog(`❌ ${presence.error?.code ?? "unknown"} - ${presence.error?.message ?? ""}`);
+      return null;
+    }
+
+    addLog(
+      measurement.pass
+        ? "✅ Local-only check passed - not server-verified"
+        : `⚠️ Local-only check failed - ${measurement.reason}`
+    );
+    addLog(
+      `   state: created=${measurement.state?.stateCreatedAt ?? '-'} validUntil=${measurement.state?.stateValidUntil ?? '-'} measured=${measurement.state?.lastMeasuredAt ?? '-'} phase=${measurement.state?.status ?? '-'} measurement_pass=${measurement.pass}`
+    );
+    return measurement;
+  }, [addLog, presence.error?.code, presence.error?.message, presence.measure]);
+
   const runLocalMeasurement = useCallback(async () => {
     const measurement = await presence.measure();
     if (!measurement) {
@@ -1828,9 +1848,32 @@ export default function App() {
       );
 
       try {
+        const approvalMeasurement = await runProofDecisionMeasurement();
+        if (!approvalMeasurement) {
+          if (requestKey) {
+            setLinkedProofRequestState(null);
+          }
+          return;
+        }
+
+        if (!approvalMeasurement.pass) {
+          addLog("⚠️ pending proof decision blocked by measurement failure");
+          if (requestKey) {
+            rememberRecentProofFailure({
+              requestKey,
+              status: "failed",
+              serviceId: pendingRequest.serviceId,
+            });
+            setLinkedProofRequestState(null);
+          }
+          setLocalError(approvalMeasurement.reason);
+          return;
+        }
+
         const result = await submitPendingProofRequest({
           request: pendingRequest,
           binding: pendingBinding,
+          measurement: approvalMeasurement,
         });
         const refreshedState = await presence.refresh();
 
@@ -1939,10 +1982,33 @@ export default function App() {
         await persistSeededBinding(openedRequestedBinding);
         addLog(`↻ persisted linked request sync - ${describeBindingSync(openedRequestedBinding.sync)}`);
 
+        const approvalMeasurement = await runProofDecisionMeasurement();
+        if (!approvalMeasurement) {
+          if (requestKey) {
+            setLinkedProofRequestState(null);
+          }
+          return;
+        }
+
+        if (!approvalMeasurement.pass) {
+          addLog("⚠️ linked proof decision blocked by measurement failure");
+          if (requestKey) {
+            rememberRecentProofFailure({
+              requestKey,
+              status: "failed",
+              serviceId: openedRequestedBinding.serviceId,
+            });
+            setLinkedProofRequestState(null);
+          }
+          setLocalError(approvalMeasurement.reason);
+          return;
+        }
+
         const result = await submitLinkedBindingProof({
           binding: openedRequestedBinding,
           nonce: currentEnvelope.nonce,
           diagnostics,
+          measurement: approvalMeasurement,
         });
         const refreshedState = await presence.refresh();
 

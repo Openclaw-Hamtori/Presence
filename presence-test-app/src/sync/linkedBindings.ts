@@ -173,7 +173,10 @@ export async function submitLinkedBindingProof(params: {
     "submission_start",
     `service=${params.binding.serviceId} account=${params.binding.accountId ?? "-"} binding_iss=${params.binding.linkedDeviceIss} measurement=${params.measurement ? "present" : "missing"} state=${params.state ? "present" : "missing"} nonce=${params.nonce ? "present" : "missing"}`
   );
-  const measurement = await getMeasurement(params.measurement, { forceFreshSnapshot: true });
+  const measurement = await getMeasurement(
+    params.measurement,
+    { forceFreshSnapshot: !params.measurement }
+  );
   if (!measurement) {
     pushBindingDiagnostic(params.diagnostics, params.binding.bindingId, "final_outcome", "status=error stage=measurement");
     throw new Error("measurement unavailable");
