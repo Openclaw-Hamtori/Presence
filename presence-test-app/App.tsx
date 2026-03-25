@@ -2446,9 +2446,9 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   refreshButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     borderWidth: 1,
     borderColor: C.border,
     backgroundColor: C.surfaceSoft,
@@ -2460,8 +2460,8 @@ const styles = StyleSheet.create({
   },
   refreshIconText: {
     color: C.text,
-    fontSize: 18,
-    lineHeight: 18,
+    fontSize: 23,
+    lineHeight: 23,
     fontWeight: "700",
   },
   topRequestHint: {
