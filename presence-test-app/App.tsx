@@ -2438,16 +2438,14 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   topRightCompact: {
-    alignItems: "center",
-    justifyContent: "center",
+    alignItems: "flex-end",
+    justifyContent: "flex-start",
     gap: 6,
-    width: 180,
-    paddingRight: 2,
   },
   statusRefreshRow: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
+    justifyContent: "flex-end",
     gap: 8,
   },
   refreshButton: {
@@ -2468,9 +2466,11 @@ const styles = StyleSheet.create({
     fontSize: 23,
     lineHeight: 23,
     fontWeight: "700",
+    textAlign: "center",
+    includeFontPadding: false,
   },
   activeRequestPill: {
-    alignSelf: "center",
+    alignSelf: "flex-end",
     borderRadius: 999,
     backgroundColor: C.surfaceSoft,
     borderWidth: 1,
