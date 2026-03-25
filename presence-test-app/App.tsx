@@ -706,6 +706,7 @@ export default function App() {
   const [recentVerifiedProof, setRecentVerifiedProof] = useState<RecentVerifiedProofState>(null);
   const [recentConnectedLink, setRecentConnectedLink] = useState<RecentConnectedLinkState>(null);
   const [logEntries, setLogEntries] = useState<string[]>([`[${nowTime()}] App started - platform: ${Platform.OS}`]);
+  const [showLogs, setShowLogs] = useState(false);
   const [hydratedServiceBindings, setHydratedServiceBindings] = useState<HydratedBindingCache | null>(null);
   const [hydratingServiceBindings, setHydratingServiceBindings] = useState(false);
   const [serviceBindingsHydrationError, setServiceBindingsHydrationError] = useState<string | null>(null);
@@ -2108,6 +2109,12 @@ export default function App() {
     }
   }, [addLog, isManualRefreshing, runForegroundHydration, presence.refresh]);
 
+  const handleClearLogs = useCallback(() => {
+    const line = `[${nowTime()}] Debug logs cleared`;
+    console.log(`[PresenceApp] ${line}`);
+    setLogEntries([line]);
+  }, []);
+
   return (
     <SafeAreaView style={styles.root}>
       <View style={styles.screen}>
@@ -2179,6 +2186,13 @@ export default function App() {
           <TouchableOpacity style={styles.bottomBarButton} onPress={() => setShowService(true)} activeOpacity={0.85}>
             <Text style={styles.bottomBarButtonText}>LINKED SERVICES</Text>
           </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.devButton}
+            onPress={() => setShowLogs(true)}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.devButtonText}>DEBUG LOGS (TEMP)</Text>
+          </TouchableOpacity>
         </View>
 
         <Modal visible={showService} transparent animationType="fade" onRequestClose={() => setShowService(false)}>
@@ -2248,6 +2262,45 @@ export default function App() {
                   <Text style={styles.emptyBody}>Complete an initial Presence link from your service to populate this list.</Text>
                 </View>
               )}
+            </View>
+          </View>
+        </Modal>
+
+        <Modal visible={showLogs} transparent animationType="fade" onRequestClose={() => setShowLogs(false)}>
+          <View style={styles.modalBackdrop}>
+            <TouchableOpacity
+              style={styles.modalBackdropPressable}
+              onPress={() => setShowLogs(false)}
+              activeOpacity={1}
+            />
+            <View style={[styles.modalCard, styles.modalCardLarge]}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.sectionTitle}>Debug Logs (Temporary)</Text>
+                <TouchableOpacity onPress={() => setShowLogs(false)} activeOpacity={0.85}>
+                  <Text style={styles.modalClose}>Close</Text>
+                </TouchableOpacity>
+              </View>
+              <Text style={styles.modalMeta}>Recent app log stream (newest first). Includes linked-proof ISS diagnostics.</Text>
+              <View style={styles.logViewport}>
+                <ScrollView contentContainerStyle={styles.logList} showsVerticalScrollIndicator>
+                  {logEntries.length === 0 ? (
+                    <Text style={styles.logEntry}>No logs yet.</Text>
+                  ) : (
+                    logEntries.map((entry, index) => (
+                      <Text key={`${index}:${entry}`} style={styles.logEntry} selectable>
+                        {entry}
+                      </Text>
+                    ))
+                  )}
+                </ScrollView>
+              </View>
+              <TouchableOpacity
+                style={[styles.logActionButton, styles.logActionSecondary]}
+                onPress={handleClearLogs}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.logActionSecondaryText}>Clear</Text>
+              </TouchableOpacity>
             </View>
           </View>
         </Modal>
