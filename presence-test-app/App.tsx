@@ -2419,6 +2419,7 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
     justifyContent: "space-between",
     gap: 14,
+    position: "relative",
   },
   qrButton: {
     width: 42,
@@ -2436,7 +2437,10 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   topCenterStack: {
-    flex: 1,
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
     alignItems: "center",
     justifyContent: "flex-start",
     gap: 6,
@@ -2460,6 +2464,7 @@ const styles = StyleSheet.create({
     lineHeight: 23,
     fontWeight: "700",
     textAlign: "center",
+    textAlignVertical: "center",
     includeFontPadding: false,
   },
   activeRequestPill: {
