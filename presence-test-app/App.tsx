@@ -78,6 +78,7 @@ import {
   shouldUseLinkedVerifyRoute,
   buildProveOptionsFromEnvelope,
   hydrateLinkCompletionEnvelopeFromSession,
+  inferEnvelopeFlow,
 } from "./src/sync/requestedBinding";
 import {
   buildRequestedProofKey,
@@ -1605,6 +1606,8 @@ export default function App() {
   ]);
 
   const openedSessionAlreadyLinked = !!openedRequestedBinding;
+  const openedSessionFlow = openedEnvelope ? inferEnvelopeFlow(openedEnvelope) : null;
+  const openedSessionIsInitialLink = openedSessionFlow === "initial_link";
   const recentServiceBindings = [...effectiveServiceBindings]
     .filter((binding) => isActiveBinding(binding))
     .filter((binding) => !currentDeviceIss || binding.linkedDeviceIss === currentDeviceIss)
@@ -2287,7 +2290,9 @@ export default function App() {
                       <Text style={styles.loadedSessionBody}>
                         {openedSessionAlreadyLinked
                           ? "This service/account is already linked. Presence will submit proof directly to the linked binding and refresh the saved sync metadata for future requests."
-                          : "Request loaded. Review the details below, then tap Submit proof. Initial links connect the service; later requests submit proof on demand."}
+                          : openedSessionIsInitialLink
+                            ? "Tap the orb to link"
+                            : "Request loaded. Review the details below, then tap Submit proof. Initial links connect the service; later requests submit proof on demand."}
                       </Text>
                       <View style={styles.loadedSessionMeta}>
                         <KeyValue label="Service" value={openedEnvelope.serviceId ?? "unknown"} />
