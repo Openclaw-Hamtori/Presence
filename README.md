@@ -47,6 +47,11 @@ Package docs:
 - `presence-mobile/README.md` (iOS-native reference client)
 - `presence-test-app/README.md` (integration test surface)
 
+Repository notes:
+- `presence-mobile-native/` is a native source reference used by `presence-test-app/setup.sh` and iOS patch helpers; it is not a separately published workspace package.
+- `presence-protocol-documentation/` is historical/spec reference material, not the canonical integration starting point for new adopters.
+- `docs/archive/` contains historical project logs and release notes; keep `docs/README.md`, `docs/STATUS.md`, and package READMEs as the canonical current entry points.
+
 ---
 
 ## Install core packages

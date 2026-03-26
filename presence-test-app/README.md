@@ -47,6 +47,11 @@ The app now demonstrates the canonical Presence UX:
 - Short links now use pointer mode with discovery hint (`d=<service_domain>`), so canonical hydration can resolve the service to the correct API origin via well-known metadata before building the session lookup URL. After hydration, full sync endpoints (`nonce_url`, `verify_url`, `status_url`) are carried in the hydrated envelope and validated against `https://{service_domain}/.well-known/presence.json` before proof submission or later sync.
 - Shared `presence-mobile/src` mirrors, bridge re-exports, and intentional `presence-test-app/src` forks are documented in `../presence-mobile/SOURCE_OF_TRUTH.md` and checked by `npm run check:mobile-sync`.
 
+## Additional notes
+
+- `README.phase4.md` is a historical phase note, not the primary app README. Treat this file as the canonical package overview.
+- The shared native source reference used by setup helpers lives in `../presence-mobile-native/`.
+
 ## Checks
 
 ```bash

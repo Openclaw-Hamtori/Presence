@@ -1,5 +1,7 @@
 # Presence Test App — Phase 4 notes
 
+_Archived from `presence-test-app/README.phase4.md` during repo hygiene cleanup._
+
 Use the test app as a mobile PASS/proof client for initial linking and later proof-on-demand requests.
 
 Suggested manual flow:
