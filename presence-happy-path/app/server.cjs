@@ -1085,13 +1085,28 @@ async function main() {
     );
   }
 
-  const stopCleanupScheduler = () => {
+  let shutdownStarted = false;
+  const gracefulShutdown = () => {
+    if (shutdownStarted) {
+      return;
+    }
+    shutdownStarted = true;
     if (cleanupTimer) {
       clearInterval(cleanupTimer);
     }
+    const forceExitTimer = setTimeout(() => {
+      process.exit(1);
+    }, 3000);
+    if (typeof forceExitTimer.unref === "function") {
+      forceExitTimer.unref();
+    }
+    server.close(() => {
+      clearTimeout(forceExitTimer);
+      process.exit(0);
+    });
   };
-  process.on("SIGINT", stopCleanupScheduler);
-  process.on("SIGTERM", stopCleanupScheduler);
+  process.on("SIGINT", gracefulShutdown);
+  process.on("SIGTERM", gracefulShutdown);
 }
 
 main().catch((error) => {
