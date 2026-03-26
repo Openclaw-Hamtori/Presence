@@ -23,6 +23,9 @@ jobs:
       - name: Run Presence Phase 1 baseline guardrail
         run: npm run ci:phase1
 
+      - name: Build presence-sdk dist for server checks
+        run: npm run build -w presence-sdk
+
       - name: Run release-readiness hardening checks
         run: npm run check:server-release-readiness
         env:
