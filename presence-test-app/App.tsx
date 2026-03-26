@@ -18,7 +18,6 @@ import {
   KeyboardAvoidingView,
   ScrollView,
   Linking,
-  Clipboard,
 } from "react-native";
 import { usePresenceState } from "./src/ui/usePresenceState";
 import {
@@ -531,27 +530,6 @@ function inferRequestedBindingResolution(
   return "fallback";
 }
 
-function buildLogExport(params: {
-  entries: string[];
-  phase: string;
-  deviceIss?: string;
-  envelope: LinkCompletionEnvelope | null;
-  binding: ServiceBinding | null;
-}): string {
-  return [
-    "Presence test app debug logs",
-    `exported_at=${new Date().toISOString()}`,
-    `platform=${Platform.OS}`,
-    `phase=${params.phase}`,
-    `device_iss=${params.deviceIss ?? "-"}`,
-    `open_session=${params.envelope?.sessionId ?? "-"}`,
-    `request_flow=${params.envelope?.flow ?? (params.envelope?.bindingId ? "reauth" : params.envelope ? "initial_link" : "-")}`,
-    `resolved_binding=${params.binding?.bindingId ?? "-"}`,
-    "",
-    ...[...params.entries].reverse(),
-  ].join("\n");
-}
-
 function buildPushTokenKey(registration: PresencePushTokenRegistration | null): string | null {
   if (!registration) return null;
   return [
@@ -729,8 +707,6 @@ export default function App() {
   const [recentVerifiedProof, setRecentVerifiedProof] = useState<RecentVerifiedProofState>(null);
   const [recentConnectedLink, setRecentConnectedLink] = useState<RecentConnectedLinkState>(null);
   const [logEntries, setLogEntries] = useState<string[]>([`[${nowTime()}] App started - platform: ${Platform.OS}`]);
-  const [showLogs, setShowLogs] = useState(false);
-  const [copyLogsStatus, setCopyLogsStatus] = useState<"idle" | "copied" | "failed">("idle");
   const [hydratedServiceBindings, setHydratedServiceBindings] = useState<HydratedBindingCache | null>(null);
   const [hydratingServiceBindings, setHydratingServiceBindings] = useState(false);
   const [serviceBindingsHydrationError, setServiceBindingsHydrationError] = useState<string | null>(null);
@@ -788,12 +764,6 @@ export default function App() {
       cancelled = true;
     };
   }, []);
-
-  useEffect(() => {
-    if (copyLogsStatus === "idle") return;
-    const timeout = setTimeout(() => setCopyLogsStatus("idle"), COPY_STATUS_RESET_MS);
-    return () => clearTimeout(timeout);
-  }, [copyLogsStatus]);
 
   useEffect(() => {
     if (!recentVerifiedProof) return;
@@ -1733,36 +1703,6 @@ export default function App() {
   const displayedErrorMessage = localError ?? presence.error?.message ?? null;
   const showHealthAccessRecovery = isHealthAccessRecoveryNeeded(displayedErrorCode, displayedErrorMessage);
   const isSubmittingPass = presence.phase === "proving" || presence.phase === "measuring" || submittingLinkedProof;
-  const latestLogEntry = logEntries[0] ?? "No debug events yet.";
-  const buildCurrentLogExport = useCallback(
-    () => buildLogExport({
-      entries: logEntries,
-      phase: presence.phase,
-      deviceIss: currentDeviceIss,
-      envelope: openedEnvelope,
-      binding: orbRequestedBinding,
-    }),
-    [currentDeviceIss, logEntries, openedEnvelope, orbRequestedBinding, presence.phase]
-  );
-
-  const handleCopyLogs = useCallback(() => {
-    try {
-      Clipboard.setString(buildCurrentLogExport());
-      addLog(`📋 copied ${logEntries.length} log entries to clipboard`);
-      setCopyLogsStatus("copied");
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      addLog(`❌ copy logs failed — ${message}`);
-      setCopyLogsStatus("failed");
-    }
-  }, [addLog, buildCurrentLogExport, logEntries.length]);
-
-  const handleClearLogs = useCallback(() => {
-    const line = `[${nowTime()}] Debug logs cleared`;
-    console.log(`[PresenceApp] ${line}`);
-    setLogEntries([line]);
-    setCopyLogsStatus("idle");
-  }, []);
 
   useEffect(() => {
     if (!presence.state || !currentDeviceIss || !pendingProofBindingsKey) {
@@ -2306,9 +2246,6 @@ export default function App() {
           <TouchableOpacity style={styles.bottomBarButton} onPress={() => setShowService(true)} activeOpacity={0.85}>
             <Text style={styles.bottomBarButtonText}>LINKED SERVICES</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.bottomBarButton} onPress={() => setShowLogs(true)} activeOpacity={0.85}>
-            <Text style={styles.bottomBarButtonText}>DEBUG LOGS</Text>
-          </TouchableOpacity>
         </View>
 
         <Modal visible={showService} transparent animationType="fade" onRequestClose={() => setShowService(false)}>
@@ -2378,51 +2315,6 @@ export default function App() {
                   <Text style={styles.emptyBody}>Complete an initial Presence link from your service to populate this list.</Text>
                 </View>
               )}
-            </View>
-          </View>
-        </Modal>
-
-        <Modal visible={showLogs} transparent animationType="fade" onRequestClose={() => setShowLogs(false)}>
-          <View style={styles.modalBackdrop}>
-            <TouchableOpacity style={styles.modalBackdropPressable} onPress={() => setShowLogs(false)} activeOpacity={1} />
-            <View style={styles.modalCardLarge}>
-              <View style={styles.modalHeader}>
-                <Text style={styles.sectionTitle}>Debug Logs</Text>
-                <TouchableOpacity onPress={() => setShowLogs(false)} activeOpacity={0.85}>
-                  <Text style={styles.modalClose}>Close</Text>
-                </TouchableOpacity>
-              </View>
-
-              <Text style={styles.modalMeta}>{logEntries.length} recent events. Newest first. Copy exports the full rolling buffer.</Text>
-
-              <View style={styles.logSummaryCard}>
-                <Text style={styles.logSummaryLabel}>Latest event</Text>
-                <Text style={styles.logSummaryBody} selectable>{latestLogEntry}</Text>
-              </View>
-
-              <View style={styles.logActionRow}>
-                <TouchableOpacity style={[styles.logActionButton, styles.logActionPrimary]} onPress={handleCopyLogs} activeOpacity={0.85}>
-                  <Text style={styles.logActionPrimaryText}>
-                    {copyLogsStatus === "copied" ? "Copied" : copyLogsStatus === "failed" ? "Copy Failed" : "Copy Logs"}
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={[styles.logActionButton, styles.logActionSecondary]} onPress={handleClearLogs} activeOpacity={0.85}>
-                  <Text style={styles.logActionSecondaryText}>Clear</Text>
-                </TouchableOpacity>
-              </View>
-
-              <ScrollView
-                style={styles.logViewport}
-                contentContainerStyle={styles.logList}
-                showsVerticalScrollIndicator
-                keyboardShouldPersistTaps="handled"
-              >
-                {logEntries.map((entry, index) => (
-                  <Text key={`${index}:${entry}`} style={styles.logEntry} selectable>
-                    {entry}
-                  </Text>
-                ))}
-              </ScrollView>
             </View>
           </View>
         </Modal>
