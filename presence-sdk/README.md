@@ -137,7 +137,10 @@ const endpointContract = {
 
 const presence = new PresenceClient({
   serviceId: "discord-bot",
-  linkageStore: new SqliteLinkageStore("./var/presence.sqlite"),
+  linkageStore: new SqliteLinkageStore({
+    dbPath: "./var/presence.sqlite",
+    mode: "single-team",
+  }),
   iosAppId: "TEAMID.com.example.polapp",
   androidPackageName: "com.example.polapp",
   bindingPolicy: {
