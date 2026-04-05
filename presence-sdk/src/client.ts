@@ -648,10 +648,6 @@ export class PresenceClient {
       nonce: request.nonce,
     });
 
-    if (!result.verified && result.error !== "ERR_BINDING_RECOVERY_REQUIRED") {
-      return { ...result, request };
-    }
-
     const updatedRequest = await this.runStoreMutation(async (store) => {
       const current = await store.getPendingProofRequest(params.requestId);
       if (!current) {
@@ -665,12 +661,19 @@ export class PresenceClient {
             completedAt: now,
             recoveryReason: undefined,
           }
-        : {
-            ...current,
-            status: "recovery_required",
-            completedAt: now,
-            recoveryReason: result.binding.recoveryReason ?? "binding_recovery_required",
-          };
+        : result.error === "ERR_BINDING_RECOVERY_REQUIRED"
+          ? {
+              ...current,
+              status: "recovery_required",
+              completedAt: now,
+              recoveryReason: result.binding.recoveryReason ?? "binding_recovery_required",
+            }
+          : {
+              ...current,
+              status: "cancelled",
+              completedAt: now,
+              recoveryReason: result.error,
+            };
       await store.savePendingProofRequest(nextRequest);
       return nextRequest;
     });

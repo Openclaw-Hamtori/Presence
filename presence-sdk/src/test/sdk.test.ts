@@ -1628,6 +1628,47 @@ function buildAndroidBody(
         const client = new PresenceClient({ silent: true, linkageStore: store, serviceId: "svc" });
         const now = Math.floor(Date.now() / 1000);
         const binding = {
+          bindingId: "pbind_pending_transition_failure",
+          serviceId: "svc",
+          accountId: "acct-pending-transition-failure",
+          deviceIss: "presence:device:pending-transition-failure",
+          createdAt: now,
+          updatedAt: now,
+          status: "linked" as const,
+          lastLinkedAt: now,
+          lastVerifiedAt: now,
+          lastAttestedAt: now,
+        };
+        await store.saveServiceBinding(binding);
+
+        const pending = await client.createPendingProofRequest({ accountId: binding.accountId });
+        assert.equal(pending.ok, true);
+        if (!pending.ok) {
+          throw new Error("expected pending proof request");
+        }
+
+        const respondStub = async () => ({
+          verified: false as const,
+          error: "ERR_INVALID_SIGNATURE" as const,
+          detail: "signature verification failed",
+        });
+        (client as unknown as { verifyLinkedAccount: typeof respondStub }).verifyLinkedAccount = respondStub;
+
+        const result = await client.respondToPendingProofRequest({ requestId: pending.request.id, body: { ok: false } });
+        if (result.verified) {
+          throw new Error("expected verification failure result");
+        }
+
+        const saved = await store.getPendingProofRequest(pending.request.id);
+        assert.equal(saved?.status, "cancelled");
+        assert.equal(saved?.recoveryReason, "ERR_INVALID_SIGNATURE");
+        assert.ok(saved?.completedAt);
+      },
+      async () => {
+        const store = new InMemoryLinkageStore();
+        const client = new PresenceClient({ silent: true, linkageStore: store, serviceId: "svc" });
+        const now = Math.floor(Date.now() / 1000);
+        const binding = {
           bindingId: "pbind_pending_transition_expired",
           serviceId: "svc",
           accountId: "acct-pending-transition-expired",

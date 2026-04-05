@@ -87,6 +87,32 @@ If you are trying to understand the full product split, also read:
 
 ## Quick start
 
+If you want the shortest path first:
+
+1. install the package
+2. copy `examples/minimal-node-server.mjs`
+3. set `PRESENCE_IOS_APP_ID` (and optionally `PRESENCE_ANDROID_PACKAGE_NAME`)
+4. expose these endpoints:
+   - `POST /presence/link-sessions`
+   - `POST /presence/link-sessions/:sessionId/complete`
+   - `POST /presence/linked-accounts/:accountId/pending-proof-requests`
+   - `GET /presence/linked-accounts/:accountId/pending-proof-requests`
+   - `POST /presence/pending-proof-requests/:requestId/respond`
+   - `GET /presence/linked-accounts/:accountId/status`
+
+The minimal runnable example lives at:
+
+- `examples/minimal-node-server.mjs`
+- `examples/backend-completion-reference.ts` (fuller reference layout)
+
+Typical product flow:
+
+1. create one link session
+2. complete the first link from mobile
+3. later create pending proof requests on demand
+4. let the mobile app answer them via `/respond`
+5. gate access off `getLinkedAccountReadiness()`
+
 ```ts
 import {
   PresenceClient,
